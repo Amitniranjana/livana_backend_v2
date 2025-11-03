@@ -1,0 +1,22 @@
+[package]
+name = "livana-backend-v2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.68"
+tokio = { version = "1.0", features = ["full"] }
+sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-native-tls", "postgres", "macros", "uuid", "chrono", "json" ] }
+log = "0.4.27"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9.0"
+bcrypt = "0.15"
+tower-http = { version = "0.5", features = ["cors"] }
+utoipa = { version = "4.2", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "5.0", features = ["axum"] }
+
+dotenvy = "0.15"
+argon2 = "0.5.3"

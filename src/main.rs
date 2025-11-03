@@ -1,0 +1,83 @@
+mod handlers;
+mod routes;
+mod app_state;
+mod services;
+mod repository;
+mod models;
+mod utils;
+mod dtos;
+
+use std::{env, sync::Arc, net::SocketAddr};
+use axum::{Router, serve, Json};
+use sqlx::PgPool;
+use tokio::net::TcpListener;
+use utoipa::OpenApi;
+use dotenvy::dotenv;
+
+use crate::{
+    app_state::AppState,
+    repository::user_repository::UserRepository,
+    routes::{auth_routes, user_routes, listing_routes, health_routes},
+    services::user_service::UserService,
+};
+
+
+#[tokio::main]
+async fn main() {
+    // Load environment variables from .env file
+    dotenv().ok();
+
+    // ——————————————— Load env vars ———————————————
+    let database_user =
+        env::var("DATABASE_USER").expect("DATABASE_USER must be set");
+    let database_host =
+        env::var("DATABASE_HOST").expect("DATABASE_HOST must be set");
+    let database_password =
+        env::var("DATABASE_PASSWORD").expect("DATABASE_PASSWORD must be set");
+    let database_name =
+        env::var("DATABASE_NAME").expect("DATABASE_NAME must be set");
+    let database_port =
+        env::var("DATABASE_PORT").expect("DATABASE_PORT must be set");
+    // default back to 8080 if you forgot HTTP_PORT
+    let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
+
+    // ————————————— Build Postgres pool —————————————
+    let db_url = format!(
+        "postgres://{}:{}@{}:{}/{}",
+        database_user, database_password, database_host, database_port, database_name
+    );
+    let pool = PgPool::connect(&db_url)
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("DB connect error: {}", e);
+            panic!("Could not connect to Postgres");
+        });
+
+    // ———————————— Wire up repository & service ————————————
+    let user_repo = UserRepository::new(pool.clone());
+    let user_svc = UserService::new(user_repo);
+
+    // ——————————— Build your AppState & Router ———————————
+    let app_state = AppState {
+        // Wrap your concrete service in an Arc so it's Clone + Send + Sync
+        user_service: Arc::from(user_svc),
+    };
+
+    let app = Router::new()
+        .merge(health_routes())
+        .merge(auth_routes())
+        .merge(user_routes())
+        .merge(listing_routes())
+        .with_state(app_state);
+
+    // —————————————— Bind & serve ——————————————
+    let addr: SocketAddr = format!("0.0.0.0:{}", http_port)
+        .parse()
+        .expect("Invalid HTTP_PORT");
+    println!("Running on http://{}", addr);
+    println!("OpenAPI JSON available at http://{}/openapi.json", addr);
+    println!("You can use this URL with Swagger UI: https://editor.swagger.io/");
+
+    let listener = TcpListener::bind(addr).await.unwrap();
+    serve(listener, app).await.unwrap();
+}
