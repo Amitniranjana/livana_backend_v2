@@ -20,6 +20,8 @@ use crate::utils::util::hash_string;
     ),
     tag = "Authentication"
 )]
+
+#[allow(unused_variables)]
 pub async fn signup(
     State(app_state): State<AppState>,
     Json(payload): Json<SignupRequest>,
@@ -31,7 +33,7 @@ pub async fn signup(
     //app_state.user_service
     // 3. Generate JWT token
     // 4. Return response
-    
+
     let response = json!({
         "success": true,
         "message": "User created successfully",
@@ -60,7 +62,7 @@ pub async fn signup(
             }
         }
     });
-    
+
     (StatusCode::CREATED, Json(response))
 }
 
@@ -85,7 +87,7 @@ pub async fn signin(
     // 2. Verify password
     // 3. Generate JWT token
     // 4. Return response
-    
+
     let response = json!({
         "success": true,
         "message": "User signed in successfully",
@@ -114,7 +116,7 @@ pub async fn signin(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -134,13 +136,13 @@ pub async fn signout(
     // TODO: Implement logout logic
     // 1. Add token to blacklist (if using blacklist)
     // 2. Or just return success (stateless JWT)
-    
+
     let response = json!({
         "success": true,
         "message": "User signed out successfully",
         "data": null
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -165,7 +167,7 @@ pub async fn send_forgot_password_link(
     // 2. Generate reset code
     // 3. Send email with reset link
     // 4. Return response
-    
+
     let response = json!({
         "success": true,
         "message": "Reset link sent successfully to your email",
@@ -174,7 +176,7 @@ pub async fn send_forgot_password_link(
             "reset_code_sent": true
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -200,7 +202,7 @@ pub async fn reset_password(
     // 2. Hash new password
     // 3. Update user password
     // 4. Return response
-    
+
     let response = json!({
         "success": true,
         "message": "Password reset successfully",
@@ -209,6 +211,6 @@ pub async fn reset_password(
             "user_id": "123e4567-e89b-12d3-a456-426614174000"
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }

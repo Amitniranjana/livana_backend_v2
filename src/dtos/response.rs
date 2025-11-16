@@ -1,21 +1,28 @@
 
-use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use serde::Serialize;
+
 use utoipa::ToSchema;
 
 
 
 // Request/Response DTOs
 
-
+#[allow(dead_code)]
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
     #[schema(example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")]
+
     pub token: String,
-    pub user: UserResponse,
+    pub user_id: String,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: String,
+
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+
+#[allow(dead_code)]
 pub struct UserResponse {
     #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
     pub id: String,
@@ -55,6 +62,7 @@ pub struct UserResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
 pub struct ListingResponse {
     #[schema(example = "456e7890-e89b-12d3-a456-426614174001")]
     pub id: String,
@@ -110,15 +118,25 @@ pub struct ListingResponse {
 
 // Common response structures
 #[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
 pub struct ApiResponse<T> {
     #[schema(example = true)]
     pub success: bool,
     #[schema(example = "Operation completed successfully")]
     pub message: String,
+       #[schema(example = "you can write your message here")]
     pub data: T,
 }
-
 #[derive(Debug, Serialize, ToSchema)]
+
+#[allow(dead_code)]
+pub struct ApiAuthData {
+    pub user: ApiResponse<UserResponse>,
+    pub token: String,
+    pub refresh_token: String,
+}
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
 pub struct PaginationInfo {
     #[schema(example = 1)]
     pub page: i32,
@@ -131,7 +149,8 @@ pub struct PaginationInfo {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
 pub struct ListingsResponse {
     pub listings: Vec<ListingResponse>,
     pub pagination: PaginationInfo,
-} 
+}

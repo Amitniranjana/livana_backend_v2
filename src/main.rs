@@ -8,10 +8,10 @@ mod utils;
 mod dtos;
 
 use std::{env, sync::Arc, net::SocketAddr};
-use axum::{Router, serve, Json};
+use axum::{Router, serve};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
-use utoipa::OpenApi;
+
 use dotenvy::dotenv;
 
 use crate::{
@@ -40,6 +40,8 @@ async fn main() {
         env::var("DATABASE_PORT").expect("DATABASE_PORT must be set");
     // default back to 8080 if you forgot HTTP_PORT
     let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
+        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "supersecret".into());
+        
 
     // ————————————— Build Postgres pool —————————————
     let db_url = format!(
@@ -61,6 +63,7 @@ async fn main() {
     let app_state = AppState {
         // Wrap your concrete service in an Arc so it's Clone + Send + Sync
         user_service: Arc::from(user_svc),
+        db: pool.clone(), jwt_secret: jwt_secret.clone()
     };
 
     let app = Router::new()

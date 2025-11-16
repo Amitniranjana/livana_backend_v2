@@ -3,11 +3,12 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[allow(dead_code)]
 pub struct UserProfile {
     #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
     pub user_id: String, // foreign key to User
 
- 
+
 
     #[schema(example = "male")]
     pub gender: String,
@@ -45,6 +46,7 @@ pub struct UserProfile {
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[allow(dead_code)]
 pub struct User {
     #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
     pub id: String,
