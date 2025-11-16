@@ -1,8 +1,9 @@
 use std::error::Error;
+
 use argon2::{
     password_hash::{
         rand_core::OsRng,
-        PasswordHash, PasswordHasher, PasswordVerifier, SaltString
+         PasswordHasher, SaltString,
     },
     Argon2
 };

@@ -3,8 +3,9 @@ use axum::{
     response::Json,
     extract::{State, Path},
 };
+
 use crate::app_state::AppState;
-use crate::models::*;
+
 use serde_json::json;
 use crate::dtos::request::{CreateListingRequest, UpdateListingRequest};
 
@@ -33,7 +34,7 @@ pub async fn get_listings(
     // 1. Get listings from database with pagination
     // 2. Apply filters (city, price range, etc.)
     // 3. Return listings
-    
+
     let response = json!({
         "success": true,
         "message": "Listings retrieved successfully",
@@ -113,7 +114,7 @@ pub async fn get_listings(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -138,7 +139,7 @@ pub async fn create_listing(
     // 2. Validate listing data
     // 3. Create listing in database
     // 4. Return created listing
-    
+
     let response = json!({
         "success": true,
         "message": "Listing created successfully",
@@ -179,7 +180,7 @@ pub async fn create_listing(
             }
         }
     });
-    
+
     (StatusCode::CREATED, Json(response))
 }
 
@@ -204,7 +205,7 @@ pub async fn get_listing_by_id(
     // 1. Find listing by ID
     // 2. Increment view count
     // 3. Return listing details
-    
+
     let response = json!({
         "success": true,
         "message": "Listing retrieved successfully",
@@ -255,7 +256,7 @@ pub async fn get_listing_by_id(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -286,7 +287,7 @@ pub async fn update_listing(
     // 2. Verify user owns the listing
     // 3. Update listing in database
     // 4. Return updated listing
-    
+
     let response = json!({
         "success": true,
         "message": "Listing updated successfully",
@@ -328,7 +329,7 @@ pub async fn update_listing(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -356,7 +357,7 @@ pub async fn delete_listing(
     // 2. Verify user owns the listing
     // 3. Soft delete or hard delete listing
     // 4. Return success response
-    
+
     let response = json!({
         "success": true,
         "message": "Listing deleted successfully",
@@ -365,7 +366,7 @@ pub async fn delete_listing(
             "deleted_at": "2024-01-15T18:00:00Z"
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -392,7 +393,7 @@ pub async fn like_listing(
     // 2. Add user to liked_by array
     // 3. Increment likes count
     // 4. Return success response
-    
+
     let response = json!({
         "success": true,
         "message": "Listing liked successfully",
@@ -404,7 +405,7 @@ pub async fn like_listing(
             "liked_at": "2024-01-15T19:00:00Z"
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -431,7 +432,7 @@ pub async fn save_listing(
     // 2. Add listing to user's saved_listings
     // 3. Add user to listing's saved_by array
     // 4. Return success response
-    
+
     let response = json!({
         "success": true,
         "message": "Listing saved successfully",
@@ -443,6 +444,6 @@ pub async fn save_listing(
             "saved_at": "2024-01-15T20:00:00Z"
         }
     });
-    
+
     (StatusCode::OK, Json(response))
-} 
+}

@@ -4,7 +4,7 @@ use axum::{
     extract::State,
 };
 use crate::app_state::AppState;
-use crate::models::*;
+
 use serde_json::json;
 use crate::dtos::request::UpdateProfileRequest;
 
@@ -26,7 +26,7 @@ pub async fn get_profile(
     // 1. Extract user from JWT token
     // 2. Get user data from database
     // 3. Return user profile
-    
+
     let response = json!({
         "success": true,
         "message": "User profile retrieved successfully",
@@ -55,7 +55,7 @@ pub async fn get_profile(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -80,7 +80,7 @@ pub async fn update_profile(
     // 1. Extract user from JWT token
     // 2. Update user data in database
     // 3. Return updated profile
-    
+
     let response = json!({
         "success": true,
         "message": "Profile updated successfully",
@@ -109,7 +109,7 @@ pub async fn update_profile(
             }
         }
     });
-    
+
     (StatusCode::OK, Json(response))
 }
 
@@ -134,7 +134,7 @@ pub async fn upload_profile_image(
     // 3. Save image to storage
     // 4. Update user profile_image_url
     // 5. Return response
-    
+
     let response = json!({
         "success": true,
         "message": "Profile image uploaded successfully",
@@ -145,6 +145,6 @@ pub async fn upload_profile_image(
             "uploaded_at": "2024-01-15T12:00:00Z"
         }
     });
-    
+
     (StatusCode::OK, Json(response))
-} 
+}

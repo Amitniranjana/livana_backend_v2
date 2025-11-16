@@ -3,6 +3,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[allow(dead_code)]
 pub struct Listing {
     #[schema(example = "456e7890-e89b-12d3-a456-426614174001")]
     pub id: String,

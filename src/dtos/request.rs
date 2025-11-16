@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SignupRequest {
     #[schema(example = "John")]
     pub first_name: String,
@@ -26,21 +27,22 @@ pub struct SignupRequest {
     #[schema(example = 2.5)]
     pub commission_rate: Option<f64>,
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct SigninRequest {
     #[schema(example = "john.doe@example.com")]
     pub email: String,
     #[schema(example = "password123")]
     pub password: String,
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ForgotPasswordRequest {
     #[schema(example = "john.doe@example.com")]
     pub email: String,
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResetPasswordRequest {
     #[schema(example = "john.doe@example.com")]
@@ -50,7 +52,7 @@ pub struct ResetPasswordRequest {
     #[schema(example = "newpassword123")]
     pub new_password: String,
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateProfileRequest {
     #[schema(example = "John")]
@@ -70,7 +72,7 @@ pub struct UpdateProfileRequest {
     #[schema(example = 2.5)]
     pub commission_rate: Option<f64>,
 }
-
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateListingRequest {
     #[schema(example = "Modern 2BHK Apartment in City Center")]
@@ -110,6 +112,7 @@ pub struct CreateListingRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[allow(dead_code)]
 pub struct UpdateListingRequest {
     #[schema(example = "Updated Modern 2BHK Apartment in City Center")]
     pub title: Option<String>,
