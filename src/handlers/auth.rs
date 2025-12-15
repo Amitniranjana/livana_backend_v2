@@ -7,6 +7,8 @@ use crate::app_state::AppState;
 use crate::dtos::request::{ForgotPasswordRequest, ResetPasswordRequest, SigninRequest, SignupRequest};
 use serde_json::json;
 use crate::utils::util::hash_string;
+use crate::utils::auth::create_jwt;
+
 // Auth handlers
 /// User registration
 #[utoipa::path(
@@ -20,45 +22,78 @@ use crate::utils::util::hash_string;
     ),
     tag = "Authentication"
 )]
-
-#[allow(unused_variables)]
 pub async fn signup(
     State(app_state): State<AppState>,
     Json(payload): Json<SignupRequest>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement user creation logic
     // 1. Hash password
-    let hashed_password=hash_string(payload.password);
-    // 2. Create user in database
-    //app_state.user_service
-    // 3. Generate JWT token
-    // 4. Return response
+    let hashed_password = hash_string(&payload.password);
 
+    // 2. Create user in database
+    let user_result = app_state.user_service
+        .create_user(
+            &payload.first_name,
+            &payload.last_name,
+            &payload.email,
+            &payload.phone_no,
+            &hashed_password,
+            &payload.gender,
+        )
+        .await;
+
+    let user = match user_result {
+        Ok(user) => user,
+        Err(e) => {
+            let error_msg = e.to_string();
+
+            // Check if user already exists
+            if error_msg.contains("duplicate") || error_msg.contains("already exists") {
+                let response = json!({
+                    "success": false,
+                    "message": "User with this email already exists",
+                    "data": null
+                });
+                return (StatusCode::CONFLICT, Json(response));
+            }
+
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to create user: {}", error_msg),
+                "data": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+    };
+
+    // 3. Generate JWT token
+    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 24) {
+        Ok(token) => token,
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to generate token: {}", e),
+                "data": null
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        }
+    };
+
+    // 4. Return response
     let response = json!({
         "success": true,
         "message": "User created successfully",
         "data": {
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            "token": token,
             "user": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "first_name": "John",
-                "last_name": "Doe",
-                "email": "john.doe@example.com",
-                "phone_no": "1234567890",
-                "gender": "male",
-                "user_role": "user",
-                "verified": false,
-                "profile_image_url": null,
-                "bio": null,
-                "business_name": null,
-                "license_number": null,
-                "experience_years": null,
-                "commission_rate": null,
-                "broker_rating": null,
-                "total_reviews": null,
-                "is_verified_broker": false,
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z"
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "phone_no": user.phone_no,
+                "user_role": user.user_role,
+                "verified": user.verified,
+                "status": user.status,
+                "created_at": user.created_at
             }
         }
     });
@@ -79,40 +114,81 @@ pub async fn signup(
     tag = "Authentication"
 )]
 pub async fn signin(
-    State(_app_state): State<AppState>,
-    Json(_payload): Json<SigninRequest>,
+    State(app_state): State<AppState>,
+    Json(payload): Json<SigninRequest>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement user authentication logic
     // 1. Find user by email
-    // 2. Verify password
-    // 3. Generate JWT token
-    // 4. Return response
+    let user = match app_state.user_service.find_by_email(&payload.email).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let response = json!({
+                "success": false,
+                "message": "Invalid email or password",
+                "data": null
+            });
+            return (StatusCode::UNAUTHORIZED, Json(response));
+        }
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to find user: {}", e),
+                "data": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+    };
 
+    // 2. Verify password
+    let is_valid = crate::utils::auth::verify_password(&user.password, &payload.password);
+
+    if !is_valid {
+        let response = json!({
+            "success": false,
+            "message": "Invalid email or password",
+            "data": null
+        });
+        return (StatusCode::UNAUTHORIZED, Json(response));
+    }
+
+    // Check if user is active
+    if user.status != "active" {
+        let response = json!({
+            "success": false,
+            "message": "Account is not active",
+            "data": null
+        });
+        return (StatusCode::UNAUTHORIZED, Json(response));
+    }
+
+    // 3. Generate JWT token
+    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 24) {
+        Ok(token) => token,
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to generate token: {}", e),
+                "data": null
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        }
+    };
+
+    // 4. Return response
     let response = json!({
         "success": true,
         "message": "User signed in successfully",
         "data": {
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+            "token": token,
             "user": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "first_name": "John",
-                "last_name": "Doe",
-                "email": "john.doe@example.com",
-                "phone_no": "1234567890",
-                "gender": "male",
-                "user_role": "user",
-                "verified": true,
-                "profile_image_url": "https://example.com/profile.jpg",
-                "bio": "Software developer with 5 years of experience",
-                "business_name": null,
-                "license_number": null,
-                "experience_years": null,
-                "commission_rate": null,
-                "broker_rating": null,
-                "total_reviews": null,
-                "is_verified_broker": false,
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z"
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "email": user.email,
+                "phone_no": user.phone_no,
+                "user_role": user.user_role,
+                "verified": user.verified,
+                "status": user.status,
+                "created_at": user.created_at
             }
         }
     });
@@ -133,10 +209,11 @@ pub async fn signin(
 pub async fn signout(
     State(_app_state): State<AppState>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement logout logic
     // 1. Add token to blacklist (if using blacklist)
-    // 2. Or just return success (stateless JWT)
+    // Extract token from request headers if needed
+    // app_state.token_blacklist.add_token(token).await;
 
+    // 2. Return success (stateless JWT approach)
     let response = json!({
         "success": true,
         "message": "User signed out successfully",
@@ -159,20 +236,53 @@ pub async fn signout(
     tag = "Authentication"
 )]
 pub async fn send_forgot_password_link(
-    State(_app_state): State<AppState>,
-    Json(_payload): Json<ForgotPasswordRequest>,
+    State(app_state): State<AppState>,
+    Json(payload): Json<ForgotPasswordRequest>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement forgot password logic
     // 1. Find user by email
-    // 2. Generate reset code
-    // 3. Send email with reset link
-    // 4. Return response
+    let user = match app_state.user_service.find_by_email(&payload.email).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let response = json!({
+                "success": false,
+                "message": "User not found with this email",
+                "data": null
+            });
+            return (StatusCode::NOT_FOUND, Json(response));
+        }
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to find user: {}", e),
+                "data": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+    };
 
+    // 2. Generate reset code (simple random uuid for now)
+    let reset_code = uuid::Uuid::new_v4().to_string();
+
+    // 3. Store reset code in memory with expiration (if needed)
+    if let Err(e) = app_state.user_service
+        .store_reset_code(&user.id.to_string(), &reset_code)
+        .await
+    {
+        let response = json!({
+            "success": false,
+            "message": format!("Failed to store reset code: {}", e),
+            "data": null
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
+    // NOTE: Email sending and frontend config are not wired in AppState
+    // in this workspace. We return success after storing the reset code.
+    // 5. Return response
     let response = json!({
         "success": true,
-        "message": "Reset link sent successfully to your email",
+        "message": "Reset link generated and stored",
         "data": {
-            "email": "john.doe@example.com",
+            "email": user.email,
             "reset_code_sent": true
         }
     });
@@ -194,21 +304,59 @@ pub async fn send_forgot_password_link(
     tag = "Authentication"
 )]
 pub async fn reset_password(
-    State(_app_state): State<AppState>,
-    Json(_payload): Json<ResetPasswordRequest>,
+    State(app_state): State<AppState>,
+    Json(payload): Json<ResetPasswordRequest>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement password reset logic
     // 1. Verify reset code
-    // 2. Hash new password
-    // 3. Update user password
-    // 4. Return response
+    let user_id = match app_state.user_service
+        .verify_reset_code(&payload.code)
+        .await
+    {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
+            let response = json!({
+                "success": false,
+                "message": "Invalid or expired reset code",
+                "data": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to verify reset code: {}", e),
+                "data": null
+            });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+    };
 
+    // 2. Hash new password
+    let hashed_password = hash_string(&payload.new_password);
+
+    // 3. Update user password
+    if let Err(e) = app_state.user_service
+        .update_password(&user_id, &hashed_password)
+        .await
+    {
+        let response = json!({
+            "success": false,
+            "message": format!("Failed to update password: {}", e),
+            "data": null
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
+
+    // 4. Delete used reset code
+    let _ = app_state.user_service.delete_reset_code(&payload.code).await;
+
+    // 5. Return response
     let response = json!({
         "success": true,
         "message": "Password reset successfully",
         "data": {
             "password_updated": true,
-            "user_id": "123e4567-e89b-12d3-a456-426614174000"
+            "user_id": user_id
         }
     });
 
