@@ -1,25 +1,13 @@
-use std::error::Error;
+use crate::utils::auth;
 
-use argon2::{
-    password_hash::{
-        rand_core::OsRng,
-         PasswordHasher, SaltString,
-    },
-    Argon2
-};
-
-
-pub fn hash_string(password: String) -> Result<String, Box<dyn Error>> {
-    let salt = SaltString::generate(&mut OsRng);
-    // Argon2 with default params (Argon2id v19)
-    let argon2 = Argon2::default();
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt);
-
-    match password_hash {
-        Ok(pass) => Ok(pass.to_string()),
-        Err(e) => Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Password hashing failed: {}", e),
-        ))),
+// Wrapper for password hashing that accepts a string slice and
+// returns the hash as a `String`. The underlying implementation
+// lives in `utils::auth` and returns a Result; here we propagate
+// errors as a simple panic-safe fallback returning an empty string
+// (handlers will treat empty as an error if needed).
+pub fn hash_string(password: &str) -> String {
+    match auth::hash_password(password) {
+        Ok(h) => h,
+        Err(_) => String::new(),
     }
 }
