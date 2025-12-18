@@ -1,13 +1,14 @@
 use axum::{
     http::StatusCode,
     response::Json,
-    extract::State,
+    extract::{State, Json as ExtractJson},
 };
 use crate::app_state::AppState;
 use crate::dtos::request::{ForgotPasswordRequest, ResetPasswordRequest, SigninRequest, SignupRequest};
 use serde_json::json;
 use crate::utils::util::hash_string;
 use crate::utils::auth::create_jwt;
+use crate::otp::{generate_otp, send_sms_otp, send_email_otp};
 
 // Auth handlers
 /// User registration
@@ -24,9 +25,8 @@ use crate::utils::auth::create_jwt;
 )]
 pub async fn signup(
     State(app_state): State<AppState>,
-    Json(payload): Json<SignupRequest>,
+    ExtractJson(payload): ExtractJson<SignupRequest>,
 ) -> impl axum::response::IntoResponse {
-    // 1. Hash password
     let hashed_password = hash_string(&payload.password);
 
     // 2. Create user in database
@@ -115,7 +115,7 @@ pub async fn signup(
 )]
 pub async fn signin(
     State(app_state): State<AppState>,
-    Json(payload): Json<SigninRequest>,
+    ExtractJson(payload): ExtractJson<SigninRequest>,
 ) -> impl axum::response::IntoResponse {
     // 1. Find user by email
     let user = match app_state.user_service.find_by_email(&payload.email).await {
@@ -140,7 +140,6 @@ pub async fn signin(
 
     // 2. Verify password
     let is_valid = crate::utils::auth::verify_password(&user.password, &payload.password);
-
     if !is_valid {
         let response = json!({
             "success": false,
@@ -237,10 +236,11 @@ pub async fn signout(
 )]
 pub async fn send_forgot_password_link(
     State(app_state): State<AppState>,
-    Json(payload): Json<ForgotPasswordRequest>,
+    ExtractJson(payload): ExtractJson<ForgotPasswordRequest>,
 ) -> impl axum::response::IntoResponse {
     // 1. Find user by email
     let user = match app_state.user_service.find_by_email(&payload.email).await {
+
         Ok(Some(user)) => user,
         Ok(None) => {
             let response = json!({
@@ -259,7 +259,6 @@ pub async fn send_forgot_password_link(
             return (StatusCode::BAD_REQUEST, Json(response));
         }
     };
-
     // 2. Generate reset code (simple random uuid for now)
     let reset_code = uuid::Uuid::new_v4().to_string();
 
@@ -275,8 +274,16 @@ pub async fn send_forgot_password_link(
         });
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
     }
-    // NOTE: Email sending and frontend config are not wired in AppState
-    // in this workspace. We return success after storing the reset code.
+    // Try sending reset code via email (best effort)
+    if let Err(_) = send_email_otp(&user.email, &reset_code).await {
+        // If email fails, we still return error because user expects a reset delivery
+        let response = json!({
+            "success": false,
+            "message": "Failed to send reset code via email",
+            "data": null
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
     // 5. Return response
     let response = json!({
         "success": true,
@@ -305,7 +312,7 @@ pub async fn send_forgot_password_link(
 )]
 pub async fn reset_password(
     State(app_state): State<AppState>,
-    Json(payload): Json<ResetPasswordRequest>,
+    ExtractJson(payload): ExtractJson<ResetPasswordRequest>,
 ) -> impl axum::response::IntoResponse {
     // 1. Verify reset code
     let user_id = match app_state.user_service
