@@ -1,6 +1,7 @@
 mod handlers;
 mod routes;
 mod app_state;
+mod otp;
 mod services;
 mod repository;
 mod models;
@@ -41,7 +42,7 @@ async fn main() {
     // default back to 8080 if you forgot HTTP_PORT
     let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
         let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "supersecret".into());
-        
+
 
     // ————————————— Build Postgres pool —————————————
     let db_url = format!(
