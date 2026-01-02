@@ -1,7 +1,8 @@
 /target
 .idea
 .env
+
 # Terraform
+.terraform/
 terraform.tfstate
 terraform.tfstate.*
-.terraform/
