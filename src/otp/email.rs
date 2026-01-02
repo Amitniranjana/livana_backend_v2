@@ -10,18 +10,22 @@ pub async fn send_email_otp(email: &str, otp: &str) -> Result<(), OtpError> {
     let config = aws_config::load_from_env().await;
     let client = Client::new(&config);
 
+    // FIX: Added .unwrap() because build() returns a Result
     let subject = Content::builder()
         .data("Your OTP Code")
         .charset("UTF-8")
-        .build();
+        .build()
+        .map_err(|e| OtpError::Internal(format!("Failed to build subject: {}", e)))?;
 
+    // FIX: Added .unwrap() or error handling here too
     let body = Content::builder()
         .data(format!("Your OTP is {}. It will expire soon.", otp))
         .charset("UTF-8")
-        .build();
+        .build()
+        .map_err(|e| OtpError::Internal(format!("Failed to build body: {}", e)))?;
 
     let message = Message::builder()
-        .subject(subject)
+        .subject(subject) // Ab ye 'Content' type hai, Result nahi
         .body(Body::builder().text(body).build())
         .build();
 
