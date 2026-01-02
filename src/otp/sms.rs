@@ -1,5 +1,5 @@
 // src/otp/sms.rs
-use aws_sdk_sns::{Client, Error};
+use aws_sdk_sns::Client;
 use crate::otp::error::OtpError;
 
 pub async fn send_sms_otp(phone: &str, otp: &str) -> Result<(), OtpError> {
@@ -9,7 +9,7 @@ pub async fn send_sms_otp(phone: &str, otp: &str) -> Result<(), OtpError> {
         ));
     }
 
-    let config = aws_config::load_from_env().await;
+    let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = Client::new(&config);
 
     let message = format!("Your OTP is {}. Do not share it.", otp);

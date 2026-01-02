@@ -7,7 +7,7 @@ pub async fn send_email_otp(email: &str, otp: &str) -> Result<(), OtpError> {
     let from = env::var("SES_FROM_EMAIL")
         .map_err(|_| OtpError::Internal("SES_FROM_EMAIL not set".into()))?;
 
-    let config = aws_config::load_from_env().await;
+   let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = Client::new(&config);
 
     // FIX: Added .unwrap() because build() returns a Result

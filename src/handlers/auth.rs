@@ -403,6 +403,7 @@ use crate::otp::{generate_otp, send_sms_otp, send_email_otp};
 
 // --- DTO for Testing OTP (Internal use) ---
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct TestOtpRequest {
     pub channel: String, // "sms" or "email"
     pub destination: String,
@@ -812,6 +813,7 @@ pub async fn reset_password(
     ),
     tag = "Authentication"
 )]
+#[allow(dead_code)]
 pub async fn test_otp_delivery(
     ExtractJson(payload): ExtractJson<TestOtpRequest>,
 ) -> impl IntoResponse {
