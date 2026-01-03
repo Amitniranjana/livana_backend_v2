@@ -1,3 +1,4 @@
+// src/otp/error.rs
 use thiserror::Error;
 
 #[derive(Debug, Error)]

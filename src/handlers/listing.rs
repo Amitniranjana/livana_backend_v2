@@ -320,7 +320,7 @@ pub async fn get_listing_by_id(
         row.get::<Option<String>, _>("last_name").unwrap_or_default()
     ).trim().to_string();
 
-    let host_details = json!({
+    let _host_details = json!({
         "id": row.get::<Uuid, _>("user_id").to_string(),
         "name": if host_name.is_empty() {
             row.get::<Option<String>, _>("host").unwrap_or_else(|| "Unknown".to_string())
