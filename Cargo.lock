@@ -236,6 +236,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-chime"
+version = "1.83.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b7db132d6059fcd216edb16636e97dda50eb1a286e4f3da49f517c06e2bc5f8"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-chimesdkidentity"
+version = "1.82.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ad437c351234da07725ff680e92917b85977b3bcf269083678236004f1de49"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
+name = "aws-sdk-chimesdkmessaging"
+version = "1.82.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7071ba4ef25124cf8b2fd67cb8a1ab02dc441c2a285edea5bab80ab8491f63d9"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-sesv2"
 version = "1.96.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1915,6 +1981,9 @@ dependencies = [
  "anyhow",
  "argon2",
  "aws-config",
+ "aws-sdk-chime",
+ "aws-sdk-chimesdkidentity",
+ "aws-sdk-chimesdkmessaging",
  "aws-sdk-sesv2",
  "aws-sdk-sns",
  "axum 0.8.4",

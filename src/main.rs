@@ -60,11 +60,19 @@ async fn main() {
     let user_repo = UserRepository::new(pool.clone());
     let user_svc = UserService::new(user_repo);
 
+    // AWS Init
+  let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+    .load()
+    .await;
+    let chime_app_instance_arn = env::var("CHIME_APP_INSTANCE_ARN").expect("CHIME_APP_INSTANCE_ARN must be set");
+    let chat_svc = crate::services::chat_service::ChatService::new(&aws_config, chime_app_instance_arn);
+
     // ——————————— Build your AppState & Router ———————————
     let app_state = AppState {
         // Wrap your concrete service in an Arc so it's Clone + Send + Sync
         user_service: Arc::from(user_svc),
-        db: pool.clone(), jwt_secret: jwt_secret.clone()
+        db: pool.clone(), jwt_secret: jwt_secret.clone(),
+        chat_service: Arc::new(chat_svc),
     };
 
     let app = Router::new()
@@ -72,6 +80,7 @@ async fn main() {
         .merge(auth_routes())
         .merge(user_routes())
         .merge(listing_routes())
+        .merge(crate::routes::chat_routes()) // Add chat routes
         .with_state(app_state);
 
     // —————————————— Bind & serve ——————————————

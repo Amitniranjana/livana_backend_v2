@@ -1,11 +1,14 @@
 use std::sync::Arc;
-use sqlx::PgPool;
+
+use sqlx::{Pool, Postgres};
 use crate::services::user_service::UserService;
+use crate::services::chat_service::ChatService; // Added this line
 #[allow(dead_code)]
 // AppState object will be the shared state and would be passed in controllers
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AppState {
-    pub user_service:Arc<UserService>,
-      pub db: PgPool,
+    pub user_service: Arc<UserService>,
+    pub db: Pool<Postgres>, // Changed from PgPool
     pub jwt_secret: String,
+    pub chat_service: Arc<ChatService>, // Added this line
 }
