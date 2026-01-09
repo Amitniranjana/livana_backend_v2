@@ -38,3 +38,6 @@ pub fn listing_routes() -> Router<AppState> {
         .route("/api/listings/{id}/like", post(like_listing))
         .route("/api/listings/{id}/save", post(save_listing))
 }
+
+pub mod chat_routes;
+pub use chat_routes::chat_routes;

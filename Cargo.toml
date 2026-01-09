@@ -56,3 +56,6 @@ utoipa-swagger-ui = { version = "5.0", features = ["axum"] }
 aws-config = "1"
 aws-sdk-sns = "1"
 aws-sdk-sesv2 = "1"
+aws-sdk-chime = "1"
+aws-sdk-chimesdkidentity = "1"
+aws-sdk-chimesdkmessaging = "1"
