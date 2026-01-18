@@ -438,6 +438,7 @@ pub async fn signup(
             &payload.phone_no,
             &hashed_password,
             &payload.gender,
+            &payload.user_role,
         )
         .await;
 

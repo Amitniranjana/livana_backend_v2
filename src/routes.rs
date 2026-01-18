@@ -39,5 +39,12 @@ pub fn listing_routes() -> Router<AppState> {
         .route("/api/listings/{id}/save", post(save_listing))
 }
 
+pub fn broker_routes() -> Router<AppState> {
+    use crate::handlers::broker::{onboarding, get_profile};
+    Router::new()
+        .route("/api/broker/onboarding", post(onboarding))
+        .route("/api/broker/profile", get(get_profile))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;

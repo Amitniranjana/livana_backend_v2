@@ -18,7 +18,7 @@ use dotenvy::dotenv;
 use crate::{
     app_state::AppState,
     repository::user_repository::UserRepository,
-    routes::{auth_routes, user_routes, listing_routes, health_routes},
+    routes::{auth_routes, user_routes, listing_routes, health_routes, broker_routes},
     services::user_service::UserService,
 };
 
@@ -80,6 +80,7 @@ async fn main() {
         .merge(auth_routes())
         .merge(user_routes())
         .merge(listing_routes())
+        .merge(broker_routes())
         .merge(crate::routes::chat_routes()) // Add chat routes
         .with_state(app_state);
 
