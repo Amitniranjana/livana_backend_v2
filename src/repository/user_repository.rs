@@ -37,14 +37,18 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
             last_name,
             email,
             password,
-            phone_no
-        ) VALUES ($1, $2, $3, $4, $5, $6)", );
+            phone_no,
+            user_role
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6,$7)", );
          let result=   query.bind(&user.id)
             .bind(&user.first_name)
             .bind(&user.last_name)
             .bind(&user.email)
             .bind(&user.password)
-            .bind(&user.phone_no).execute(&self.pool).await;
+
+            .bind(&user.phone_no)
+            .bind(&user.user_role)
+            .execute(&self.pool).await;
 
         match result {
             Ok(_)=>Ok(()),

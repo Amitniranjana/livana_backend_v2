@@ -22,7 +22,7 @@ impl UserService{
         }
     }
 
-    pub async fn create_user(&self, first_name: &str, last_name: &str, email: &str, phone_no: &str, password: &str, _gender: &str) -> Result<User, String> {
+    pub async fn create_user(&self, first_name: &str, last_name: &str, email: &str, phone_no: &str, password: &str, _gender: &str , user_role: &str) -> Result<User, String> {
         let user = User {
             id: Uuid::new_v4().to_string(),
             first_name: first_name.to_string(),
@@ -30,7 +30,7 @@ impl UserService{
             last_name: last_name.to_string(),
             email: email.to_string(),
             password: password.to_string(),
-            user_role: "user".to_string(),
+            user_role: user_role.to_string(),
             verified: false,
             last_active: Utc::now().to_string(),
             status: "active".to_string(),
