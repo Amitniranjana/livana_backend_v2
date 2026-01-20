@@ -5,39 +5,56 @@ use std::env;
 
 pub async fn send_email_otp(email: &str, otp: &str) -> Result<(), OtpError> {
     let from = env::var("SES_FROM_EMAIL")
-        .map_err(|_| OtpError::Internal("SES_FROM_EMAIL not set".into()))?;
+        .map_err(|_| OtpError::Internal("SES_FROM_EMAIL environment variable not set".into()))?;
 
-   let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+    let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = Client::new(&config);
 
-    // FIX: Added .unwrap() because build() returns a Result
     let subject = Content::builder()
         .data("Your OTP Code")
         .charset("UTF-8")
         .build()
-        .map_err(|e| OtpError::Internal(format!("Failed to build subject: {}", e)))?;
+        // If build returns generic result
+        .map_err(|_| OtpError::Internal("Failed to build email subject".into()))?;
 
-    // FIX: Added .unwrap() or error handling here too
-    let body = Content::builder()
-        .data(format!("Your OTP is {}. It will expire soon.", otp))
+    let body_text = format!("Your OTP is {}. It will expire soon.", otp);
+    let body_content = Content::builder()
+        .data(body_text)
         .charset("UTF-8")
         .build()
-        .map_err(|e| OtpError::Internal(format!("Failed to build body: {}", e)))?;
+        .map_err(|_| OtpError::Internal("Failed to build email body content".into()))?;
+
+    let body = Body::builder()
+        .text(body_content)
+        .build(); // Body builder usually returns Body
 
     let message = Message::builder()
-        .subject(subject) // Ab ye 'Content' type hai, Result nahi
-        .body(Body::builder().text(body).build())
+        .subject(subject)
+        .body(body)
+        .build(); // Message builder returns Message
+
+    let dest = Destination::builder()
+        .to_addresses(email)
         .build();
 
-    client
+    let email_content = EmailContent::builder()
+        .simple(message)
+        .build();
+
+    let output = client
         .send_email()
         .from_email_address(from)
-        .destination(Destination::builder().to_addresses(email).build())
-        .content(EmailContent::builder().simple(message).build())
+        .destination(dest)
+        .content(email_content)
         .send()
         .await
         .map_err(|e| OtpError::AwsError(e.to_string()))?;
 
-    tracing::info!("SES OTP email sent to {}", email);
+    if let Some(id) = output.message_id() {
+        tracing::info!("SES OTP email sent to {}, message_id={}", email, id);
+    } else {
+        tracing::info!("SES OTP email sent to {}", email);
+    }
+
     Ok(())
 }
