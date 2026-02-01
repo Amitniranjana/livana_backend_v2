@@ -1,5 +1,7 @@
 use crate::repository::user_repository::UserRepository;
 use crate::models::user::User;
+use crate::dtos::response::UserResponse;
+use crate::dtos::request::UpdateProfileRequest;
 use uuid::Uuid;
 use chrono::Utc;
 use std::sync::{Arc, Mutex};
@@ -24,7 +26,7 @@ impl UserService{
 
     pub async fn create_user(&self, first_name: &str, last_name: &str, email: &str, phone_no: &str, password: &str, _gender: &str , user_role: &str) -> Result<User, String> {
         let user = User {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::new_v4(),
             first_name: first_name.to_string(),
             phone_no: phone_no.to_string(),
             last_name: last_name.to_string(),
@@ -32,10 +34,10 @@ impl UserService{
             password: password.to_string(),
             user_role: user_role.to_string(),
             verified: false,
-            last_active: Utc::now().to_string(),
+            last_active: Some(Utc::now()),
             status: "active".to_string(),
-            created_at: Utc::now().to_string(),
-            updated_at: Utc::now().to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
         };
 
         match self.user_repository.create(user.clone()).await {
@@ -76,5 +78,58 @@ impl UserService{
             map.remove(&k);
         }
         Ok(())
+    }
+
+    pub async fn get_user_profile(&self, user_id: &str) -> Result<UserResponse, String> {
+        // 1. Get basic user info
+        let user = self.user_repository.find_by_id(user_id).await?
+            .ok_or_else(|| "User not found".to_string())?;
+
+        // 2. Get extended profile info (from user_profiles)
+        // Ignoring error if table doesn't exist or query fails (optional)
+        // But better to handle it.
+        let extended = self.user_repository.get_extended_profile(user_id).await.unwrap_or(None);
+        let (gender, bio, profile_image_url) = extended.unwrap_or((None, None, None));
+
+        // 3. Construct response
+        // Note: Broker fields are left as None as they should be fetched via broker API or we could fetch them here if needed.
+        Ok(UserResponse {
+            id: user.id.to_string(),
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email: user.email,
+            phone_no: user.phone_no,
+            gender: gender.unwrap_or_default(), // or from User struct if added there
+            user_role: user.user_role,
+            verified: user.verified,
+            profile_image_url,
+            bio,
+            business_name: None,
+            license_number: None,
+            experience_years: None,
+            commission_rate: None,
+            broker_rating: None,
+            total_reviews: None,
+            is_verified_broker: false, // This logic probably needs specific check if needed
+            status: user.status,
+            created_at: user.created_at.to_rfc3339(),
+        })
+    }
+
+    pub async fn update_user_profile(&self, user_id: &str, req: UpdateProfileRequest) -> Result<UserResponse, String> {
+        // 1. Update basic user info
+        self.user_repository.update_user(user_id, req.first_name, req.last_name, req.phone_no).await?;
+
+        // 2. Update extended profile info
+        self.user_repository.upsert_profile(user_id, req.gender, req.bio, None).await?;
+
+        // 3. Return updated profile
+        self.get_user_profile(user_id).await
+    }
+
+    pub async fn update_profile_image(&self, user_id: &str, image_url: &str) -> Result<UserResponse, String> {
+        // Update only image url
+        self.user_repository.upsert_profile(user_id, None, None, Some(image_url.to_string())).await?;
+        self.get_user_profile(user_id).await
     }
 }

@@ -12,6 +12,7 @@ use std::{env, sync::Arc, net::SocketAddr};
 use axum::{Router, serve};
 use sqlx::PgPool;
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
 
 use dotenvy::dotenv;
 
@@ -81,7 +82,9 @@ async fn main() {
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())
+
         .merge(crate::routes::chat_routes()) // Add chat routes
+        .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
     // —————————————— Bind & serve ——————————————

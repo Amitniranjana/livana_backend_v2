@@ -3,8 +3,6 @@ use serde::Serialize;
 
 use utoipa::ToSchema;
 
-
-
 // Request/Response DTOs
 
 #[allow(dead_code)]

@@ -1,12 +1,18 @@
 use axum::{
     http::StatusCode,
-    response::Json,
+    response::{Json, IntoResponse},
     extract::State,
 };
 use crate::app_state::AppState;
 
 use serde_json::json;
 use crate::dtos::request::UpdateProfileRequest;
+use crate::dtos::response::{ApiResponse};
+use crate::utils::auth_extractor::AuthenticationUser;
+use axum_extra::extract::Multipart;
+use std::path::Path;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 /// Get user profile
 #[utoipa::path(
@@ -20,43 +26,29 @@ use crate::dtos::request::UpdateProfileRequest;
     tag = "User Profile"
 )]
 pub async fn get_profile(
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement get profile logic
-    // 1. Extract user from JWT token
-    // 2. Get user data from database
-    // 3. Return user profile
+    let result = app_state.user_service.get_user_profile(&auth_user.user_id).await;
 
-    let response = json!({
-        "success": true,
-        "message": "User profile retrieved successfully",
-        "data": {
-            "user": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "first_name": "John",
-                "last_name": "Doe",
-                "email": "john.doe@example.com",
-                "phone_no": "1234567890",
-                "gender": "male",
-                "user_role": "user",
-                "verified": true,
-                "profile_image_url": "https://example.com/profile.jpg",
-                "bio": "Software developer with 5 years of experience in web development and mobile apps",
-                "business_name": null,
-                "license_number": null,
-                "experience_years": null,
-                "commission_rate": null,
-                "broker_rating": null,
-                "total_reviews": null,
-                "is_verified_broker": false,
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-15T10:30:00Z"
-            }
+    match result {
+        Ok(user_response) => {
+            let response = ApiResponse {
+                success: true,
+                message: "User profile retrieved successfully".to_string(),
+                data: user_response,
+            };
+            (StatusCode::OK, Json(response)).into_response()
         }
-    });
-
-    (StatusCode::OK, Json(response))
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": e,
+                "data": null
+            });
+            (StatusCode::NOT_FOUND, Json(response)).into_response()
+        }
+    }
 }
 
 /// Update user profile
@@ -73,44 +65,30 @@ pub async fn get_profile(
     tag = "User Profile"
 )]
 pub async fn update_profile(
-    State(_app_state): State<AppState>,
-    Json(_payload): Json<UpdateProfileRequest>,
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
+    Json(payload): Json<UpdateProfileRequest>,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement update profile logic
-    // 1. Extract user from JWT token
-    // 2. Update user data in database
-    // 3. Return updated profile
+    let result = app_state.user_service.update_user_profile(&auth_user.user_id, payload).await;
 
-    let response = json!({
-        "success": true,
-        "message": "Profile updated successfully",
-        "data": {
-            "user": {
-                "id": "123e4567-e89b-12d3-a456-426614174000",
-                "first_name": "John",
-                "last_name": "Smith",
-                "email": "john.doe@example.com",
-                "phone_no": "9876543210",
-                "gender": "male",
-                "user_role": "user",
-                "verified": true,
-                "profile_image_url": "https://example.com/profile.jpg",
-                "bio": "Updated bio: Full-stack developer passionate about creating user-friendly applications",
-                "business_name": null,
-                "license_number": null,
-                "experience_years": null,
-                "commission_rate": null,
-                "broker_rating": null,
-                "total_reviews": null,
-                "is_verified_broker": false,
-                "status": "active",
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-15T11:45:00Z"
-            }
+    match result {
+        Ok(user_response) => {
+            let response = ApiResponse {
+                success: true,
+                message: "Profile updated successfully".to_string(),
+                data: user_response,
+            };
+            (StatusCode::OK, Json(response)).into_response()
         }
-    });
-
-    (StatusCode::OK, Json(response))
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to update profile: {}", e),
+                "data": null
+            });
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+        }
+    }
 }
 
 /// Upload profile image
@@ -126,25 +104,73 @@ pub async fn update_profile(
     tag = "User Profile"
 )]
 pub async fn upload_profile_image(
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
+    mut multipart: Multipart,
 ) -> impl axum::response::IntoResponse {
-    // TODO: Implement profile image upload logic
-    // 1. Extract user from JWT token
-    // 2. Handle file upload
-    // 3. Save image to storage
-    // 4. Update user profile_image_url
-    // 5. Return response
+    let mut image_url: Option<String> = None;
 
-    let response = json!({
-        "success": true,
-        "message": "Profile image uploaded successfully",
-        "data": {
-            "image_url": "https://example.com/uploads/profile_123e4567-e89b-12d3-a456-426614174000.jpg",
-            "user_id": "123e4567-e89b-12d3-a456-426614174000",
-            "file_size": "2.5MB",
-            "uploaded_at": "2024-01-15T12:00:00Z"
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+
+        if name == "file" || name == "image" {
+            let file_name = field.file_name().unwrap_or("image.jpg").to_string();
+            let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+
+            // Basic validation
+            if !content_type.starts_with("image/") {
+                return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid file type"}))).into_response();
+            }
+
+            let data = field.bytes().await.unwrap_or_default();
+            if data.len() > 5 * 1024 * 1024 { // 5MB limit
+                 return (StatusCode::PAYLOAD_TOO_LARGE, Json(json!({"success": false, "message": "File too large (max 5MB)"}))).into_response();
+            }
+
+            // Ensure uploads directory exists
+            if let Err(e) = tokio::fs::create_dir_all("uploads").await {
+                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to create uploads dir: {}", e)}))).into_response();
+            }
+
+            // Generate unique filename
+            let ext = Path::new(&file_name).extension().and_then(|s| s.to_str()).unwrap_or("jpg");
+            let new_filename = format!("{}_{}.{}", auth_user.user_id, uuid::Uuid::new_v4(), ext);
+            let filepath = format!("uploads/{}", new_filename);
+
+            // Save file
+            let mut file = match File::create(&filepath).await {
+                Ok(f) => f,
+                Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to create file: {}", e)}))).into_response(),
+            };
+
+            if let Err(e) = file.write_all(&data).await {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to write file: {}", e)}))).into_response();
+            }
+
+            // Construct URL (Assuming served at /uploads/)
+            // Ideally should use a configured base URL
+            image_url = Some(format!("/uploads/{}", new_filename));
         }
-    });
+    }
 
-    (StatusCode::OK, Json(response))
+    if let Some(url) = image_url {
+        let result = app_state.user_service.update_profile_image(&auth_user.user_id, &url).await;
+         match result {
+            Ok(_) => {
+                 let response = json!({
+                    "success": true,
+                    "message": "Profile image uploaded successfully",
+                    "data": {
+                        "image_url": url
+                    }
+                });
+                (StatusCode::OK, Json(response)).into_response()
+            }
+            Err(e) => {
+                 (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to update profile: {}", e)}))).into_response()
+            }
+        }
+    } else {
+        (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "No file uploaded"}))).into_response()
+    }
 }
