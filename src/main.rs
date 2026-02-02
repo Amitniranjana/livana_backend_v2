@@ -82,7 +82,6 @@ async fn main() {
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())
-
         .merge(crate::routes::chat_routes()) // Add chat routes
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
