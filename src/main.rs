@@ -61,12 +61,30 @@ async fn main() {
     let user_repo = UserRepository::new(pool.clone());
     let user_svc = UserService::new(user_repo);
 
+    // KYC
+    let kyc_repo = Arc::new(crate::repository::kyc_repository::KycRepository::new(pool.clone()));
+
     // AWS Init
-  let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-    .load()
-    .await;
+    let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .load()
+        .await;
+
     let chime_app_instance_arn = env::var("CHIME_APP_INSTANCE_ARN").expect("CHIME_APP_INSTANCE_ARN must be set");
     let chat_svc = crate::services::chat_service::ChatService::new(&aws_config, chime_app_instance_arn);
+
+    // S3 & KYC Service
+    let s3_client = aws_sdk_s3::Client::new(&aws_config);
+    let s3_bucket_name = env::var("KYC_BUCKET_NAME").unwrap_or_else(|_| "livana-kyc-documents".to_string());
+    let s3_storage = Arc::new(crate::services::storage::S3Storage::new(s3_client, s3_bucket_name));
+
+    let ocr_service = Arc::new(crate::services::ocr::TesseractOcr::new());
+
+    let kyc_svc = crate::services::kyc_service::KycService::new(
+        kyc_repo,
+        s3_storage,
+        ocr_service
+    );
+
 
     // ——————————— Build your AppState & Router ———————————
     let app_state = AppState {
@@ -74,6 +92,7 @@ async fn main() {
         user_service: Arc::from(user_svc),
         db: pool.clone(), jwt_secret: jwt_secret.clone(),
         chat_service: Arc::new(chat_svc),
+        kyc_service: Arc::new(kyc_svc),
     };
 
     let app = Router::new()
@@ -82,7 +101,8 @@ async fn main() {
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())
-        .merge(crate::routes::chat_routes()) // Add chat routes
+        .merge(crate::routes::chat_routes())
+        .merge(crate::routes::kyc_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

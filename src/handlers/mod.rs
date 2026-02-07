@@ -4,3 +4,4 @@ pub mod listing;
 pub mod health;
 pub mod chat_handler;
 pub mod broker;
+pub mod kyc;

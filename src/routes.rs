@@ -48,3 +48,6 @@ pub fn broker_routes() -> Router<AppState> {
 
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
+
+pub mod kyc;
+pub use kyc::kyc_routes;
