@@ -154,56 +154,143 @@ pub async fn get_listings(
             tag = "Property Listings"
         )]
         pub async fn create_listing(
-            State(_app_state): State<AppState>,
-            Json(_payload): Json<CreateListingRequest>,
-        ) -> impl axum::response::IntoResponse {
-            // TODO: Implement create listing logic
+            State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateListingRequest>,
+) -> impl axum::response::IntoResponse {
             // 1. Extract user from JWT token
-            // 2. Validate listing data
-            // 3. Create listing in database
-            // 4. Return created listing
+    let bearer = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer ").map(|s| s.to_string()));
+
+    let bearer = match bearer {
+        Some(b) => b,
+        None => {
+            let body = json!({"success": false, "message": "Missing or invalid Authorization header"});
+            return (StatusCode::UNAUTHORIZED, Json(body));
+        }
+    };
+
+    let decoding_key = DecodingKey::from_secret(app_state.jwt_secret.as_bytes());
+    let user_id = match extract_user_id_from_jwt(&bearer, &decoding_key) {
+        Ok(uid) => uid,
+        Err(err_msg) => {
+            let body = json!({"success": false, "message": format!("Auth error: {}", err_msg)});
+            return (StatusCode::UNAUTHORIZED, Json(body));
+        }
+    };
+
+    // 2. Create listing in database
+    let listing_id = Uuid::new_v4();
+    let current_time = Utc::now();
+
+    // Serialize images to JSON Value
+    let images_json = serde_json::to_value(payload.images.clone().unwrap_or_default()).unwrap_or(json!([]));
+
+    // Default values if not provided
+    let status = "active";
+    let views = 0;
+    let shares = 0;
+    let is_broker_verified = false;
+    let broker_contact_allowed = true;
+    let priority_listing = false;
+    let default_listing_type = "direct".to_string();
+
+    let result = sqlx::query!(
+        r#"
+        INSERT INTO listings (
+            id, title, description, city, area, pincode,
+            accommodation, apartment_type, roommates, gender_preference,
+            carpet_area, bathrooms, price, label, likes, host,
+            is_featured, user_id, images, status, views, shares,
+            broker_commission, is_broker_verified, broker_contact_allowed,
+            priority_listing, listing_type, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+        RETURNING *
+        "#,
+        listing_id,
+        payload.title,
+        payload.description,
+        payload.city,
+        payload.area,
+        payload.pincode,
+        payload.accommodation,
+        payload.apartment_type,
+        payload.roommates,
+        payload.gender_preference,
+        payload.carpet_area,
+        payload.bathrooms,
+        payload.price as i64,
+        payload.label,
+        0, // likes
+        payload.host,
+        false, // is_featured
+        user_id,
+        images_json,
+        status,
+        views,
+        shares,
+        payload.broker_commission,
+        is_broker_verified,
+        broker_contact_allowed,
+        priority_listing,
+        payload.listing_type.as_ref().unwrap_or(&default_listing_type),
+        current_time,
+        current_time
+    )
+    .fetch_one(&app_state.db)
+    .await;
+
+    match result {
+        Ok(row) => {
+            let images_value: serde_json::Value = row.images.clone().unwrap_or(json!([]));
+            let images: Vec<String> = serde_json::from_value(images_value).unwrap_or_default();
 
             let response = json!({
                 "success": true,
                 "message": "Listing created successfully",
                 "data": {
                     "listing": {
-                        "id": "456e7890-e89b-12d3-a456-426614174003",
-                        "title": "New 3BHK Apartment with Garden",
-                        "description": "Spacious 3BHK apartment with beautiful garden view, modern amenities, and 24/7 security.",
-                        "city": "Bangalore",
-                        "area": "Whitefield",
-                        "pincode": "560066",
-                        "accommodation": "Private",
-                        "apartment_type": "3BHK",
-                        "roommates": 0,
-                        "gender_preference": "Any",
-                        "carpet_area": 1800,
-                        "bathrooms": 3,
-                        "price": 35000,
-                        "label": "Luxury",
-                        "likes": 0,
-                        "host": "Luxury Homes",
-                        "is_featured": false,
-                        "user_id": "123e4567-e89b-12d3-a456-426614174000",
-                        "images": [
-                            /* Lines 167-169 omitted */
-                            "https://example.com/listing3_img3.jpg"
-                        ],
-                        "status": "active",
-                        "views": 0,
-                        "shares": 0,
-                        "broker_commission": null,
-                        "is_broker_verified": false,
-                        "broker_contact_allowed": true,
-                        "priority_listing": false,
-                        "listing_type": "direct",
-                        "created_at": "2024-01-15T15:00:00Z"
+                        "id": row.id.to_string(),
+                        "title": row.title,
+                        "description": row.description,
+                        "city": row.city,
+                        "area": row.area,
+                        "pincode": row.pincode,
+                        "accommodation": row.accommodation,
+                        "apartment_type": row.apartment_type,
+                        "roommates": row.roommates,
+                        "gender_preference": row.gender_preference,
+                        "carpet_area": row.carpet_area,
+                        "bathrooms": row.bathrooms,
+                        "price": row.price,
+                        "label": row.label,
+                        "likes": row.likes,
+                        "host": row.host,
+                        "is_featured": row.is_featured,
+                        "user_id": row.user_id.to_string(),
+                        "images": images,
+                        "status": row.status,
+                        "views": row.views,
+                        "shares": row.shares,
+                        "broker_commission": row.broker_commission,
+                        "is_broker_verified": row.is_broker_verified,
+                        "broker_contact_allowed": row.broker_contact_allowed,
+                        "priority_listing": row.priority_listing,
+                        "listing_type": row.listing_type,
+                        "created_at": row.created_at.map(|dt| dt.to_rfc3339()).unwrap_or_default()
                     }
                 }
             });
-
             (StatusCode::CREATED, Json(response))
+        },
+        Err(e) => {
+            let body = json!({"success": false, "message": format!("Database error: {}", e)});
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body))
+        }
+    }
         }
 
 

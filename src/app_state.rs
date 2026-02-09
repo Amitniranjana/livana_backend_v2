@@ -10,5 +10,6 @@ pub struct AppState {
     pub user_service: Arc<UserService>,
     pub db: Pool<Postgres>, // Changed from PgPool
     pub jwt_secret: String,
-    pub chat_service: Arc<ChatService>, // Added this line
+    pub chat_service: Arc<ChatService>,
+    pub kyc_service: Arc<crate::services::kyc_service::KycService>,
 }

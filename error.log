@@ -1,0 +1,15 @@
+    Checking livana-backend-v2 v0.1.0 (C:\Users\yamit\Downloads\Desktop\livanaFinalbackend\backend-services)
+error[E0599]: no method named `unwrap_or` found for type `i32` in the current scope
+   --> src\handlers\listing.rs:221:27
+    |
+221 |         payload.roommates.unwrap_or(0),
+    |                           ^^^^^^^^^ method not found in `i32`
+
+error[E0599]: no method named `unwrap_or` found for type `i32` in the current scope
+   --> src\handlers\listing.rs:225:23
+    |
+225 |         payload.price.unwrap_or(0) as i64,
+    |                       ^^^^^^^^^ method not found in `i32`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `livana-backend-v2` (bin "livana-backend-v2") due to 2 previous errors
