@@ -52,16 +52,45 @@ pub async fn add_member(
     }
 }
 
+// Import AuthenticationUser
+use crate::utils::auth_extractor::AuthenticationUser;
+
 /// Send Message
 pub async fn send_message(
     State(app_state): State<AppState>,
-    Path(channel_arn): Path<String>,
+    auth_user: AuthenticationUser,
     Json(payload): Json<SendMessageRequest>,
 ) -> impl IntoResponse {
-    // In real app, extracting sender from Auth token
-    let sender_arn = std::env::var("CHIME_ADMIN_ARN").unwrap_or_default();
+    // 1. Get user from DB to check if they have a Chime ARN
+    let user = match app_state.user_service.user_repository.find_by_id(&auth_user.user_id).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return (StatusCode::UNAUTHORIZED, Json(json!({"error": "User not found"}))).into_response(),
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e}))).into_response(),
+    };
 
-    match app_state.chat_service.send_message(&channel_arn, &payload.content, &sender_arn).await {
+    // 2. Determine Sender ARN (Lazy Creation)
+    let sender_arn = if let Some(arn) = user.chime_user_arn {
+        arn
+    } else {
+        // Create Chime User
+        let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
+        let user_name = format!("{} {}", user.first_name, user.last_name);
+
+        match app_state.chat_service.create_app_instance_user(&app_instance_arn, &user.id.to_string(), &user_name).await {
+            Ok(chat_user) => {
+                // Save to DB
+                if let Err(e) = app_state.user_service.update_chime_arn(&user.id.to_string(), &chat_user.app_instance_user_arn).await {
+                     eprintln!("Failed to save chime ARN: {}", e);
+                     // Continue anyway since we have the ARN, but log error
+                }
+                chat_user.app_instance_user_arn
+            },
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": format!("Failed to create chime user: {}", e)}))).into_response(),
+        }
+    };
+
+    // 3. Send Message as USER
+    match app_state.chat_service.send_message(&payload.channel_arn, &payload.content, &sender_arn).await {
         Ok(msg_id) => (StatusCode::OK, Json(json!({"message_id": msg_id}))).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response(),
     }

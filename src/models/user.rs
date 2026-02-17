@@ -60,6 +60,7 @@ pub struct User {
     #[schema(example = "Doe")]
     pub last_name: String,
     pub email: String,
+    pub chime_user_arn: Option<String>,
     pub password: String,
 
     #[schema(example = "user")]

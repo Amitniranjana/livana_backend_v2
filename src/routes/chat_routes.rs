@@ -8,6 +8,6 @@ pub fn chat_routes() -> Router<AppState> {
         .route("/chat/channels", post(create_channel))
 
         .route("/chat/channels/{channel_arn}/members", post(add_member))
-        .route("/chat/channels/{channel_arn}/messages", post(send_message))
+        .route("/chat/messages", post(send_message))
         .route("/chat/auth", get(get_auth_creds))
 }

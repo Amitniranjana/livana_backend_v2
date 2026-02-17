@@ -38,6 +38,7 @@ impl UserService{
             status: "active".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            chime_user_arn: None,
         };
 
         match self.user_repository.create(user.clone()).await {
@@ -131,5 +132,9 @@ impl UserService{
         // Update only image url
         self.user_repository.upsert_profile(user_id, None, None, Some(image_url.to_string())).await?;
         self.get_user_profile(user_id).await
+    }
+
+    pub async fn update_chime_arn(&self, user_id: &str, arn: &str) -> Result<(), String> {
+        self.user_repository.update_chime_user_arn(user_id, arn).await
     }
 }

@@ -1,0 +1,27 @@
+﻿cargo :     Checking 
+livana-backend-v2 
+v0.1.0 (C:\Users\yami
+t\Downloads\Desktop\l
+ivanaFinalbackend\bac
+kend-services)
+At line:1 char:1
++ cargo check 2>&1 | 
+Out-File -Encoding 
+utf8 
+check_output_2.txt
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (    Che   
+ cking li...ckend    
+-services):Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+    Finished `dev` 
+profile [unoptimized 
++ debuginfo] 
+target(s) in 2.37s

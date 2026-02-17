@@ -35,6 +35,7 @@ pub struct ChatChannel {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendMessageRequest {
+    pub channel_arn: String,
     pub content: String,
     pub metadata: Option<String>,
 }
