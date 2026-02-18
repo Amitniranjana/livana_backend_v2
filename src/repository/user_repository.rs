@@ -104,6 +104,20 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
         }
     }
 
+    pub async fn update_chime_user_arn(&self, user_id: &str, arn: &str) -> Result<(), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        let result = sqlx::query("UPDATE users SET chime_user_arn = $2 WHERE id = $1")
+            .bind(uuid)
+            .bind(arn)
+            .execute(&self.pool)
+            .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     // Upsert into user_profiles
     // Note: This assumes a table `user_profiles` exists.
     pub async fn upsert_profile(&self, user_id: &str, gender: Option<String>, bio: Option<String>, profile_image_url: Option<String>) -> Result<(), String> {
