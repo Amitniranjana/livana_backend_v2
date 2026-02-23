@@ -19,7 +19,10 @@ use dotenvy::dotenv;
 use crate::{
     app_state::AppState,
     repository::user_repository::UserRepository,
-    routes::{auth_routes, user_routes, listing_routes, health_routes, broker_routes},
+    routes::{
+        auth_routes, user_routes, listing_routes, health_routes, broker_routes,
+        property_search_routes, suggestions_routes, carecrew_routes,
+    },
     services::user_service::UserService,
 };
 
@@ -103,6 +106,11 @@ async fn main() {
         .merge(broker_routes())
         .merge(crate::routes::chat_routes())
         .merge(crate::routes::kyc_routes())
+        // ── New: Property Search, Filters, Suggestions (Steps 1-3) ──
+        .merge(property_search_routes())
+        .merge(suggestions_routes())
+        // ── New: CareCrew Module (Step 4) ────────────────────────────
+        .merge(carecrew_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
