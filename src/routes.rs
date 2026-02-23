@@ -90,6 +90,24 @@ pub fn carecrew_routes() -> Router<AppState> {
         .route("/api/v1/carecrew/providers/{id}/bookings",     get(get_provider_bookings))
 }
 
+/// CareCrew Tickets (Support Module)
+pub fn carecrew_ticket_routes() -> Router<AppState> {
+    use axum::routing::patch;
+    use crate::handlers::carecrew_tickets::{
+        create_ticket_handler,
+        list_tickets_handler,
+        get_ticket_handler,
+        update_ticket_handler,
+        add_comment_handler,
+    };
+    Router::new()
+        .route("/api/v1/carecrew/tickets",                     post(create_ticket_handler))
+        .route("/api/v1/carecrew/tickets",                     get(list_tickets_handler))
+        .route("/api/v1/carecrew/tickets/{ticketId}",          get(get_ticket_handler))
+        .route("/api/v1/carecrew/tickets/{ticketId}",          patch(update_ticket_handler))
+        .route("/api/v1/carecrew/tickets/{ticketId}/comments", post(add_comment_handler))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 

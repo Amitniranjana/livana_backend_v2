@@ -21,7 +21,7 @@ use crate::{
     repository::user_repository::UserRepository,
     routes::{
         auth_routes, user_routes, listing_routes, health_routes, broker_routes,
-        property_search_routes, suggestions_routes, carecrew_routes,
+        property_search_routes, suggestions_routes, carecrew_routes, carecrew_ticket_routes,
     },
     services::user_service::UserService,
 };
@@ -111,6 +111,8 @@ async fn main() {
         .merge(suggestions_routes())
         // ── New: CareCrew Module (Step 4) ────────────────────────────
         .merge(carecrew_routes())
+        // ── New: CareCrew Tickets (Support Module) ───────────────────
+        .merge(carecrew_ticket_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
