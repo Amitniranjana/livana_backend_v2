@@ -46,6 +46,50 @@ pub fn broker_routes() -> Router<AppState> {
         .route("/api/broker/profile", get(get_profile))
 }
 
+/// Property Search + Filters (Steps 1 & 2)
+pub fn property_search_routes() -> Router<AppState> {
+    use crate::handlers::property_search::{
+        search_properties_handler,
+        get_filters_handler,
+    };
+    Router::new()
+        .route("/api/v1/properties/search",  get(search_properties_handler))
+        .route("/api/v1/properties/filters", get(get_filters_handler))
+}
+
+/// Autocomplete / Suggestions (Step 3)
+pub fn suggestions_routes() -> Router<AppState> {
+    use crate::handlers::property_search::get_suggestions_handler;
+    Router::new()
+        .route("/api/v1/search/suggestions", get(get_suggestions_handler))
+}
+
+/// CareCrew Module (Step 4)
+pub fn carecrew_routes() -> Router<AppState> {
+    use crate::handlers::carecrew::{
+        list_services,
+        get_service,
+        search_providers,
+        get_featured_providers,
+        get_provider,
+        create_booking,
+        update_booking_status,
+        get_provider_bookings,
+    };
+    Router::new()
+        // Service endpoints (public)
+        .route("/api/v1/carecrew/services",                    get(list_services))
+        .route("/api/v1/carecrew/services/{id}",               get(get_service))
+        // Provider endpoints (public)
+        .route("/api/v1/carecrew/providers",                   get(search_providers))
+        .route("/api/v1/carecrew/providers/featured",          get(get_featured_providers))
+        .route("/api/v1/carecrew/providers/{id}",              get(get_provider))
+        // Booking endpoints (authenticated)
+        .route("/api/v1/carecrew/bookings",                    post(create_booking))
+        .route("/api/v1/carecrew/bookings/{id}/status",        put(update_booking_status))
+        .route("/api/v1/carecrew/providers/{id}/bookings",     get(get_provider_bookings))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 
