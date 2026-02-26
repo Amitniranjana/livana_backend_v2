@@ -6,3 +6,5 @@ pub mod kyc_service;
 pub mod property_search_service;
 pub mod carecrew_service;
 pub mod carecrew_tickets_service;
+pub mod google_oauth_service;
+pub mod chat_db_service;

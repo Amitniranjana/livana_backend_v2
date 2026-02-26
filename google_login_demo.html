@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Livana — Google Sign-In</title>
+  <meta name="description" content="Sign in to Livana with your Google account and view your recent chats." />
+
+  <!-- Google Identity Services SDK -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Design Tokens ───────────────────────────────────────────────── */
+    :root {
+      --brand:       #6C63FF;
+      --brand-dark:  #4B44CC;
+      --surface:     #0F0F1A;
+      --card:        #1A1A2E;
+      --card-border: rgba(108,99,255,0.2);
+      --text:        #E8E8F0;
+      --muted:       #8888AA;
+      --success:     #22D3A5;
+      --error:       #FF5C5C;
+      --radius:      14px;
+      --transition:  0.22s ease;
+    }
+
+    /* ── Reset & Base ────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--surface);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+    }
+
+    /* ── Hero / Logo area ───────────────────────────────────────────── */
+    .logo {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6C63FF, #A78BFA);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -1px;
+      margin-bottom: 6px;
+    }
+    .tagline { color: var(--muted); font-size: 0.9rem; margin-bottom: 48px; }
+
+    /* ── Auth card ───────────────────────────────────────────────────── */
+    #auth-section {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+      animation: fadeUp 0.4s ease;
+    }
+    #auth-section h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
+    #auth-section p  { color: var(--muted); font-size: 0.875rem; margin-bottom: 32px; }
+
+    /* Google sign-in button container */
+    #g_id_onload { display: none; }
+    .g-signin-wrapper {
+      display: flex;
+      justify-content: center;
+    }
+
+    /* ── Status messages ──────────────────────────────────────────────── */
+    .status-msg {
+      margin-top: 20px;
+      font-size: 0.85rem;
+      min-height: 20px;
+      transition: color var(--transition);
+    }
+    .status-msg.error   { color: var(--error); }
+    .status-msg.success { color: var(--success); }
+    .status-msg.loading { color: var(--brand); }
+
+    /* ── User header (shown after login) ──────────────────────────────── */
+    #user-header {
+      display: none;
+      align-items: center;
+      gap: 14px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 18px 24px;
+      width: 100%;
+      max-width: 620px;
+      margin-bottom: 28px;
+      animation: fadeUp 0.35s ease;
+    }
+    #user-header img {
+      width: 54px; height: 54px;
+      border-radius: 50%;
+      border: 2px solid var(--brand);
+      object-fit: cover;
+    }
+    #user-header .info { text-align: left; }
+    #user-header .info .name  { font-weight: 600; font-size: 1rem; }
+    #user-header .info .email { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    #signout-btn {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all var(--transition);
+    }
+    #signout-btn:hover { border-color: var(--error); color: var(--error); }
+
+    /* ── Recent chats container ──────────────────────────────────────── */
+    #chats-section { display: none; width: 100%; max-width: 620px; }
+    #chats-section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 16px;
+    }
+
+    /* ── Chat card ───────────────────────────────────────────────────── */
+    .chat-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      margin-bottom: 12px;
+      transition: transform var(--transition), box-shadow var(--transition);
+      cursor: pointer;
+      animation: fadeUp 0.3s ease both;
+    }
+    .chat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(108,99,255,0.15);
+    }
+    .chat-avatar {
+      width: 46px; height: 46px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--brand), #A78BFA);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+      color: #fff;
+    }
+    .chat-body { flex: 1; overflow: hidden; }
+    .chat-body .chat-id {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 4px;
+    }
+    .chat-body .message-preview {
+      font-size: 0.9rem;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-time {
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Unread badge ────────────────────────────────────────────────── */
+    .badge {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--brand);
+      flex-shrink: 0;
+    }
+
+    /* ── Empty state ─────────────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 0;
+      color: var(--muted);
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state p { font-size: 0.9rem; }
+
+    /* ── Skeleton loading ────────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--card) 25%, rgba(108,99,255,0.06) 50%, var(--card) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 8px;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    /* ── Animations ──────────────────────────────────────────────────── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="logo">Livana</div>
+  <p class="tagline">Your property & community platform</p>
+
+  <!-- ── Auth section (shown when not logged in) ── -->
+  <section id="auth-section">
+    <h2>Welcome back</h2>
+    <p>Sign in to view your conversations and manage your listings.</p>
+
+    <!-- GIS renders the button into this div -->
+    <div class="g-signin-wrapper">
+      <div id="google-btn"></div>
+    </div>
+
+    <p class="status-msg" id="status-msg"></p>
+  </section>
+
+  <!-- ── User header (shown after login) ── -->
+  <div id="user-header">
+    <img id="user-pic" src="" alt="Profile picture" />
+    <div class="info">
+      <div class="name"  id="user-name"></div>
+      <div class="email" id="user-email"></div>
+    </div>
+    <button id="signout-btn" onclick="handleSignOut()">Sign out</button>
+  </div>
+
+  <!-- ── Recent chats section ── -->
+  <section id="chats-section">
+    <h3>Recent Conversations</h3>
+    <div id="chats-list"></div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────
+       Configuration — update GOOGLE_CLIENT_ID and API_BASE_URL
+       before going to production.
+  ─────────────────────────────────────────────────────────────── -->
+  <script>
+    // ── Config ──────────────────────────────────────────────────────────────
+    const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
+    const API_BASE_URL     = 'http://localhost:9090'; // your backend URL
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let accessToken = localStorage.getItem('livana_jwt') || null;
+
+    // ── DOM refs ─────────────────────────────────────────────────────────────
+    const authSection  = document.getElementById('auth-section');
+    const userHeader   = document.getElementById('user-header');
+    const chatsSection = document.getElementById('chats-section');
+    const chatsList    = document.getElementById('chats-list');
+    const statusMsg    = document.getElementById('status-msg');
+
+    // ── Utility: show status ──────────────────────────────────────────────────
+    function setStatus(msg, type = '') {
+      statusMsg.textContent = msg;
+      statusMsg.className   = 'status-msg ' + type;
+    }
+
+    // ── Utility: format timestamp ─────────────────────────────────────────────
+    function formatTime(isoString) {
+      const d = new Date(isoString);
+      const now = new Date();
+      const diffMs  = now - d;
+      const diffMin = Math.floor(diffMs / 60000);
+      if (diffMin < 1)   return 'Just now';
+      if (diffMin < 60)  return `${diffMin}m ago`;
+      if (diffMin < 1440) return `${Math.floor(diffMin / 60)}h ago`;
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+
+    // ── Utility: get initials from uuid (visual placeholder) ─────────────────
+    function avatarLetter(chatId) {
+      return chatId ? chatId.charAt(0).toUpperCase() : '?';
+    }
+
+    // ── On page load: if we have a stored JWT, skip login ────────────────────
+    window.addEventListener('load', () => {
+      if (accessToken) {
+        const stored = JSON.parse(localStorage.getItem('livana_user') || 'null');
+        if (stored) showLoggedInUI(stored);
+        fetchRecentChats();
+      }
+      // Initialize Google Identity Services
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredential,
+      });
+      google.accounts.id.renderButton(
+        document.getElementById('google-btn'),
+        {
+          theme: 'filled_black',
+          size:  'large',
+          shape: 'pill',
+          width: 300,
+          text:  'signin_with',
+        }
+      );
+    });
+
+    // ── Step 1: Receive id_token from GIS ────────────────────────────────────
+    async function handleGoogleCredential(response) {
+      setStatus('Verifying with Google…', 'loading');
+      await exchangeIdToken(response.credential);
+    }
+
+    // ── Step 2: Send id_token to backend → get JWT ───────────────────────────
+    async function exchangeIdToken(idToken) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/auth/google`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id_token: idToken }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          setStatus(data.message || 'Authentication failed', 'error');
+          return;
+        }
+
+        // ── Step 3: Store the JWT (localStorage for demo; use HttpOnly cookie in prod) ──
+        accessToken = data.data.access_token;
+        localStorage.setItem('livana_jwt', accessToken);
+        localStorage.setItem('livana_user', JSON.stringify(data.data.user));
+
+        setStatus('Signed in!', 'success');
+        showLoggedInUI(data.data.user);
+        fetchRecentChats();
+
+      } catch (err) {
+        setStatus(`Network error: ${err.message}`, 'error');
+      }
+    }
+
+    // ── Show user info + hide auth card ──────────────────────────────────────
+    function showLoggedInUI(user) {
+      authSection.style.display  = 'none';
+      userHeader.style.display   = 'flex';
+      chatsSection.style.display = 'block';
+
+      document.getElementById('user-pic').src        = user.picture || '';
+      document.getElementById('user-pic').style.display = user.picture ? '' : 'none';
+      document.getElementById('user-name').textContent  = user.name  || user.email;
+      document.getElementById('user-email').textContent = user.email || '';
+    }
+
+    // ── Step 4: Fetch recent chats ────────────────────────────────────────────
+    async function fetchRecentChats() {
+      chatsList.innerHTML = renderSkeletons(3);
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/v1/chats/recent`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+
+        if (res.status === 401) {
+          handleSignOut();
+          return;
+        }
+
+        const data = await res.json();
+        if (!data.success) {
+          chatsList.innerHTML = `<p style="color:var(--error);text-align:center">${data.message}</p>`;
+          return;
+        }
+
+        renderChats(data.data || []);
+
+      } catch (err) {
+        chatsList.innerHTML = `<p style="color:var(--error);text-align:center">Failed to load chats: ${err.message}</p>`;
+      }
+    }
+
+    // ── Render chat cards ─────────────────────────────────────────────────────
+    function renderChats(chats) {
+      if (!chats.length) {
+        chatsList.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">💬</div>
+            <p>No conversations yet.<br>Start a chat to see it here.</p>
+          </div>`;
+        return;
+      }
+
+      chatsList.innerHTML = chats.map((chat, i) => `
+        <div class="chat-card" style="animation-delay:${i * 0.06}s">
+          <div class="chat-avatar">${avatarLetter(chat.chat_id)}</div>
+          <div class="chat-body">
+            <div class="chat-id">${chat.chat_id}</div>
+            <div class="message-preview">${escapeHtml(chat.last_message)}</div>
+          </div>
+          <span class="chat-time">${formatTime(chat.last_message_time)}</span>
+          <div class="badge"></div>
+        </div>
+      `).join('');
+    }
+
+    // ── Skeleton loading placeholder ──────────────────────────────────────────
+    function renderSkeletons(n) {
+      return Array.from({ length: n }, (_, i) => `
+        <div class="chat-card" style="animation-delay:${i * 0.07}s;pointer-events:none">
+          <div class="chat-avatar skeleton" style="background:none"></div>
+          <div class="chat-body">
+            <div class="skeleton" style="height:12px;width:60%;margin-bottom:8px"></div>
+            <div class="skeleton" style="height:14px;width:85%"></div>
+          </div>
+          <div class="skeleton" style="height:12px;width:40px"></div>
+        </div>
+      `).join('');
+    }
+
+    // ── Sign out ──────────────────────────────────────────────────────────────
+    function handleSignOut() {
+      google.accounts.id.disableAutoSelect();
+      accessToken = null;
+      localStorage.removeItem('livana_jwt');
+      localStorage.removeItem('livana_user');
+
+      authSection.style.display  = '';
+      userHeader.style.display   = 'none';
+      chatsSection.style.display = 'none';
+      chatsList.innerHTML        = '';
+      setStatus('', '');
+    }
+
+    // ── XSS helper ────────────────────────────────────────────────────────────
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+
+</body>
+</html>

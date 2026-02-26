@@ -19,6 +19,8 @@ pub fn auth_routes() -> Router<AppState> {
         .route("/api/auth/signout", post(signout))
         .route("/api/auth/send-forgot-password-link", post(send_forgot_password_link))
         .route("/api/auth/reset-password", post(reset_password))
+        // ── Google OAuth ─────────────────────────────────────────────────────
+        .route("/auth/google", post(crate::handlers::google_auth::google_signin))
 }
 
 pub fn user_routes() -> Router<AppState> {
@@ -106,6 +108,13 @@ pub fn carecrew_ticket_routes() -> Router<AppState> {
         .route("/api/v1/carecrew/tickets/{ticketId}",          get(get_ticket_handler))
         .route("/api/v1/carecrew/tickets/{ticketId}",          patch(update_ticket_handler))
         .route("/api/v1/carecrew/tickets/{ticketId}/comments", post(add_comment_handler))
+}
+
+/// Recent Chats (JWT-protected)
+pub fn recent_chats_routes() -> Router<AppState> {
+    use crate::handlers::recent_chats::get_recent_chats;
+    Router::new()
+        .route("/api/v1/chats/recent", get(get_recent_chats))
 }
 
 pub mod chat_routes;

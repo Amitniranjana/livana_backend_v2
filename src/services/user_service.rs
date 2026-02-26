@@ -39,6 +39,8 @@ impl UserService{
             created_at: Utc::now(),
             updated_at: Utc::now(),
             chime_user_arn: None,
+            google_id: None,
+            profile_picture: None,
         };
 
         match self.user_repository.create(user.clone()).await {
