@@ -1,0 +1,98 @@
+﻿cargo :     Checking livana-backend-v2 
+v0.1.0 (C:\Users\yamit\Downloads\Desktop
+\livanaFinalbackend\backend-services)
+At line:1 char:1
++ cargo check 2>&1 | Out-File -Encoding 
+utf8 kyc_check.txt; Get-Content ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpec   
+ ified: (    Checking li...ckend-s    
+ervices):String) [], RemoteExcept    ion
+    + FullyQualifiedErrorId : NativeC   
+ ommandError
+ 
+warning: field `repo` is never read
+  --> src\services\kyc_service.rs:13:5
+   |
+12 | pub struct KycService {
+   |            ---------- field in 
+this struct
+13 |     repo: Arc<KycRepository>,
+   |     ^^^^
+   |
+   = note: `KycService` has a derived 
+impl for the trait `Clone`, but this is 
+intentionally ignored during dead code 
+analysis
+   = note: `#[warn(dead_code)]` on by 
+default
+
+warning: methods `submit_kyc`, 
+`normalize_name`, and 
+`extract_name_from_text` are never used
+   --> src\services\kyc_service.rs:37:18
+    |
+ 18 | impl KycService {
+    | --------------- methods in this 
+implementation
+...
+ 37 |     pub async fn submit_kyc(
+    |                  ^^^^^^^^^^
+...
+116 |     fn normalize_name(&self, 
+name: &str) -> String {
+    |        ^^^^^^^^^^^^^^
+...
+124 |     fn 
+extract_name_from_text(&self, text: 
+&str, _doc_type: &KycDocType) -> String 
+{
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `create` is never used
+  --> 
+src\repository\kyc_repository.rs:15:18
+   |
+10 | impl KycRepository {
+   | ------------------ method in this 
+implementation
+...
+15 |     pub async fn create(&self, 
+submission: KycSubmission) -> 
+Result<KycSubmission, String> {
+   |                  ^^^^^^
+
+warning: fields `s3_bucket`, `s3_key`, 
+and `file_sha256` are never read
+  --> src\models\kyc.rs:41:9
+   |
+26 | pub struct KycSubmission {
+   |            ------------- fields in 
+this struct
+...
+41 |     pub s3_bucket: String,
+   |         ^^^^^^^^^
+...
+44 |     pub s3_key: String,
+   |         ^^^^^^
+...
+47 |     pub file_sha256: String,
+   |         ^^^^^^^^^^^
+   |
+   = note: `KycSubmission` has derived 
+impls for the traits `Clone` and 
+`Debug`, but these are intentionally 
+ignored during dead code analysis
+
+warning: enum `VerificationStatus` is 
+never used
+  --> src\dtos\kyc.rs:12:10
+   |
+12 | pub enum VerificationStatus {
+   |          ^^^^^^^^^^^^^^^^^^
+
+warning: `livana-backend-v2` (bin 
+"livana-backend-v2") generated 5 
+warnings
+    Finished `dev` profile [unoptimized 
++ debuginfo] target(s) in 45.60s

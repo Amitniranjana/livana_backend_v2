@@ -12,6 +12,7 @@ impl KycRepository {
         Self { pool }
     }
 
+    #[allow(dead_code)]
     pub async fn create(&self, submission: KycSubmission) -> Result<KycSubmission, String> {
         let result = sqlx::query_as::<_, KycSubmission>(
             r#"
