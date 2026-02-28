@@ -10,6 +10,7 @@ use anyhow::{Result, Context};
 
 #[derive(Clone)]
 pub struct KycService {
+    #[allow(dead_code)]
     repo: Arc<KycRepository>,
     storage: Arc<dyn StorageService + Send + Sync>,
     ocr: Arc<dyn OcrService + Send + Sync>,
@@ -24,6 +25,17 @@ impl KycService {
         Self { repo, storage, ocr }
     }
 
+    /// Access the underlying storage service (for upload handlers)
+    pub fn storage(&self) -> &dyn StorageService {
+        self.storage.as_ref()
+    }
+
+    /// Access the underlying OCR service (for submit handler)
+    pub fn ocr(&self) -> &dyn OcrService {
+        self.ocr.as_ref()
+    }
+
+    #[allow(dead_code)]
     pub async fn submit_kyc(
         &self,
         user_id: Uuid,
@@ -103,6 +115,7 @@ impl KycService {
         self.repo.create(submission).await.map_err(|e| anyhow::anyhow!("DB Error: {}", e))
     }
 
+    #[allow(dead_code)]
     fn normalize_name(&self, name: &str) -> String {
         name.to_uppercase()
             .replace(|c: char| !c.is_alphanumeric() && !c.is_whitespace(), "")
@@ -111,6 +124,7 @@ impl KycService {
             .join(" ")
     }
 
+    #[allow(dead_code)]
     fn extract_name_from_text(&self, text: &str, _doc_type: &KycDocType) -> String {
         text.lines()
             .map(|l| l.trim())

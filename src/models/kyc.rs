@@ -38,12 +38,15 @@ pub struct KycSubmission {
     pub doc_type: KycDocType,
 
     #[serde(skip)]
+    #[allow(dead_code)]
     pub s3_bucket: String,
 
     #[serde(skip)]
+    #[allow(dead_code)]
     pub s3_key: String,
 
     #[serde(skip)]
+    #[allow(dead_code)]
     pub file_sha256: String,
 
     pub extracted_name: Option<String>,
