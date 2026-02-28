@@ -880,34 +880,96 @@ pub async fn update_listing(
     }
 
     // 3. Build and execute update query
-    let _updates: Vec<String> = Vec::new();
     let updated_at = Utc::now();
+    let mut query_builder: sqlx::QueryBuilder<sqlx::Postgres> = sqlx::QueryBuilder::new("UPDATE listings SET updated_at = ");
+    query_builder.push_bind(updated_at);
 
-    // Build dynamic update based on provided fields
-    if payload.title.is_some() || payload.description.is_some() || payload.price.is_some() ||
-       payload.city.is_some() || payload.area.is_some() || payload.apartment_type.is_some() ||
-       payload.images.is_some() {
+    if let Some(title) = &payload.title {
+        query_builder.push(", title = ");
+        query_builder.push_bind(title);
+    }
+    if let Some(description) = &payload.description {
+        query_builder.push(", description = ");
+        query_builder.push_bind(description);
+    }
+    if let Some(city) = &payload.city {
+        query_builder.push(", city = ");
+        query_builder.push_bind(city);
+    }
+    if let Some(area) = &payload.area {
+        query_builder.push(", area = ");
+        query_builder.push_bind(area);
+    }
+    if let Some(pincode) = &payload.pincode {
+        query_builder.push(", pincode = ");
+        query_builder.push_bind(pincode);
+    }
+    if let Some(accommodation) = &payload.accommodation {
+        query_builder.push(", accommodation = ");
+        query_builder.push_bind(accommodation);
+    }
+    if let Some(apartment_type) = &payload.apartment_type {
+        query_builder.push(", apartment_type = ");
+        query_builder.push_bind(apartment_type);
+    }
+    if let Some(roommates) = payload.roommates {
+        query_builder.push(", roommates = ");
+        query_builder.push_bind(roommates);
+    }
+    if let Some(gender_preference) = &payload.gender_preference {
+        query_builder.push(", gender_preference = ");
+        query_builder.push_bind(gender_preference);
+    }
+    if let Some(carpet_area) = payload.carpet_area {
+        query_builder.push(", carpet_area = ");
+        query_builder.push_bind(carpet_area);
+    }
+    if let Some(bathrooms) = payload.bathrooms {
+        query_builder.push(", bathrooms = ");
+        query_builder.push_bind(bathrooms);
+    }
+    if let Some(price) = payload.price {
+        query_builder.push(", price = ");
+        query_builder.push_bind(price as i64);
+    }
+    if let Some(label) = &payload.label {
+        query_builder.push(", label = ");
+        query_builder.push_bind(label);
+    }
+    if let Some(host) = &payload.host {
+        query_builder.push(", host = ");
+        query_builder.push_bind(host);
+    }
+    if let Some(status) = &payload.status {
+        query_builder.push(", status = ");
+        query_builder.push_bind(status);
+    }
+    if let Some(images) = &payload.images {
+        let images_json = serde_json::to_value(images).unwrap_or(serde_json::json!([]));
+        query_builder.push(", images = ");
+        query_builder.push_bind(images_json);
+    }
 
-        // For simplicity, update all provided fields
-        let update_query = r#"
-            UPDATE listings
-            SET updated_at = $1
-            WHERE id = $2
-        "#;
+    query_builder.push(" WHERE id = ");
+    query_builder.push_bind(listing_id);
 
-        if let Err(e) = sqlx::query(update_query)
-            .bind(updated_at)
-            .bind(listing_id)
-            .execute(&app_state.db)
-            .await
-        {
-            let body = json!({"success": false, "message": format!("Update failed: {}", e)});
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(body));
-        }
+    if let Err(e) = query_builder.build()
+        .execute(&app_state.db)
+        .await
+    {
+        let body = json!({"success": false, "message": format!("Update failed: {}", e)});
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(body));
     }
 
     // 4. Fetch updated listing
-    let row = match sqlx::query("SELECT * FROM listings WHERE id = $1")
+    let fetch_query = r#"
+        SELECT l.*, u.first_name, u.last_name, u.email, u.phone_no, u.verified as user_verified
+        FROM listings l
+        LEFT JOIN users u ON l.user_id = u.id
+        WHERE l.id = $1
+    "#;
+
+    let row = match sqlx::query(fetch_query)
         .bind(listing_id)
         .fetch_one(&app_state.db)
         .await

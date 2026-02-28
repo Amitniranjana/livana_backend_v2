@@ -19,17 +19,11 @@ use dotenvy::dotenv;
 use crate::{
     app_state::AppState,
     repository::user_repository::UserRepository,
-<<<<<<< HEAD
     repository::chat_repository::ChatRepository,
     routes::{
         auth_routes, user_routes, listing_routes, health_routes, broker_routes,
         property_search_routes, suggestions_routes, carecrew_routes, carecrew_ticket_routes,
         recent_chats_routes,
-=======
-    routes::{
-        auth_routes, user_routes, listing_routes, health_routes, broker_routes,
-        property_search_routes, suggestions_routes, carecrew_routes,
->>>>>>> 3c78321c2d8d4ff4e6ad2953cf128b5bc6a6b362
     },
     services::user_service::UserService,
     services::chat_db_service::ChatDbService,
