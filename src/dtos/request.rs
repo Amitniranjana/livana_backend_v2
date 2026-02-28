@@ -72,78 +72,103 @@ pub struct UpdateProfileRequest {
     #[schema(example = 2.5)]
     pub commission_rate: Option<f64>,
 }
+/// --- Property Create/Update DTOs ---
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct CreateListingRequest {
+pub struct CreatePropertyRequest {
     #[schema(example = "Modern 2BHK Apartment in City Center")]
     pub title: String,
-    #[schema(example = "Beautiful 2BHK apartment with modern amenities, located in the heart of the city.")]
-    pub description: String,
-    #[schema(example = "Mumbai")]
-    pub city: String,
-    #[schema(example = "Bandra West")]
-    pub area: String,
-    #[schema(example = "400050")]
-    pub pincode: String,
-    #[schema(example = "Private")]
-    pub accommodation: String,
-    #[schema(example = "2BHK")]
-    pub apartment_type: String,
-    #[schema(example = 0)]
-    pub roommates: i32,
-    #[schema(example = "Any")]
-    pub gender_preference: String,
-    #[schema(example = 1200)]
-    pub carpet_area: i32,
-    #[schema(example = 2)]
-    pub bathrooms: i32,
+    #[schema(example = "Beautiful 2BHK apartment with modern amenities.")]
+    pub description: Option<String>,
+    /// "rent" | "sale" | "pg"
+    #[schema(example = "rent")]
+    pub property_type: String,
     #[schema(example = 25000)]
-    pub price: i32,
+    pub price: i64,
+    #[schema(example = 50000)]
+    pub deposit: Option<i64>,
+    #[schema(example = "Bandra West, Mumbai")]
+    pub location: Option<String>,
+    #[schema(example = 1200)]
+    pub area_sqft: Option<i32>,
+    #[schema(example = 2)]
+    pub bedrooms: Option<i32>,
+    #[schema(example = 2)]
+    pub bathrooms: Option<i32>,
+    /// "unfurnished" | "semi-furnished" | "fully-furnished"
+    #[schema(example = "semi-furnished")]
+    pub furnishing: Option<String>,
+    #[schema(example = 5)]
+    pub floor: Option<i32>,
+    #[schema(example = 12)]
+    pub total_floors: Option<i32>,
+    #[schema(example = 3)]
+    pub age_years: Option<i32>,
+    /// "north" | "south" | "east" | "west" etc.
+    #[schema(example = "east")]
+    pub facing: Option<String>,
+    #[schema(example = true)]
+    pub parking: Option<bool>,
+    #[schema(example = 1)]
+    pub parking_count: Option<i32>,
+    pub images: Option<Vec<String>>,
+    #[schema(example = "https://example.com/video.mp4")]
+    pub video_url: Option<String>,
+    pub amenities: Option<Vec<String>>,
+    pub nearby_places: Option<serde_json::Value>,
+    #[schema(example = 19.0760)]
+    pub latitude: Option<f64>,
+    #[schema(example = 72.8777)]
+    pub longitude: Option<f64>,
+    #[schema(example = "Premium Properties")]
+    pub host: Option<String>,
     #[schema(example = "Premium")]
     pub label: Option<String>,
-    #[schema(example = "Premium Properties")]
-    pub host: String,
-    pub images: Option<Vec<String>>,
-    pub location: Option<serde_json::Value>,
-    #[schema(example = 2.5)]
-    pub broker_commission: Option<f64>,
-    #[schema(example = "direct")]
-    pub listing_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[allow(dead_code)]
-pub struct UpdateListingRequest {
-    #[schema(example = "Updated Modern 2BHK Apartment in City Center")]
+pub struct UpdatePropertyRequest {
     pub title: Option<String>,
-    #[schema(example = "Beautiful 2BHK apartment with modern amenities, recently renovated.")]
     pub description: Option<String>,
-    #[schema(example = "Mumbai")]
-    pub city: Option<String>,
-    #[schema(example = "Bandra West")]
-    pub area: Option<String>,
-    #[schema(example = "400050")]
-    pub pincode: Option<String>,
-    #[schema(example = "Private")]
-    pub accommodation: Option<String>,
-    #[schema(example = "2BHK")]
-    pub apartment_type: Option<String>,
-    #[schema(example = 0)]
-    pub roommates: Option<i32>,
-    #[schema(example = "Any")]
-    pub gender_preference: Option<String>,
-    #[schema(example = 1200)]
-    pub carpet_area: Option<i32>,
-    #[schema(example = 2)]
+    /// "rent" | "sale" | "pg"
+    pub property_type: Option<String>,
+    pub price: Option<i64>,
+    pub deposit: Option<i64>,
+    pub location: Option<String>,
+    pub area_sqft: Option<i32>,
+    pub bedrooms: Option<i32>,
     pub bathrooms: Option<i32>,
-    #[schema(example = 28000)]
-    pub price: Option<i32>,
-    #[schema(example = "Premium")]
-    pub label: Option<String>,
-    #[schema(example = "Premium Properties")]
-    pub host: Option<String>,
+    pub furnishing: Option<String>,
+    pub floor: Option<i32>,
+    pub total_floors: Option<i32>,
+    pub age_years: Option<i32>,
+    pub facing: Option<String>,
+    pub parking: Option<bool>,
+    pub parking_count: Option<i32>,
     pub images: Option<Vec<String>>,
-    pub location: Option<serde_json::Value>,
-    #[schema(example = "active")]
+    pub video_url: Option<String>,
+    pub amenities: Option<Vec<String>>,
+    pub nearby_places: Option<serde_json::Value>,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub host: Option<String>,
+    pub label: Option<String>,
     pub status: Option<String>,
 }
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReportPropertyRequest {
+    #[schema(example = "spam")]
+    pub reason: String,
+    #[schema(example = "This listing appears to be fraudulent.")]
+    pub description: Option<String>,
+}
+
+/// Keep old types as aliases so other handlers that still use them don't break
+#[allow(dead_code)]
+pub type CreateListingRequest = CreatePropertyRequest;
+#[allow(dead_code)]
+pub type UpdateListingRequest = UpdatePropertyRequest;

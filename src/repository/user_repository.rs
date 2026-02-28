@@ -75,13 +75,6 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
 
     pub async fn update_user(&self, id: &str, first_name: Option<String>, last_name: Option<String>, phone_no: Option<String>) -> Result<(), String> {
         let uuid = uuid::Uuid::parse_str(id).map_err(|e| e.to_string())?;
-        // Simple dynamic query construction or just use COALESCE if always passing existing values?
-        // Since we pass Option, it's better to verify what to update.
-        // For simplicity, let's use a query that updates provided non-None values.
-        // But separate queries are easier or builder.
-        // Let's assume we update all 3 if provided, keeping old if None?
-        // Actually COALESCE logic is handled in Service or here.
-        // Let's do: update users set first_name = COALESCE($2, first_name), etc.
 
         let result = sqlx::query(
             "UPDATE users SET
@@ -166,6 +159,70 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
             Ok(Some(row)) => Ok(Some((row.gender, row.bio, row.profile_image_url))),
             Ok(None) => Ok(None),
             Err(e) => Err(e.to_string()),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Google OAuth methods
+    // -------------------------------------------------------------------------
+
+    /// Find a user by their stable Google subject ID (`sub` field).
+    pub async fn find_by_google_id(&self, google_id: &str) -> Result<Option<User>, String> {
+        let result = sqlx::query_as::<_, User>(
+            "SELECT * FROM users WHERE google_id = $1"
+        )
+        .bind(google_id)
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(user) => Ok(user),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Upsert a Google-authenticated user.  Safe to call on every sign-in:
+    /// returning users have their name/picture refreshed, new users are inserted.
+    /// `phone_no` and `password` are stored as empty strings to satisfy the
+    /// NOT NULL constraint (Google auth doesn't provide these).
+    pub async fn create_google_user(
+        &self,
+        google_id: &str,
+        email: &str,
+        name: &str,
+        picture: Option<&str>,
+    ) -> Result<User, String> {
+        let id = uuid::Uuid::new_v4();
+        // Best-effort split of a display name into first / last
+        let parts: Vec<&str> = name.splitn(2, ' ').collect();
+        let first_name = parts.first().copied().unwrap_or(name);
+        let last_name  = parts.get(1).copied().unwrap_or("");
+
+        let result = sqlx::query_as::<_, User>(
+            r#"INSERT INTO users
+                   (id, google_id, email, first_name, last_name, phone_no, password,
+                    profile_picture, user_role, verified, status)
+               VALUES ($1, $2, $3, $4, $5, '', '', $6, 'user', TRUE, 'active')
+               ON CONFLICT (google_id) DO UPDATE
+                   SET email           = EXCLUDED.email,
+                       first_name      = EXCLUDED.first_name,
+                       last_name       = EXCLUDED.last_name,
+                       profile_picture = EXCLUDED.profile_picture,
+                       updated_at      = NOW()
+               RETURNING *"#
+        )
+        .bind(id)
+        .bind(google_id)
+        .bind(email)
+        .bind(first_name)
+        .bind(last_name)
+        .bind(picture)
+        .fetch_one(&self.pool)
+        .await;
+
+        match result {
+            Ok(user) => Ok(user),
+            Err(e)   => Err(e.to_string()),
         }
     }
 }

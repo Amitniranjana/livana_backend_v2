@@ -1,0 +1,31 @@
+﻿cargo :     Checking livana-backend-v2 
+v0.1.0 (C:\Users\yamit\Downloads\Desktop
+\livanaFinalbackend\backend-services)
+At line:1 char:1
++ cargo check 2>&1 | Out-File -Encoding 
+utf8 check_out.txt; Get-Content ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecif 
+   ied: (    Checking li...ckend-servi  
+  ces):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCom 
+   mandError
+ 
+warning: unused variable: `caller_id`
+   --> src\handlers\listing.rs:114:54
+    |
+114 | fn row_to_property_json(row: 
+&sqlx::postgres::PgRow, caller_id: 
+Uuid) -> Value {
+    |                                   
+                   ^^^^^^^^^ help: if 
+this is intentional, prefix it with an 
+underscore: `_caller_id`
+    |
+    = note: `#[warn(unused_variables)]` 
+on by default
+
+warning: `livana-backend-v2` (bin 
+"livana-backend-v2") generated 1 warning
+    Finished `dev` profile [unoptimized 
++ debuginfo] target(s) in 10.51s

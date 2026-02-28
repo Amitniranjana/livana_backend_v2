@@ -19,11 +19,14 @@ use dotenvy::dotenv;
 use crate::{
     app_state::AppState,
     repository::user_repository::UserRepository,
+    repository::chat_repository::ChatRepository,
     routes::{
         auth_routes, user_routes, listing_routes, health_routes, broker_routes,
-        property_search_routes, suggestions_routes, carecrew_routes,
+        property_search_routes, suggestions_routes, carecrew_routes, carecrew_ticket_routes,
+        recent_chats_routes,
     },
     services::user_service::UserService,
+    services::chat_db_service::ChatDbService,
 };
 
 
@@ -45,8 +48,15 @@ async fn main() {
         env::var("DATABASE_PORT").expect("DATABASE_PORT must be set");
     // default back to 8080 if you forgot HTTP_PORT
     let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
-        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "supersecret".into());
+    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "supersecret".into());
 
+    // Google OAuth — needed to verify `aud` in tokeninfo responses.
+    // Set GOOGLE_CLIENT_ID in your .env file.
+    let google_client_id = env::var("GOOGLE_CLIENT_ID")
+        .unwrap_or_else(|_| {
+            log::warn!("GOOGLE_CLIENT_ID not set — Google Sign-In will reject all tokens");
+            "".to_string()
+        });
 
     // ————————————— Build Postgres pool —————————————
     let db_url = format!(
@@ -88,14 +98,19 @@ async fn main() {
         ocr_service
     );
 
+    // ── New: PostgreSQL-backed Chat DB service ──
+    let chat_repo = ChatRepository::new(pool.clone());
+    let chat_db_svc = ChatDbService::new(chat_repo);
 
     // ——————————— Build your AppState & Router ———————————
     let app_state = AppState {
-        // Wrap your concrete service in an Arc so it's Clone + Send + Sync
         user_service: Arc::from(user_svc),
-        db: pool.clone(), jwt_secret: jwt_secret.clone(),
+        db: pool.clone(),
+        jwt_secret: jwt_secret.clone(),
         chat_service: Arc::new(chat_svc),
         kyc_service: Arc::new(kyc_svc),
+        chat_db_service: Arc::new(chat_db_svc),
+        google_client_id,
     };
 
     let app = Router::new()
@@ -106,11 +121,15 @@ async fn main() {
         .merge(broker_routes())
         .merge(crate::routes::chat_routes())
         .merge(crate::routes::kyc_routes())
-        // ── New: Property Search, Filters, Suggestions (Steps 1-3) ──
+        // ── Property Search, Filters, Suggestions (Steps 1-3) ──
         .merge(property_search_routes())
         .merge(suggestions_routes())
-        // ── New: CareCrew Module (Step 4) ────────────────────────────
+        // ── CareCrew Module (Step 4) ────────────────────────────
         .merge(carecrew_routes())
+        // ── CareCrew Tickets (Support Module) ───────────────────
+        .merge(carecrew_ticket_routes())
+        // ── Recent Chats (JWT-protected) ─────────────────────────
+        .merge(recent_chats_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
@@ -119,8 +138,8 @@ async fn main() {
         .parse()
         .expect("Invalid HTTP_PORT");
     println!("Running on http://{}", addr);
-    println!("OpenAPI JSON available at http://{}/openapi.json", addr);
-    println!("You can use this URL with Swagger UI: https://editor.swagger.io/");
+    println!("Google OAuth endpoint: POST http://{}/auth/google", addr);
+    println!("Recent Chats endpoint: GET  http://{}/api/v1/chats/recent", addr);
 
     let listener = TcpListener::bind(addr).await.unwrap();
     serve(listener, app).await.unwrap();
