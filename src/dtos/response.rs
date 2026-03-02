@@ -7,6 +7,31 @@ use utoipa::ToSchema;
 
 #[allow(dead_code)]
 #[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SignupUserData {
+    pub id: uuid::Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+    pub phone_no: String,
+    pub user_role: String,
+    pub verified: bool,
+    pub status: String,
+    pub associate_type: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct SignupResponseData {
+    pub token: String,
+    pub user: SignupUserData,
+}
+
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
     #[schema(example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")]
 

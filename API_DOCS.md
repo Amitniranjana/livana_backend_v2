@@ -70,6 +70,72 @@ Get the token by calling `POST /api/auth/signin`. Endpoints marked 🔒 require 
 
 ---
 
+### `POST /api/auth/signup`
+
+Registers a new user account and returns an authentication token along with the user details.
+
+**Auth:** Not required
+
+#### Request Body
+```json
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john.doe@example.com",
+  "password": "password123",
+  "phoneNo": "1234567890",
+  "gender": "male",
+  "userRole": "user"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `firstName` | string | ✅ | |
+| `lastName` | string | ✅ | |
+| `email` | string | ❌ | Optional email address |
+| `password` | string | ✅ | |
+| `phoneNo` | string | ✅ | |
+| `gender` | string | ✅ | e.g. "male", "female", "other" |
+| `userRole` | string | ❌ | Defaults to `user` if not provided |
+| `businessName` | string | ❌ | Optional |
+| `licenseNumber` | string | ❌ | Optional |
+| `experienceYears`| integer| ❌ | Optional |
+| `commissionRate` | float  | ❌ | Optional |
+
+> **Note:** `associate_type` is dynamically handled by the backend and set to `null` to establish base signup logic, and does not need to be provided in the payload.
+
+#### Success Response `201 Created`
+```json
+{
+  "success": true,
+  "message": "User created successfully. Verification OTP sent to email and phone.",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1...",
+    "user": {
+      "id": "uuid",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john.doe@example.com",
+      "phone_no": "1234567890",
+      "user_role": "user",
+      "verified": false,
+      "status": "active",
+      "associate_type": null,
+      "created_at": "2026-03-03T10:00:00Z"
+    }
+  }
+}
+```
+
+#### Error Responses
+| Code | HTTP | When |
+|------|------|------|
+| `BAD_REQUEST` | 400 | Data validation failed or payload invalid |
+| `CONFLICT` | 409 | User with this email or phone number already exists |
+
+---
+
 ## 1. Property Search API
 
 ### `GET /api/v1/properties/search`

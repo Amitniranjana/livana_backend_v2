@@ -353,14 +353,12 @@ pub async fn submit_kyc(
         })));
     }
 
-    // --- OCR: fetch document from URL and run name matching ---
-    let (extracted_name, name_match_score, verification_status) =
-        run_ocr_on_document_url(&payload.govt_id_document_url, &payload.full_name, &*app_state.kyc_service.ocr()).await;
-
+    // Hardcode initial state as requested
+    let verification_status = "pending".to_string();
     let kyc_id = Uuid::new_v4();
     let now = Utc::now();
     let services_json = serde_json::to_value(payload.services.unwrap_or_default()).unwrap_or(json!([]));
-    let verified_at: Option<chrono::DateTime<Utc>> = if verification_status == "verified" { Some(now) } else { None };
+    let verified_at: Option<chrono::DateTime<Utc>> = None;
 
     let result = sqlx::query(r#"
         INSERT INTO kyc_submissions (
@@ -381,8 +379,8 @@ pub async fn submit_kyc(
             $18, $19,
             $20, $21, $22,
             $23, $24, $25,
-            $26, $27,
-            $28, $29, $30, NULL
+            NULL, NULL,
+            $26, $27, $28, NULL
         )
         ON CONFLICT (user_id) DO UPDATE SET
             full_name = EXCLUDED.full_name,
@@ -408,12 +406,13 @@ pub async fn submit_kyc(
             company_name = EXCLUDED.company_name,
             services = EXCLUDED.services,
             experience_document_url = EXCLUDED.experience_document_url,
-            extracted_name = EXCLUDED.extracted_name,
-            name_match_score = EXCLUDED.name_match_score,
+            extracted_name = NULL,
+            name_match_score = NULL,
             verification_status = EXCLUDED.verification_status,
             submitted_at = EXCLUDED.submitted_at,
-            verified_at = EXCLUDED.verified_at
-        RETURNING id
+            verified_at = NULL,
+            rejection_reason = NULL
+        RETURNING *
     "#)
     .bind(kyc_id)
     .bind(user_id)
@@ -440,8 +439,6 @@ pub async fn submit_kyc(
     .bind(&payload.company_name)
     .bind(services_json)
     .bind(&payload.experience_document_url)
-    .bind(&extracted_name)
-    .bind(name_match_score)
     .bind(&verification_status)
     .bind(now)
     .bind(verified_at)
@@ -449,15 +446,21 @@ pub async fn submit_kyc(
     .await;
 
     match result {
-        Ok(_) => (StatusCode::CREATED, Json(json!({
-            "success": true,
-            "message": "KYC submitted successfully",
-            "data": {
-                "kyc_id": kyc_id.to_string(),
-                "user_id": user_id.to_string(),
-                "verification_status": verification_status
-            }
-        }))),
+        Ok(row) => {
+            let kyc_resp: KycResponse = pg_row_to_kyc_row(&row).into();
+            (StatusCode::CREATED, Json(json!({
+                "success": true,
+                "message": "KYC details submitted successfully",
+                "data": kyc_resp
+            })))
+        },
+        Err(sqlx::Error::Database(err)) if err.is_unique_violation() => {
+            (StatusCode::CONFLICT, Json(json!({
+                "success": false,
+                "message": "KYC already submitted for this user",
+                "error_code": "KYC_ALREADY_EXISTS"
+            })))
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"success":false,"message":format!("Database error: {}",e)}))),
     }

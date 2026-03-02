@@ -41,6 +41,7 @@ impl UserService{
             chime_user_arn: None,
             google_id: None,
             profile_picture: None,
+            associate_type: None,
         };
 
         match self.user_repository.create(user.clone()).await {
