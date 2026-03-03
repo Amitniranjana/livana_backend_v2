@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 use crate::utils::util::hash_string;
 use crate::utils::auth::{create_jwt, verify_password};
+use crate::dtos::response::{SignupResponseData, SignupUserData};
 
 // Import OTP functions
 use crate::otp::{generate_otp, send_sms_otp, send_email_otp};
@@ -54,7 +55,7 @@ pub async fn signup(
         .create_user(
             &payload.first_name,
             &payload.last_name,
-            &payload.email,
+            payload.email.as_deref().unwrap_or(""),
             &payload.phone_no,
             &hashed_password,
             &payload.gender,
@@ -71,8 +72,8 @@ pub async fn signup(
             if error_msg.contains("duplicate") || error_msg.contains("already exists") {
                 let response = json!({
                     "success": false,
-                    "message": "User with this email already exists",
-                    "data": null
+                    "message": "User with this email or phone number already exists",
+                    "data": serde_json::Value::Null
                 });
                 return (StatusCode::CONFLICT, Json(response));
             }
@@ -122,23 +123,26 @@ pub async fn signup(
     };
 
     // 4. Return response
+    let signup_response = SignupResponseData {
+        token,
+        user: SignupUserData {
+            id: user.id,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email: user.email,
+            phone_no: user.phone_no,
+            user_role: user.user_role,
+            verified: user.verified,
+            status: user.status,
+            associate_type: user.associate_type,
+            created_at: user.created_at,
+        },
+    };
+
     let response = json!({
         "success": true,
         "message": "User created successfully. Verification OTP sent to email and phone.",
-        "data": {
-            "token": token,
-            "user": {
-                "id": user.id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "email": user.email,
-                "phone_no": user.phone_no,
-                "user_role": user.user_role,
-                "verified": user.verified,
-                "status": user.status,
-                "created_at": user.created_at
-            }
-        }
+        "data": signup_response
     });
 
     (StatusCode::CREATED, Json(response))

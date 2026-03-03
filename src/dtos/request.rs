@@ -1,5 +1,9 @@
 use serde::Deserialize;
 use utoipa::ToSchema;
+fn default_user_role() -> String {
+    "user".to_string()
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -9,7 +13,7 @@ pub struct SignupRequest {
     #[schema(example = "Doe")]
     pub last_name: String,
     #[schema(example = "john.doe@example.com")]
-    pub email: String,
+    pub email: Option<String>,
     #[schema(example = "password123")]
     pub password: String,
     #[schema(example = "1234567890")]
@@ -17,6 +21,7 @@ pub struct SignupRequest {
     #[schema(example = "male")]
     pub gender: String,
     #[schema(example = "user")]
+    #[serde(default = "default_user_role")]
     pub user_role: String,
     #[schema(example = "Premium Properties")]
     pub business_name: Option<String>,

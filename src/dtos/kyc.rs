@@ -33,38 +33,39 @@ impl std::fmt::Display for VerificationStatus {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct KycSubmitRequest {
     // Personal info
     pub full_name: String,
     pub mobile_number: String,
     pub email_id: String,
-    pub gender: Option<String>,
-    pub date_of_birth: Option<String>,
-    pub profile_picture_url: Option<String>,
+    pub gender: String,
+    pub date_of_birth: String,
+    pub profile_picture_url: String,
 
     // Present address
-    pub apartment_name: Option<String>,
-    pub street_address: Option<String>,
-    pub landmark: Option<String>,
-    pub city: Option<String>,
-    pub zip_code: Option<String>,
-    pub state: Option<String>,
-    pub country: Option<String>,
+    pub apartment_name: String,
+    pub street_address: String,
+    pub landmark: String,
+    pub city: String,
+    pub zip_code: String,
+    pub state: String,
+    pub country: String,
 
     // Permanent address
-    pub permanent_address: Option<String>,
-    pub is_permanent_same_as_present: Option<bool>,
+    pub permanent_address: String,
+    pub is_permanent_same_as_present: bool,
 
     // Geo
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
+    pub latitude: f64,
+    pub longitude: f64,
 
     // Government ID
     pub govt_id_type: String,        // "aadhaar" | "pan" | "passport" | "driving_license"
     pub govt_id_number: String,
-    pub govt_id_document_url: String, // S3 URL — OCR runs on this
+    pub govt_id_document_url: String,
 
-    // Professional
+    // Professional (These are the only ones allowed to be Option)
     pub company_name: Option<String>,
     pub services: Option<Vec<String>>,
     pub experience_document_url: Option<String>,

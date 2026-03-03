@@ -79,4 +79,5 @@ pub struct User {
     pub google_id: Option<String>,
     /// Profile picture URL from Google. NULL for email/password users.
     pub profile_picture: Option<String>,
+    pub associate_type: Option<String>,
 }
