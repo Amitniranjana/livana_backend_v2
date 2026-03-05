@@ -65,6 +65,18 @@ pub fn broker_routes() -> Router<AppState> {
         .route("/api/broker/profile", get(get_profile))
 }
 
+pub fn associate_routes() -> Router<AppState> {
+    use crate::handlers::associate::{
+        register_associate, upload_kyc_documents, get_associate_profile, get_associate_types,
+    };
+    Router::new()
+        .route("/api/v1/associates/register", post(register_associate))
+        .route("/api/v1/associates/{id}/kyc", post(upload_kyc_documents))
+        .route("/api/v1/associates/me", get(get_associate_profile))
+        .route("/api/v1/associate-types", get(get_associate_types))
+}
+
+
 /// Property Search + Filters (Steps 1 & 2)
 pub fn property_search_routes() -> Router<AppState> {
     use crate::handlers::property_search::{

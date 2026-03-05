@@ -1,0 +1,192 @@
+    Checking livana-backend-v2 v0.1.0 (C:\Users\yamit\Downloads\Desktop\livanaFinalbackend\backend-services)
+error: error returned from database: column "associate_type" of relation "users" does not exist
+  --> src\handlers\associate.rs:43:5
+   |
+43 | /     sqlx::query!(
+44 | |         r#"
+45 | |         INSERT INTO users (id, first_name, last_name, email, phone_no, password, user_role, verified, status, associate_type, created_at,...
+46 | |         VALUES ($1, $2, '', $3, $4, $5, $6, $7, $8, $9, $10, $11)
+...  |
+58 | |         now,
+59 | |     )
+   | |_____^
+   |
+   = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: error returned from database: relation "kycs" does not exist
+   --> src\handlers\associate.rs:108:5
+    |
+108 | /     sqlx::query!(
+109 | |         r#"
+110 | |         INSERT INTO kycs (user_id, document_url, document_type, verification_status, submitted_at)
+111 | |         VALUES ($1, $2, 'aadhaar', 'pending', $3)
+...   |
+115 | |         chrono::Utc::now().to_rfc3339()
+116 | |     )
+    | |_____^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: error returned from database: relation "kycs" does not exist
+   --> src\handlers\associate.rs:121:5
+    |
+121 | /     sqlx::query!(
+122 | |         r#"
+123 | |         INSERT INTO kycs (user_id, document_url, document_type, verification_status, submitted_at)
+124 | |         VALUES ($1, $2, 'pan', 'pending', $3)
+...   |
+128 | |         chrono::Utc::now().to_rfc3339()
+129 | |     )
+    | |_____^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: error returned from database: relation "kycs" does not exist
+   --> src\handlers\associate.rs:135:9
+    |
+135 | /         sqlx::query!(
+136 | |             r#"
+137 | |             INSERT INTO kycs (user_id, document_url, document_type, verification_status, submitted_at)
+138 | |             VALUES ($1, $2, 'business_license', 'pending', $3)
+...   |
+142 | |             chrono::Utc::now().to_rfc3339()
+143 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: error returned from database: column "associate_type" does not exist
+   --> src\handlers\associate.rs:170:18
+    |
+170 |       let record = sqlx::query!(
+    |  __________________^
+171 | |         r#"
+172 | |         SELECT id, first_name, email, phone_no, status, associate_type, created_at
+173 | |         FROM users
+...   |
+176 | |         Uuid::parse_str(&user_id).unwrap_or_default()
+177 | |     )
+    | |_____^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: error returned from database: relation "associate_types" does not exist
+   --> src\handlers\associate.rs:209:24
+    |
+209 |       let types_result = sqlx::query!(
+    |  ________________________^
+210 | |         r#"
+211 | |         SELECT id, name FROM associate_types
+212 | |         "#
+213 | |     )
+    | |_____^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0432]: unresolved import `crate::utils::auth_extractor::RequireAuth`
+  --> src\handlers\associate.rs:19:5
+   |
+19 |     utils::auth_extractor::RequireAuth, // Assuming you have a RequireAuth extractor
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RequireAuth` in `utils::auth_extractor`
+
+error[E0432]: unresolved import `crate::utils::auth_extractor::RequireAuth`
+  --> src\routes.rs:72:9
+   |
+72 |     use crate::utils::auth_extractor::RequireAuth;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RequireAuth` in `utils::auth_extractor`
+
+warning: unused import: `Extension`
+ --> src\handlers\associate.rs:2:28
+  |
+2 |     extract::{Path, State, Extension},
+  |                            ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+error[E0308]: mismatched types
+  --> src\handlers\associate.rs:71:9
+   |
+71 |         associate_id.to_string(),
+   |         ^^^^^^^^^^^^
+   |         |
+   |         expected `Uuid`, found `String`
+   |         expected due to the type of this binding
+
+error[E0277]: the trait bound `fn(..., ..., ..., ...) -> ... {upload_kyc_documents}: Handler<_, _>` is not satisfied
+   --> src\routes.rs:75:51
+    |
+ 75 |         .route("/api/v1/associates/:id/kyc", post(upload_kyc_documents))
+    |                                              ---- ^^^^^^^^^^^^^^^^^^^^ the trait `Handler<_, _>` is not implemented for fn item `fn(State<AppState>, Path<...>, ..., ...) -> ... {upload_kyc_documents}`
+    |                                              |
+    |                                              required by a bound introduced by this call
+    |
+    = note: Consider using `#[axum::debug_handler]` to improve the error message
+note: there are multiple different versions of crate `axum` in the dependency graph
+   --> C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.8.8\src\handler\mod.rs:148:1
+    |
+148 | pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: src\handlers\auth.rs:3:5
+    |
+  3 | use axum::{
+    |     ---- one version of crate `axum` used here, as a direct dependency of the current crate
+    |
+   ::: C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.7.9\src\boxed.rs:62:1
+    |
+ 62 | pub(crate) trait ErasedIntoRoute<S, E>: Send {
+    | -------------------------------------------- this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+note: required by a bound in `post`
+   --> C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.8.8\src\routing\method_routing.rs:445:1
+    |
+445 | top_level_handler_fn!(post, POST);
+    | ^^^^^^^^^^^^^^^^^^^^^^----^^^^^^^
+    | |                     |
+    | |                     required by a bound in this function
+    | required by this bound in `post`
+    = note: the full name for the type has been written to 'C:\Users\yamit\Downloads\Desktop\livanaFinalbackend\backend-services\target\debug\deps\livana_backend_v2-0f2f6539067e6948.long-type-10279080440929054337.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the macro `top_level_handler_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `fn(State<AppState>, ...) -> ... {get_associate_profile}: Handler<_, _>` is not satisfied
+   --> src\routes.rs:76:45
+    |
+ 76 |         .route("/api/v1/associates/me", get(get_associate_profile))
+    |                                         --- ^^^^^^^^^^^^^^^^^^^^^ the trait `Handler<_, _>` is not implemented for fn item `fn(State<AppState>, {type error}) -> ... {get_associate_profile}`
+    |                                         |
+    |                                         required by a bound introduced by this call
+    |
+    = note: Consider using `#[axum::debug_handler]` to improve the error message
+note: there are multiple different versions of crate `axum` in the dependency graph
+   --> C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.8.8\src\handler\mod.rs:148:1
+    |
+148 | pub trait Handler<T, S>: Clone + Send + Sync + Sized + 'static {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this is the required trait
+    |
+   ::: src\handlers\auth.rs:3:5
+    |
+  3 | use axum::{
+    |     ---- one version of crate `axum` used here, as a direct dependency of the current crate
+    |
+   ::: C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.7.9\src\boxed.rs:62:1
+    |
+ 62 | pub(crate) trait ErasedIntoRoute<S, E>: Send {
+    | -------------------------------------------- this is the found trait
+    = help: you can use `cargo tree` to explore your dependency tree
+note: required by a bound in `axum::routing::get`
+   --> C:\Users\yamit\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.8.8\src\routing\method_routing.rs:441:1
+    |
+441 | top_level_handler_fn!(get, GET);
+    | ^^^^^^^^^^^^^^^^^^^^^^---^^^^^^
+    | |                     |
+    | |                     required by a bound in this function
+    | required by this bound in `get`
+    = note: the full name for the type has been written to 'C:\Users\yamit\Downloads\Desktop\livanaFinalbackend\backend-services\target\debug\deps\livana_backend_v2-0f2f6539067e6948.long-type-16918558342271774412.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+    = note: this error originates in the macro `top_level_handler_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+Some errors have detailed explanations: E0277, E0308, E0432.
+For more information about an error, try `rustc --explain E0277`.
+warning: `livana-backend-v2` (bin "livana-backend-v2") generated 1 warning
+error: could not compile `livana-backend-v2` (bin "livana-backend-v2") due to 11 previous errors; 1 warning emitted
