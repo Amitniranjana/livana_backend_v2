@@ -556,7 +556,7 @@ pub async fn get_kyc_status(
         is_verified,
         verification_status: status,
         submitted_at: submitted_at.map(|d| d.to_rfc3339()),
-        verified_at: verified_at.map(|d| d.to_rfc3339()),
+        verified_at: verified_at.map(|d|d.to_rfc3339()),
         rejection_reason,
     };
 
