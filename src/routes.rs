@@ -76,6 +76,21 @@ pub fn associate_routes() -> Router<AppState> {
         .route("/api/v1/associate-types", get(get_associate_types))
 }
 
+pub fn careers_routes() -> Router<AppState> {
+    use crate::handlers::careers::{post_job, apply_job, get_applicants};
+    Router::new()
+        .route("/api/v1/jobs", post(post_job))
+        .route("/api/v1/jobs/{job_id}/apply", post(apply_job))
+        .route("/api/v1/jobs/{job_id}/applicants", get(get_applicants))
+}
+
+pub fn reviews_routes() -> Router<AppState> {
+    use crate::handlers::reviews::{add_review, get_reviews};
+    Router::new()
+        .route("/api/v1/reviews", post(add_review))
+        .route("/api/v1/associates/{id}/reviews", get(get_reviews))
+}
+
 
 /// Property Search + Filters (Steps 1 & 2)
 pub fn property_search_routes() -> Router<AppState> {

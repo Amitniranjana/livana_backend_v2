@@ -23,8 +23,9 @@ use crate::{
     routes::{
         auth_routes, user_routes, listing_routes, health_routes, broker_routes,
         property_search_routes, suggestions_routes, carecrew_routes, carecrew_ticket_routes,
-        recent_chats_routes, associate_routes,
+        recent_chats_routes, associate_routes, careers_routes, reviews_routes,
     },
+
 
     services::user_service::UserService,
     services::chat_db_service::ChatDbService,
@@ -133,6 +134,9 @@ async fn main() {
         .merge(recent_chats_routes())
         // ── Associate Onboarding ─────────────────────────
         .merge(associate_routes())
+        // ── Careers and Reviews ─────────────────────────
+        .merge(careers_routes())
+        .merge(reviews_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
 
         .with_state(app_state);
