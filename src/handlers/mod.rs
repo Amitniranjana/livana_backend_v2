@@ -1,6 +1,8 @@
 pub mod auth;
 pub mod user;
 pub mod associate;
+pub mod careers;
+pub mod reviews;
 
 pub mod listing;
 pub mod health;
