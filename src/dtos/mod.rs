@@ -4,3 +4,7 @@ pub mod kyc;
 pub mod associate;
 pub mod careers;
 pub mod reviews;
+pub mod saved_properties;
+pub mod notifications;
+pub mod property_filter;
+pub mod community;

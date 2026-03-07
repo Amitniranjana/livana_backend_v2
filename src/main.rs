@@ -24,6 +24,8 @@ use crate::{
         auth_routes, user_routes, listing_routes, health_routes, broker_routes,
         property_search_routes, suggestions_routes, carecrew_routes, carecrew_ticket_routes,
         recent_chats_routes, associate_routes, careers_routes, reviews_routes,
+        saved_properties_routes, notifications_routes,
+        property_filter_routes, community_routes,
     },
 
 
@@ -137,6 +139,12 @@ async fn main() {
         // ── Careers and Reviews ─────────────────────────
         .merge(careers_routes())
         .merge(reviews_routes())
+        // ── Saved Properties & Notifications (JWT-protected) ────
+        .merge(saved_properties_routes())
+        .merge(notifications_routes())
+        // ── Property Filter & Community (JWT-protected) ──────
+        .merge(property_filter_routes())
+        .merge(community_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
 
         .with_state(app_state);

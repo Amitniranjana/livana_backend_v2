@@ -1,0 +1,224 @@
+// src/handlers/community.rs
+//
+// Module 8: Community APIs
+//   8.1  POST /api/v1/communities           — Create community
+//   8.2  POST /api/v1/communities/{id}/join  — Join community
+//   8.3  POST /api/v1/communities/{id}/posts — Post in community
+
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Json,
+};
+use uuid::Uuid;
+
+use crate::{
+    app_state::AppState,
+    dtos::{
+        community::{
+            CommunityPostResponseDto, CommunityResponseDto, CreateCommunityDto,
+            CreateCommunityPostDto,
+        },
+        response::ApiResponse,
+    },
+    utils::{api_error::ApiError, auth_extractor::AuthenticationUser},
+};
+
+// ---------------------------------------------------------------------------
+// 8.1  POST /api/v1/communities — Create a new community
+// ---------------------------------------------------------------------------
+
+pub async fn create_community(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Json(payload): Json<CreateCommunityDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    if payload.name.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "Community name cannot be empty".to_string(),
+        ));
+    }
+
+    let community_id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+
+    // Create the community
+    sqlx::query(
+        r#"
+        INSERT INTO communities (id, name, description, created_by, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(community_id)
+    .bind(&payload.name)
+    .bind(&payload.description)
+    .bind(user_id)
+    .bind(now)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to create community: {}", e)))?;
+
+    // Automatically add the creator as a member
+    sqlx::query(
+        r#"
+        INSERT INTO community_members (id, community_id, user_id, joined_at)
+        VALUES ($1, $2, $3, $4)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(community_id)
+    .bind(user_id)
+    .bind(now)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to add creator as member: {}", e))
+    })?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Community created successfully".to_string(),
+        data: CommunityResponseDto {
+            id: community_id,
+            name: payload.name,
+            description: payload.description,
+            created_by: user_id,
+            created_at: now,
+        },
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// 8.2  POST /api/v1/communities/{id}/join — Join a community
+// ---------------------------------------------------------------------------
+
+pub async fn join_community(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(community_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    // Verify the community exists
+    let exists: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
+            .bind(community_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if exists.is_none() {
+        return Err(ApiError::NotFound("Community not found".to_string()));
+    }
+
+    // Idempotent join — ON CONFLICT DO NOTHING handles already-a-member
+    sqlx::query(
+        r#"
+        INSERT INTO community_members (id, community_id, user_id, joined_at)
+        VALUES ($1, $2, $3, NOW())
+        ON CONFLICT (community_id, user_id) DO NOTHING
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(community_id)
+    .bind(user_id)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to join community: {}", e)))?;
+
+    // Return empty data object as specified
+    let response = ApiResponse {
+        success: true,
+        message: "Successfully joined the community".to_string(),
+        data: serde_json::json!({}),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// 8.3  POST /api/v1/communities/{id}/posts — Post in a community
+// ---------------------------------------------------------------------------
+
+pub async fn create_community_post(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(community_id): Path<Uuid>,
+    Json(payload): Json<CreateCommunityPostDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    // Verify the community exists
+    let exists: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
+            .bind(community_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if exists.is_none() {
+        return Err(ApiError::NotFound("Community not found".to_string()));
+    }
+
+    // Verify the user is a member
+    let is_member: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM community_members WHERE community_id = $1 AND user_id = $2",
+    )
+    .bind(community_id)
+    .bind(user_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if is_member.is_none() {
+        return Err(ApiError::Forbidden(
+            "You must be a member of this community to post".to_string(),
+        ));
+    }
+
+    if payload.content.trim().is_empty() {
+        return Err(ApiError::BadRequest(
+            "Post content cannot be empty".to_string(),
+        ));
+    }
+
+    let post_id = Uuid::new_v4();
+    let now = chrono::Utc::now();
+
+    sqlx::query(
+        r#"
+        INSERT INTO community_posts (id, community_id, author_id, content, created_at)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind(post_id)
+    .bind(community_id)
+    .bind(user_id)
+    .bind(&payload.content)
+    .bind(now)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to create post: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Post created successfully".to_string(),
+        data: CommunityPostResponseDto {
+            post_id,
+            community_id,
+            author_id: user_id,
+            content: payload.content,
+            created_at: now,
+        },
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
