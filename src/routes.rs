@@ -161,6 +161,47 @@ pub fn recent_chats_routes() -> Router<AppState> {
         .route("/api/v1/chats/recent", get(get_recent_chats))
 }
 
+/// Saved Properties (JWT-protected)
+pub fn saved_properties_routes() -> Router<AppState> {
+    use axum::routing::delete;
+    use crate::handlers::saved_properties::{
+        save_property, unsave_property, get_saved_properties,
+    };
+    Router::new()
+        .route("/api/v1/properties/{id}/save", post(save_property))
+        .route("/api/v1/properties/{id}/save", delete(unsave_property))
+        .route("/api/v1/users/me/saved-properties", get(get_saved_properties))
+}
+
+/// Notifications (JWT-protected)
+pub fn notifications_routes() -> Router<AppState> {
+    use axum::routing::patch;
+    use crate::handlers::notifications::{
+        get_notifications, mark_notification_read,
+    };
+    Router::new()
+        .route("/api/v1/notifications", get(get_notifications))
+        .route("/api/v1/notifications/{id}/read", patch(mark_notification_read))
+}
+
+/// Property Filter (JWT-protected)
+pub fn property_filter_routes() -> Router<AppState> {
+    use crate::handlers::property_filter::filter_properties;
+    Router::new()
+        .route("/api/v1/properties", get(filter_properties))
+}
+
+/// Community APIs (JWT-protected)
+pub fn community_routes() -> Router<AppState> {
+    use crate::handlers::community::{
+        create_community, join_community, create_community_post,
+    };
+    Router::new()
+        .route("/api/v1/communities", post(create_community))
+        .route("/api/v1/communities/{id}/join", post(join_community))
+        .route("/api/v1/communities/{id}/posts", post(create_community_post))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 

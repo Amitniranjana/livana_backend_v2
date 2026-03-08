@@ -1,0 +1,92 @@
+ServiceError(
+    ServiceError {
+        source: Unhandled(
+            Unhandled {
+                source: ErrorMetadata {
+                    code: Some(
+                        "NoSuchBucket",
+                    ),
+                    message: Some(
+                        "The specified bucket does not exist",
+                    ),
+                    extras: Some(
+                        {
+                            "s3_extended_request_id": "KC8Oor3iUaZEjXW5znkefu6K9kQNVvgpN/N4YmtkA33ky9rlPrYgVObNl37gKOFd58dttbXSMnA=",
+                            "aws_request_id": "QEBPQF8SZ8SHWRNM",
+                        },
+                    ),
+                },
+                meta: ErrorMetadata {
+                    code: Some(
+                        "NoSuchBucket",
+                    ),
+                    message: Some(
+                        "The specified bucket does not exist",
+                    ),
+                    extras: Some(
+                        {
+                            "s3_extended_request_id": "KC8Oor3iUaZEjXW5znkefu6K9kQNVvgpN/N4YmtkA33ky9rlPrYgVObNl37gKOFd58dttbXSMnA=",
+                            "aws_request_id": "QEBPQF8SZ8SHWRNM",
+                        },
+                    ),
+                },
+            },
+        ),
+        raw: Response {
+            status: StatusCode(
+                404,
+            ),
+            headers: Headers {
+                headers: {
+                    "x-amz-request-id": HeaderValue {
+                        _private: H1(
+                            "QEBPQF8SZ8SHWRNM",
+                        ),
+                    },
+                    "x-amz-id-2": HeaderValue {
+                        _private: H1(
+                            "KC8Oor3iUaZEjXW5znkefu6K9kQNVvgpN/N4YmtkA33ky9rlPrYgVObNl37gKOFd58dttbXSMnA=",
+                        ),
+                    },
+                    "content-type": HeaderValue {
+                        _private: H1(
+                            "application/xml",
+                        ),
+                    },
+                    "transfer-encoding": HeaderValue {
+                        _private: H1(
+                            "chunked",
+                        ),
+                    },
+                    "date": HeaderValue {
+                        _private: H1(
+                            "Fri, 06 Mar 2026 08:03:11 GMT",
+                        ),
+                    },
+                    "connection": HeaderValue {
+                        _private: H1(
+                            "close",
+                        ),
+                    },
+                    "server": HeaderValue {
+                        _private: H1(
+                            "AmazonS3",
+                        ),
+                    },
+                },
+            },
+            body: SdkBody {
+                inner: Once(
+                    Some(
+                        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message><BucketName>livana-kyc-documents</BucketName><RequestId>QEBPQF8SZ8SHWRNM</RequestId><HostId>KC8Oor3iUaZEjXW5znkefu6K9kQNVvgpN/N4YmtkA33ky9rlPrYgVObNl37gKOFd58dttbXSMnA=</HostId></Error>",
+                    ),
+                ),
+                retryable: true,
+            },
+            extensions: Extensions {
+                extensions_02x: Extensions,
+                extensions_1x: Extensions,
+            },
+        },
+    },
+)
