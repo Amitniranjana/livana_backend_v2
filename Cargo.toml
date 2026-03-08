@@ -2,6 +2,7 @@
 name = "livana-backend-v2"
 version = "0.1.0"
 edition = "2024"
+default-run = "livana-backend-v2"
 
 [dependencies]
 # Web framework
