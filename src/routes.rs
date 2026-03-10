@@ -225,6 +225,17 @@ pub fn vibes_routes() -> Router<AppState> {
         .route("/api/v1/vibes/{id}/reject", post(reject_vibe))
 }
 
+/// Language APIs (JWT-protected)
+pub fn language_routes() -> Router<AppState> {
+    use axum::routing::patch;
+    use crate::handlers::language::{
+        get_languages, set_preferred_language,
+    };
+    Router::new()
+        .route("/api/v1/languages", get(get_languages))
+        .route("/api/v1/users/me/language", patch(set_preferred_language))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 
