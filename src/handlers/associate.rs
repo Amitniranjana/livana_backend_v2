@@ -60,7 +60,7 @@ pub async fn register_associate(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to register associate: {}", e)))?;
 
-    // Optionally create profile with city
+    // Optionally create profile with kbc
     sqlx::query(
         r#"
         INSERT INTO user_profiles (user_id, gender)
@@ -182,7 +182,7 @@ pub async fn get_associate_profile(
         name: record.1,
         email: record.2,
         phone: record.3,
-        city: "Unknown".to_string(), // Assuming city is fetched from user_profiles in real scenario
+        kbc: "Unknown".to_string(), // Assuming kbc is fetched from user_profiles in real scenario
         associate_type_id,
         status: record.4,
         created_at: record.6,
