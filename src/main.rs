@@ -27,6 +27,7 @@ use crate::{
         saved_properties_routes, notifications_routes,
         property_filter_routes, community_routes,
         moderation_routes, vibes_routes, language_routes,
+        expo_routes,
     },
 
 
@@ -151,6 +152,8 @@ async fn main() {
         .merge(vibes_routes())
         // ── Language Preferences (JWT-protected) ───────────
         .merge(language_routes())
+        // ── Expo Event System (JWT-protected) ────────────────
+        .merge(expo_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
 
         .with_state(app_state);
