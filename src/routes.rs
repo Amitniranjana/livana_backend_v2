@@ -202,6 +202,40 @@ pub fn community_routes() -> Router<AppState> {
         .route("/api/v1/communities/{id}/posts", post(create_community_post))
 }
 
+/// Moderation APIs (JWT-protected)
+pub fn moderation_routes() -> Router<AppState> {
+    use crate::handlers::moderation::{
+        block_user, report_entity, archive_chat,
+    };
+    Router::new()
+        .route("/api/v1/users/{id}/block", post(block_user))
+        .route("/api/v1/report", post(report_entity))
+        .route("/api/v1/chats/{id}/archive", post(archive_chat))
+}
+
+/// Vibe APIs (JWT-protected)
+pub fn vibes_routes() -> Router<AppState> {
+    use crate::handlers::vibes::{
+        send_vibe, accept_vibe, reject_vibe, get_matches,
+    };
+    Router::new()
+        .route("/api/v1/vibes", post(send_vibe))
+        .route("/api/v1/vibes/matches", get(get_matches))
+        .route("/api/v1/vibes/{id}/accept", post(accept_vibe))
+        .route("/api/v1/vibes/{id}/reject", post(reject_vibe))
+}
+
+/// Language APIs (JWT-protected)
+pub fn language_routes() -> Router<AppState> {
+    use axum::routing::patch;
+    use crate::handlers::language::{
+        get_languages, set_preferred_language,
+    };
+    Router::new()
+        .route("/api/v1/languages", get(get_languages))
+        .route("/api/v1/users/me/language", patch(set_preferred_language))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 
