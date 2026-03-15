@@ -1,0 +1,61 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+// ── POST /api/expo — Request ────────────────────────────────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct CreateExpoRequest {
+    pub title: String,
+    pub description: String,
+    pub location: String,
+    pub event_date: String,      // "2026-05-10"
+    pub start_time: String,      // "10:00"
+    pub end_time: String,        // "18:00"
+    pub organizer_id: String,    // UUID as string
+    pub banner_image: Option<String>,
+    pub max_participants: i32,
+}
+
+// ── POST /api/expo — Response data ──────────────────────────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct CreateExpoResponseData {
+    pub expo_id: Uuid,
+    pub title: String,
+    pub created_at: String,
+}
+
+// ── GET /api/expo — Query params ────────────────────────────────────────────
+
+fn default_limit() -> i64 { 10 }
+fn default_offset() -> i64 { 0 }
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct ExpoListQuery {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default = "default_offset")]
+    pub offset: i64,
+    pub city: Option<String>,
+}
+
+// ── GET /api/expo — Response data ───────────────────────────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct ExpoEventListItem {
+    pub expo_id: Uuid,
+    pub title: String,
+    pub location: String,
+    pub event_date: String,
+    pub registered_count: i32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct ExpoEventsData {
+    pub events: Vec<ExpoEventListItem>,
+}

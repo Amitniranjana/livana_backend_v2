@@ -21,3 +21,4 @@ pub mod community;
 pub mod moderation;
 pub mod vibes;
 pub mod language;
+pub mod expo;

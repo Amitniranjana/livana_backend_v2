@@ -236,6 +236,14 @@ pub fn language_routes() -> Router<AppState> {
         .route("/api/v1/users/me/language", patch(set_preferred_language))
 }
 
+/// Expo Event APIs (JWT-protected)
+pub fn expo_routes() -> Router<AppState> {
+    use crate::handlers::expo::{create_expo, get_all_expos};
+    Router::new()
+        .route("/api/expo", post(create_expo))
+        .route("/api/expo", get(get_all_expos))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 
