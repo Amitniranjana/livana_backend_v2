@@ -53,7 +53,7 @@ pub async fn register_associate(
         .bind("ASSOCIATE")
         .bind(false)
         .bind("PENDING_KYC")
-        .bind(payload.associate_type_id.to_string())
+        .bind(&payload.associate_type)
         .bind(now)
         .bind(now)
     .execute(&app_state.db)
@@ -67,7 +67,7 @@ pub async fn register_associate(
         VALUES ($1, 'not_specified')
         ON CONFLICT (user_id) DO NOTHING
         "#)
-        .bind(associate_id.to_string())
+        .bind(associate_id)
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create associate profile: {}", e)))?;
@@ -175,7 +175,7 @@ pub async fn get_associate_profile(
 
     // Record has fields: 0=id, 1=first_name, 2=email, 3=phone_no, 4=status, 5=associate_type, 6=created_at
 
-    let associate_type_id = record.5.as_deref().and_then(|s| Uuid::parse_str(s).ok());
+    let associate_type = record.5;
 
     let profile = AssociateProfileDto {
         id: Uuid::parse_str(&record.0).unwrap_or_default(),
@@ -183,7 +183,7 @@ pub async fn get_associate_profile(
         email: record.2,
         phone: record.3,
         kbc: "Unknown".to_string(), // Assuming kbc is fetched from user_profiles in real scenario
-        associate_type_id,
+        associate_type,
         status: record.4,
         created_at: record.6,
     };

@@ -1,11 +1,13 @@
 // src/handlers/expo.rs
 //
 // Property Expo Event System
-//   API 1: POST /api/expo   — Create Expo Event (Admin/Builder)
-//   API 2: GET  /api/expo   — Get All Expo Events
+//   API 1: POST /api/expo                   — Create Expo Event (Admin/Builder)
+//   API 2: GET  /api/expo                   — Get All Expo Events
+//   API 3: GET  /api/expo/{expo_id}         — Expo Event Details
+//   API 4: POST /api/expo/{expo_id}/register — Register for Expo
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
@@ -18,6 +20,7 @@ use crate::{
         expo::{
             CreateExpoRequest, CreateExpoResponseData,
             ExpoEventListItem, ExpoEventsData, ExpoListQuery,
+            ExpoDetailData, RegisterExpoRequest,
         },
         response::ApiResponse,
     },
@@ -168,4 +171,159 @@ pub async fn get_all_expos(
     };
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// API 3: GET /api/expo/{expo_id} — Expo Event Details
+// ---------------------------------------------------------------------------
+
+pub async fn get_expo_details(
+    State(app_state): State<AppState>,
+    _auth: AuthenticationUser,
+    Path(expo_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Fetch the event row
+    let row: Option<(
+        Uuid,        // id
+        String,      // title
+        String,      // description
+        String,      // location
+        chrono::NaiveDate,  // event_date
+        chrono::NaiveTime,  // start_time
+        chrono::NaiveTime,  // end_time
+        Uuid,        // organizer_id
+        String,      // banner_image
+        i32,         // max_participants
+        chrono::DateTime<chrono::Utc>, // created_at
+    )> = sqlx::query_as(
+        r#"
+        SELECT id, title, description, location, event_date,
+               start_time, end_time, organizer_id, banner_image,
+               max_participants, created_at
+        FROM expo_events
+        WHERE id = $1
+        "#,
+    )
+    .bind(expo_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let (
+        id, title, description, location, event_date,
+        start_time, end_time, organizer_id, banner_image,
+        max_participants, created_at,
+    ) = row.ok_or_else(|| ApiError::NotFound("Expo event not found".to_string()))?;
+
+    // Get live participants count from expo_registrations
+    let participants_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1")
+            .bind(id)
+            .fetch_one(&app_state.db)
+            .await
+            .unwrap_or(0);
+
+    // Mocked services_available (as per requirement — can be wired to a table later)
+    let services_available = vec![
+        "Interior Design".to_string(),
+        "Plumber".to_string(),
+        "Electrician".to_string(),
+    ];
+
+    let response = ApiResponse {
+        success: true,
+        message: "Expo event details retrieved successfully".to_string(),
+        data: ExpoDetailData {
+            expo_id: id,
+            title,
+            description,
+            location,
+            event_date: event_date.to_string(),
+            start_time: start_time.format("%H:%M").to_string(),
+            end_time: end_time.format("%H:%M").to_string(),
+            organizer_id,
+            banner_image,
+            max_participants,
+            participants_count,
+            services_available,
+            created_at: created_at.to_rfc3339(),
+        },
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// API 4: POST /api/expo/{expo_id}/register — Register for Expo
+// ---------------------------------------------------------------------------
+
+pub async fn register_for_expo(
+    State(app_state): State<AppState>,
+    _auth: AuthenticationUser,
+    Path(expo_id): Path<Uuid>,
+    Json(payload): Json<RegisterExpoRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&payload.user_id)
+        .map_err(|_| ApiError::BadRequest("Invalid user_id UUID".to_string()))?;
+
+    if payload.user_type.trim().is_empty() {
+        return Err(ApiError::BadRequest("user_type cannot be empty".to_string()));
+    }
+
+    // 1. Verify the expo exists and fetch max_participants
+    let expo_row: Option<(i32,)> = sqlx::query_as(
+        "SELECT max_participants FROM expo_events WHERE id = $1",
+    )
+    .bind(expo_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let (max_participants,) =
+        expo_row.ok_or_else(|| ApiError::NotFound("Expo event not found".to_string()))?;
+
+    // 2. Check current registration count
+    let current_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1")
+            .bind(expo_id)
+            .fetch_one(&app_state.db)
+            .await
+            .unwrap_or(0);
+
+    if current_count >= max_participants as i64 {
+        return Err(ApiError::Conflict(
+            "Expo event is full. Maximum participants reached".to_string(),
+        ));
+    }
+
+    // 3. Insert registration (ON CONFLICT handles duplicate user+expo)
+    let result = sqlx::query(
+        r#"
+        INSERT INTO expo_registrations (id, expo_id, user_id, user_type, company_name)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (expo_id, user_id) DO NOTHING
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(expo_id)
+    .bind(user_id)
+    .bind(&payload.user_type)
+    .bind(&payload.company_name)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to register: {}", e)))?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::Conflict(
+            "You are already registered for this expo event".to_string(),
+        ));
+    }
+
+    let response = ApiResponse {
+        success: true,
+        message: "Registered successfully for expo".to_string(),
+        data: serde_json::json!({}),
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
 }

@@ -8,8 +8,7 @@ pub struct RegisterAssociateDto {
     pub email: String,
     pub phone: String,
     pub password: String,
-    pub associate_type_id: Uuid,
-    pub kbc: String,
+    pub associate_type: String,
 }
 
 #[allow(dead_code)]
@@ -42,7 +41,7 @@ pub struct AssociateProfileDto {
     pub email: String,
     pub phone: String,
     pub kbc: String,
-    pub associate_type_id: Option<Uuid>,
+    pub associate_type: Option<String>,
     pub status: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
