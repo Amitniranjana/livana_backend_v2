@@ -59,3 +59,33 @@ pub struct ExpoEventListItem {
 pub struct ExpoEventsData {
     pub events: Vec<ExpoEventListItem>,
 }
+
+// ── GET /api/expo/{expo_id} — Response data (API 3) ─────────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct ExpoDetailData {
+    pub expo_id: Uuid,
+    pub title: String,
+    pub description: String,
+    pub location: String,
+    pub event_date: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub organizer_id: Uuid,
+    pub banner_image: String,
+    pub max_participants: i32,
+    pub participants_count: i64,
+    pub services_available: Vec<String>,
+    pub created_at: String,
+}
+
+// ── POST /api/expo/{expo_id}/register — Request (API 4) ─────────────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct RegisterExpoRequest {
+    pub user_id: String,
+    pub user_type: String,
+    pub company_name: Option<String>,
+}
