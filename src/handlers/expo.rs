@@ -5,6 +5,7 @@
 //   API 2: GET  /api/expo                   — Get All Expo Events
 //   API 3: GET  /api/expo/{expo_id}         — Expo Event Details
 //   API 4: POST /api/expo/{expo_id}/register — Register for Expo
+//   API 5: GET  /api/expo/{expo_id}/participants — Get Expo Participants (Admin)
 
 use axum::{
     extract::{Path, Query, State},
@@ -21,6 +22,7 @@ use crate::{
             CreateExpoRequest, CreateExpoResponseData,
             ExpoEventListItem, ExpoEventsData, ExpoListQuery,
             ExpoDetailData, RegisterExpoRequest,
+            ExpoParticipantsQuery, ParticipantItem, ExpoParticipantsData,
         },
         response::ApiResponse,
     },
@@ -326,4 +328,121 @@ pub async fn register_for_expo(
     };
 
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// API 5: GET /api/expo/{expo_id}/participants — Get Expo Participants (Admin)
+// ---------------------------------------------------------------------------
+
+pub async fn get_expo_participants(
+    State(app_state): State<AppState>,
+    _auth: AuthenticationUser,
+    Path(expo_id): Path<Uuid>,
+    Query(params): Query<ExpoParticipantsQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    // Clamp limit between 1..100, ensure offset >= 0
+    let limit = params.limit.clamp(1, 100);
+    let offset = params.offset.max(0);
+
+    // 1. Verify the expo event exists
+    let expo_exists: Option<(i32,)> = sqlx::query_as(
+        "SELECT max_participants FROM expo_events WHERE id = $1",
+    )
+    .bind(expo_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if expo_exists.is_none() {
+        return Err(ApiError::NotFound("Expo event not found".to_string()));
+    }
+
+    // 2. Get total count (with optional user_type filter)
+    let total_count: i64 = if let Some(ref user_type) = params.user_type {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1 AND user_type = $2",
+        )
+        .bind(expo_id)
+        .bind(user_type)
+        .fetch_one(&app_state.db)
+        .await
+        .unwrap_or(0)
+    } else {
+        sqlx::query_scalar(
+            "SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1",
+        )
+        .bind(expo_id)
+        .fetch_one(&app_state.db)
+        .await
+        .unwrap_or(0)
+    };
+
+    // 3. Fetch paginated participant rows
+    let rows: Vec<(Uuid, Uuid, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
+        if let Some(ref user_type) = params.user_type {
+            sqlx::query_as(
+                r#"
+                SELECT id, user_id, user_type, company_name, registered_at
+                FROM expo_registrations
+                WHERE expo_id = $1 AND user_type = $2
+                ORDER BY registered_at DESC
+                LIMIT $3 OFFSET $4
+                "#,
+            )
+            .bind(expo_id)
+            .bind(user_type)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+        } else {
+            sqlx::query_as(
+                r#"
+                SELECT id, user_id, user_type, company_name, registered_at
+                FROM expo_registrations
+                WHERE expo_id = $1
+                ORDER BY registered_at DESC
+                LIMIT $2 OFFSET $3
+                "#,
+            )
+            .bind(expo_id)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+        };
+
+    let participants: Vec<ParticipantItem> = rows
+        .into_iter()
+        .map(|(id, user_id, user_type, company_name, registered_at)| ParticipantItem {
+            registration_id: id,
+            user_id,
+            user_type,
+            company_name,
+            registered_at: registered_at.to_rfc3339(),
+        })
+        .collect();
+
+    // 4. Compute pagination metadata
+    let current_page = (offset / limit) + 1;
+    let total_pages = if total_count == 0 {
+        0
+    } else {
+        (total_count + limit - 1) / limit
+    };
+
+    let response = ApiResponse {
+        success: true,
+        message: "Participants retrieved successfully".to_string(),
+        data: ExpoParticipantsData {
+            participants,
+            total_count,
+            current_page,
+            total_pages,
+        },
+    };
+
+    Ok((StatusCode::OK, Json(response)))
 }

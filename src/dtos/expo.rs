@@ -89,3 +89,36 @@ pub struct RegisterExpoRequest {
     pub user_type: String,
     pub company_name: Option<String>,
 }
+
+// ── GET /api/expo/{expo_id}/participants — Query params (API 5) ──────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct ExpoParticipantsQuery {
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+    #[serde(default = "default_offset")]
+    pub offset: i64,
+    pub user_type: Option<String>,
+}
+
+// ── GET /api/expo/{expo_id}/participants — Response data (API 5) ─────────────
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct ParticipantItem {
+    pub registration_id: Uuid,
+    pub user_id: Uuid,
+    pub user_type: String,
+    pub company_name: Option<String>,
+    pub registered_at: String,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Serialize)]
+pub struct ExpoParticipantsData {
+    pub participants: Vec<ParticipantItem>,
+    pub total_count: i64,
+    pub current_page: i64,
+    pub total_pages: i64,
+}
