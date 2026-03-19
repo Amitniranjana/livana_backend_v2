@@ -308,3 +308,110 @@ Registers a user for a specific expo event. Validates capacity and prevents dupl
   "data": null
 }
 ```
+
+---
+
+## 5. Get Expo Participants (Admin)
+
+Retrieves a paginated list of participants registered for a specific expo event. Supports optional filtering by user type.
+
+- **Endpoint:** `GET /api/expo/{expo_id}/participants`
+- **Requires Authentication:** Yes (Bearer Token)
+- **Authorization:** Admin
+
+### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| expo_id | UUID | ID of the expo event |
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | Integer | 10 | Number of items per page (max: 100) |
+| offset | Integer | 0 | Number of items to skip |
+| user_type | String | — | Optional filter: `"broker"`, `"service_provider"`, `"landlord"`, or `"user"` |
+
+### Example Requests
+```
+GET /api/expo/{expo_id}/participants
+GET /api/expo/{expo_id}/participants?limit=5&offset=0
+GET /api/expo/{expo_id}/participants?user_type=broker&limit=10
+```
+
+### Responses
+
+**Success (200 OK)**
+```json
+{
+  "success": true,
+  "message": "Participants retrieved successfully",
+  "data": {
+    "participants": [
+      {
+        "registration_id": "d4e5f6a7-b8c9-0123-def0-123456789abc",
+        "user_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+        "user_type": "broker",
+        "company_name": "ABC Realty",
+        "registered_at": "2026-05-02T14:30:00+00:00"
+      },
+      {
+        "registration_id": "e5f6a7b8-c9d0-1234-ef01-23456789abcd",
+        "user_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "user_type": "landlord",
+        "company_name": null,
+        "registered_at": "2026-05-01T09:15:00+00:00"
+      }
+    ],
+    "total_count": 120,
+    "current_page": 1,
+    "total_pages": 12
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| registration_id | UUID | Unique identifier of the registration record |
+| user_id | UUID | UUID of the registered user |
+| user_type | String | Type of user — `"broker"`, `"landlord"`, `"service_provider"`, or `"user"` |
+| company_name | String \| null | Company name (optional, may be null) |
+| registered_at | String | ISO 8601 timestamp of registration |
+| total_count | Integer | Total number of matching participants |
+| current_page | Integer | Current page number (1-indexed) |
+| total_pages | Integer | Total number of pages |
+
+**Empty result (200 OK)**
+```json
+{
+  "success": true,
+  "message": "Participants retrieved successfully",
+  "data": {
+    "participants": [],
+    "total_count": 0,
+    "current_page": 1,
+    "total_pages": 0
+  }
+}
+```
+
+**Client Errors**
+
+- **404 Not Found** (Invalid expo_id)
+```json
+{
+  "success": false,
+  "message": "Expo event not found",
+  "error_code": "NOT_FOUND"
+}
+```
+
+- **401 Unauthorized** (Missing/invalid JWT)
+```json
+{
+  "success": false,
+  "message": "Missing or invalid authorization header",
+  "data": null
+}
+```
