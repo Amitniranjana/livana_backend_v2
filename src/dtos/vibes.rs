@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct SendVibeDto {
     pub target_user_id: Uuid,
+    pub property_id: Uuid,
 }
 
 /// Response after sending a vibe.
@@ -15,6 +16,7 @@ pub struct VibeResponseDto {
     pub vibe_id: Uuid,
     pub sender_id: Uuid,
     pub target_user_id: Uuid,
+    pub property_id: Uuid,
     pub status: String,
 }
 
@@ -26,5 +28,6 @@ pub struct MatchDto {
     pub matched_user_id: Uuid,
     pub matched_user_name: String,
     pub matched_user_image: Option<String>,
+    pub property_id: Uuid,
     pub matched_at: chrono::DateTime<chrono::Utc>,
 }
