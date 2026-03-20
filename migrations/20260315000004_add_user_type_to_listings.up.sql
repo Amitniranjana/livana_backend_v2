@@ -1,0 +1,1 @@
+ALTER TABLE listings ADD COLUMN user_type VARCHAR(50);

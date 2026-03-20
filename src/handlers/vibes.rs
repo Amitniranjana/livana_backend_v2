@@ -42,7 +42,6 @@ pub async fn send_vibe(
         ));
     }
 
-    // Verify the target user exists
     let exists: Option<Uuid> =
         sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
             .bind(payload.target_user_id)
@@ -54,20 +53,33 @@ pub async fn send_vibe(
         return Err(ApiError::NotFound("Target user not found".to_string()));
     }
 
+    // Verify the property exists
+    let property_exists: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM properties WHERE id = $1")
+            .bind(payload.property_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if property_exists.is_none() {
+        return Err(ApiError::NotFound("Property not found".to_string()));
+    }
+
     let vibe_id = Uuid::new_v4();
 
     // Insert with ON CONFLICT — handle duplicate pending vibes gracefully
     let result = sqlx::query_scalar::<_, Uuid>(
         r#"
-        INSERT INTO vibes (id, sender_id, target_user_id, status, created_at)
-        VALUES ($1, $2, $3, 'PENDING', NOW())
-        ON CONFLICT (sender_id, target_user_id) DO UPDATE SET id = vibes.id
+        INSERT INTO vibes (id, sender_id, target_user_id, property_id, status, created_at)
+        VALUES ($1, $2, $3, $4, 'pending', NOW())
+        ON CONFLICT (sender_id, target_user_id, property_id) DO UPDATE SET id = vibes.id
         RETURNING id
         "#,
     )
     .bind(vibe_id)
     .bind(sender_id)
     .bind(payload.target_user_id)
+    .bind(payload.property_id)
     .fetch_one(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to send vibe: {}", e)))?;
@@ -79,7 +91,8 @@ pub async fn send_vibe(
             vibe_id: result,
             sender_id,
             target_user_id: payload.target_user_id,
-            status: "PENDING".to_string(),
+            property_id: payload.property_id,
+            status: "pending".to_string(),
         },
     };
 
@@ -114,7 +127,7 @@ pub async fn accept_vibe(
                 "Only the target user can accept this vibe".to_string(),
             ));
         }
-        Some((_, ref status)) if status != "PENDING" => {
+        Some((_, ref status)) if status != "pending" => {
             return Err(ApiError::BadRequest(format!(
                 "Vibe has already been {}",
                 status.to_lowercase()
@@ -124,7 +137,7 @@ pub async fn accept_vibe(
     }
 
     // Update status to ACCEPTED
-    sqlx::query("UPDATE vibes SET status = 'ACCEPTED', updated_at = NOW() WHERE id = $1")
+    sqlx::query("UPDATE vibes SET status = 'accepted', updated_at = NOW() WHERE id = $1")
         .bind(vibe_id)
         .execute(&app_state.db)
         .await
@@ -167,7 +180,7 @@ pub async fn reject_vibe(
                 "Only the target user can reject this vibe".to_string(),
             ));
         }
-        Some((_, ref status)) if status != "PENDING" => {
+        Some((_, ref status)) if status != "pending" => {
             return Err(ApiError::BadRequest(format!(
                 "Vibe has already been {}",
                 status.to_lowercase()
@@ -177,7 +190,7 @@ pub async fn reject_vibe(
     }
 
     // Update status to REJECTED
-    sqlx::query("UPDATE vibes SET status = 'REJECTED', updated_at = NOW() WHERE id = $1")
+    sqlx::query("UPDATE vibes SET status = 'rejected', updated_at = NOW() WHERE id = $1")
         .bind(vibe_id)
         .execute(&app_state.db)
         .await
@@ -205,7 +218,7 @@ pub async fn get_matches(
 
     // Find all ACCEPTED vibes where user is sender OR target,
     // and join the OTHER user's profile info.
-    let rows: Vec<(Uuid, Uuid, String, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
+    let rows: Vec<(Uuid, Uuid, String, String, Option<String>, Uuid, chrono::DateTime<chrono::Utc>)> =
         sqlx::query_as(
             r#"
             SELECT
@@ -217,13 +230,14 @@ pub async fn get_matches(
                 u.first_name,
                 u.last_name,
                 u.profile_image,
+                v.property_id,
                 v.updated_at AS matched_at
             FROM vibes v
             JOIN users u ON u.id = CASE
                 WHEN v.sender_id = $1 THEN v.target_user_id
                 ELSE v.sender_id
             END
-            WHERE v.status = 'ACCEPTED'
+            WHERE v.status = 'accepted'
               AND (v.sender_id = $1 OR v.target_user_id = $1)
             ORDER BY v.updated_at DESC
             "#,
@@ -236,12 +250,13 @@ pub async fn get_matches(
     let matches: Vec<MatchDto> = rows
         .into_iter()
         .map(
-            |(match_id, matched_user_id, first_name, last_name, profile_image, matched_at)| {
+            |(match_id, matched_user_id, first_name, last_name, profile_image, property_id, matched_at)| {
                 MatchDto {
                     match_id,
                     matched_user_id,
                     matched_user_name: format!("{} {}", first_name, last_name).trim().to_string(),
                     matched_user_image: profile_image,
+                    property_id,
                     matched_at,
                 }
             },

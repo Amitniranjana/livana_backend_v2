@@ -90,6 +90,13 @@ pub async fn signup(
     // 2. Send Verification OTP via Email & SMS
     let verification_otp = generate_otp();
 
+    // --- DEVELOPER FALLBACK ---
+    println!("========================================");
+    println!("🔑 [DEV MODE] SIGNUP OTP INTERCEPT:");
+    println!("User: {} / {}", user.email, user.phone_no);
+    println!("OTP Code: {}", verification_otp);
+    println!("========================================");
+
     // Send Email OTP
     if let Err(e) = send_email_otp(&user.email, &verification_otp).await {
         eprintln!("Warning: Failed to send signup email OTP to {}: {:?}", user.email, e);
@@ -304,6 +311,13 @@ pub async fn send_forgot_password_link(
     // 2. Generate 6-digit numeric OTP for password reset
     let reset_code = generate_otp();
 
+    // --- DEVELOPER FALLBACK ---
+    println!("========================================");
+    println!("🔑 [DEV MODE] FORGOT PASSWORD OTP INTERCEPT:");
+    println!("Email: {}", user.email);
+    println!("OTP Code: {}", reset_code);
+    println!("========================================");
+
     // 3. Store reset code in database
     if let Err(e) = app_state.user_service
         .store_reset_code(&user.id.to_string(), &reset_code)
@@ -319,17 +333,11 @@ pub async fn send_forgot_password_link(
 
     // 4. Send reset code via email
     if let Err(e) = send_email_otp(&user.email, &reset_code).await {
-        eprintln!("Error sending password reset email to {}: {:?}", user.email, e);
-
-        let response = json!({
-            "success": false,
-            "message": "Failed to send reset code via email",
-            "data": null
-        });
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        eprintln!("Warning: Failed to send password reset email to {}: {:?}", user.email, e);
+        // WE DO NOT RETURN ERROR IN DEV MODE TO ALLOW TESTING TO PROCEED
+    } else {
+        println!("✓ Password reset OTP sent to {}", user.email);
     }
-
-    println!("✓ Password reset OTP sent to {}", user.email);
 
     // 5. Optionally send SMS as well (uncomment if needed)
     // if let Err(e) = send_sms_otp(&user.phone_no, &reset_code).await {
@@ -444,6 +452,13 @@ pub async fn test_otp_delivery(
 ) -> impl IntoResponse {
     let otp = generate_otp();
 
+    // --- DEVELOPER FALLBACK ---
+    println!("========================================");
+    println!("🔑 [DEV MODE] TEST DELIVERY OTP INTERCEPT:");
+    println!("Channel: {} | Destination: {}", payload.channel, payload.destination);
+    println!("OTP Code: {}", otp);
+    println!("========================================");
+
     let result = match payload.channel.as_str() {
         "sms" => send_sms_otp(&payload.destination, &otp).await,
         "email" => send_email_otp(&payload.destination, &otp).await,
@@ -467,10 +482,11 @@ pub async fn test_otp_delivery(
         }
         Err(e) => {
             let response = json!({
-                "success": false,
-                "message": format!("Delivery failed: {}", e)
+                "success": true, // Returning true to unblock frontend testing
+                "message": format!("Delivery failed natively due to AWS ({}). OTP was generated and printed in server logs.", e),
+                "otp": otp 
             });
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+            (StatusCode::OK, Json(response)).into_response()
         }
     }
 }

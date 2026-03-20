@@ -162,6 +162,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "views_count": row.try_get::<Option<i32>, _>("views_count").ok().flatten().unwrap_or(0),
         "likes_count": row.try_get::<Option<i32>, _>("likes_count").ok().flatten().unwrap_or(0),
         "status": row.try_get::<Option<String>, _>("status").ok().flatten(),
+        "user_type": row.try_get::<Option<String>, _>("user_type").ok().flatten(),
         "created_at": row.try_get::<Option<chrono::DateTime<Utc>>, _>("created_at")
             .ok().flatten().map(|d| d.to_rfc3339()),
         "updated_at": row.try_get::<Option<chrono::DateTime<Utc>>, _>("updated_at")
@@ -187,7 +188,7 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
             p.floor, p.total_floors, p.age_years, p.facing, p.parking, p.parking_count,
             p.images, p.video_url, p.amenities, p.nearby_places, p.latitude, p.longitude,
             p.is_featured, p.is_verified, p.views_count, p.likes_count,
-            p.status, p.user_id, p.created_at, p.updated_at,
+            p.status, p.user_type, p.user_id, p.created_at, p.updated_at,
             u.first_name, u.last_name, u.phone_no, u.profile_image,
             EXISTS(
                 SELECT 1 FROM saved_listings sl2
@@ -396,14 +397,14 @@ pub async fn create_property(
             floor, total_floors, age_years, facing, parking, parking_count,
             images, video_url, amenities, nearby_places, latitude, longitude,
             is_featured, is_verified, views_count, likes_count,
-            status, user_id, created_at, updated_at
+            status, user_id, created_at, updated_at, user_type
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11,
             $12, $13, $14, $15, $16, $17,
             $18, $19, $20, $21, $22, $23,
             false, false, 0, 0,
-            'active', $24, $25, $25
+            'active', $24, $25, $25, $26
         )
         RETURNING id
         "#,
@@ -433,6 +434,7 @@ pub async fn create_property(
     .bind(payload.longitude)
     .bind(user_id)
     .bind(now)
+    .bind(&payload.user_type)
     .fetch_one(&app_state.db)
     .await;
 
@@ -535,6 +537,7 @@ pub async fn update_property(
     if let Some(v) = payload.latitude       { qb.push(", latitude = "); qb.push_bind(v); }
     if let Some(v) = payload.longitude      { qb.push(", longitude = "); qb.push_bind(v); }
     if let Some(v) = &payload.status        { qb.push(", status = "); qb.push_bind(v); }
+    if let Some(v) = &payload.user_type     { qb.push(", user_type = "); qb.push_bind(v); }
     if let Some(v) = &payload.images {
         let j = serde_json::to_value(v).unwrap_or(json!([]));
         qb.push(", images = "); qb.push_bind(j);

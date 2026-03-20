@@ -130,6 +130,8 @@ pub struct CreatePropertyRequest {
     pub host: Option<String>,
     #[schema(example = "Premium")]
     pub label: Option<String>,
+    #[schema(example = "user")]
+    pub user_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -161,6 +163,7 @@ pub struct UpdatePropertyRequest {
     pub host: Option<String>,
     pub label: Option<String>,
     pub status: Option<String>,
+    pub user_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
