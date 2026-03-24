@@ -1,16 +1,20 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    routing::{delete, get},
+    Json, Router,
 };
 use uuid::Uuid;
+use chrono::Utc;
+use serde_json::json;
 
 use crate::app_state::AppState;
 use crate::utils::auth_extractor::AuthenticationUser;
 use crate::models::chat::{
     ChatRow, ChatItem, ChatListResponse,
     ParticipantInfo, LastMessage, ErrorResponse,
+    ChatExistsRow,
 };
 
 pub async fn get_chats_handler(
@@ -65,8 +69,9 @@ pub async fn get_chats_handler(
             LIMIT 1
         ) lm ON true
 
-        -- Sirf current user ke chats
+        -- Sirf current user ke chats + deleted chats hide karo
         WHERE cp.user_id = $1
+          AND c.is_deleted = FALSE
 
         -- Latest chat pehle dikhao
         ORDER BY lm.created_at DESC NULLS LAST
@@ -126,7 +131,122 @@ pub async fn get_chats_handler(
     (StatusCode::OK, Json(serde_json::json!(response))).into_response()
 }
 
-pub fn api_chats_routes() -> axum::Router<AppState> {
-    axum::Router::new()
-        .route("/api/chats", axum::routing::get(get_chats_handler))
+// ─────────────────────────────────────────────────────────
+// DELETE /api/chats/{chat_id} — Soft Delete
+// ─────────────────────────────────────────────────────────
+pub async fn delete_chat_handler(
+    auth: AuthenticationUser,
+    State(state): State<AppState>,
+    Path(chat_id): Path<Uuid>,
+) -> impl IntoResponse {
+
+    // STEP 1: JWT se user_id lo
+    let user_id = match Uuid::parse_str(&auth.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return (StatusCode::UNAUTHORIZED, Json(json!({
+                "success": false,
+                "message": "Invalid or missing token",
+                "error_code": "INVALID_TOKEN"
+            }))).into_response();
+        }
+    };
+
+    // STEP 2: Chat exist karti hai ya nahi
+    let chat_check = sqlx::query_as::<_, ChatExistsRow>(
+        "SELECT id AS chat_id, is_deleted FROM chats WHERE id = $1"
+    )
+    .bind(chat_id)
+    .fetch_optional(&state.db)
+    .await;
+
+    let chat = match chat_check {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return (StatusCode::NOT_FOUND, Json(json!({
+                "success": false,
+                "message": "Chat not found",
+                "error_code": "CHAT_NOT_FOUND"
+            }))).into_response();
+        }
+        Err(e) => {
+            println!("DB error checking chat existence: {:?}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "success": false,
+                "message": "Internal server error",
+                "error_code": "DATABASE_ERROR"
+            }))).into_response();
+        }
+    };
+
+    // STEP 3: Already deleted hai to CHAT_NOT_FOUND
+    if chat.is_deleted {
+        return (StatusCode::NOT_FOUND, Json(json!({
+            "success": false,
+            "message": "Chat not found",
+            "error_code": "CHAT_NOT_FOUND"
+        }))).into_response();
+    }
+
+    // STEP 4: Current user is participant check karo
+    let is_participant = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2)"
+    )
+    .bind(chat_id)
+    .bind(user_id)
+    .fetch_one(&state.db)
+    .await;
+
+    match is_participant {
+        Ok(true) => {}
+        Ok(false) => {
+            return (StatusCode::FORBIDDEN, Json(json!({
+                "success": false,
+                "message": "You are not a participant of this chat",
+                "error_code": "ACCESS_DENIED"
+            }))).into_response();
+        }
+        Err(e) => {
+            println!("DB error checking participant: {:?}", e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "success": false,
+                "message": "Internal server error",
+                "error_code": "DATABASE_ERROR"
+            }))).into_response();
+        }
+    }
+
+    // STEP 5: Soft delete karo
+    let now = Utc::now();
+    let result = sqlx::query(
+        "UPDATE chats SET is_deleted = TRUE, deleted_at = $1 WHERE id = $2"
+    )
+    .bind(now)
+    .bind(chat_id)
+    .execute(&state.db)
+    .await;
+
+    match result {
+        Ok(_) => (StatusCode::OK, Json(json!({
+            "success": true,
+            "message": "Chat deleted successfully"
+        }))).into_response(),
+        Err(e) => {
+            println!("DB error soft deleting chat: {:?}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                "success": false,
+                "message": "Internal server error",
+                "error_code": "DATABASE_ERROR"
+            }))).into_response()
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────
+// ROUTES
+// ─────────────────────────────────────────────────────────
+pub fn api_chats_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/chats", get(get_chats_handler))
+        .route("/api/chats/{chat_id}", delete(delete_chat_handler))
 }

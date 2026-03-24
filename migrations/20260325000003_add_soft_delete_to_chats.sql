@@ -1,0 +1,4 @@
+-- Soft delete support for chats
+ALTER TABLE chats
+ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
