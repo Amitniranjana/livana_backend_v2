@@ -45,3 +45,54 @@ pub struct ChatAuthResponse {
     pub app_instance_user_arn: String,
     pub creds: Option<String>, // Placeholder if we return temporary creds
 }
+
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
+
+// Database se raw row fetch karne ke liye
+#[derive(Debug, sqlx::FromRow)]
+pub struct ChatRow {
+    pub chat_id: Uuid,
+    pub participant_id: Uuid,
+    pub participant_name: String,
+    pub participant_image: Option<String>,
+    pub last_message_text: Option<String>,
+    pub last_message_time: Option<DateTime<Utc>>,
+    pub unread_count: i32,
+}
+
+// Final JSON response structs
+#[derive(Debug, Serialize)]
+pub struct ParticipantInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub profile_image: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LastMessage {
+    pub text: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatItem {
+    pub chat_id: Uuid,
+    pub participant: ParticipantInfo,
+    pub last_message: Option<LastMessage>,
+    pub unread_count: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatListResponse {
+    pub success: bool,
+    pub data: Vec<ChatItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub success: bool,
+    pub message: String,
+    pub error_code: String,
+}
+

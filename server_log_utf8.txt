@@ -1,0 +1,32 @@
+﻿cargo : warning: unused import: 
+`uuid::Uuid`
+At line:1 char:1
++ cargo run > server_log.txt 2>&1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecif 
+   ied: (warning: unused import: `uuid  
+  ::Uuid`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCom 
+   mandError
+ 
+ --> src\routes\chat.rs:7:5
+  |
+7 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on 
+by default
+
+warning: `livana-backend-v2` (bin 
+"livana-backend-v2") generated 1 
+warning (run `cargo fix --bin 
+"livana-backend-v2"` to apply 1 
+suggestion)
+    Finished `dev` profile [unoptimized 
++ debuginfo] target(s) in 0.58s
+     Running 
+`target\debug\livana-backend-v2.exe`
+Running on http://0.0.0.0:9090
+Google OAuth endpoint: POST http://0.0.0.0:9090/auth/google
+Recent Chats endpoint: GET  http://0.0.0.0:9090/api/v1/chats/recent
+Database error in get_chats: Database(PgDatabaseError { severity: Error, code: "42703", message: "column \"message\" does not exist", detail: None, hint: None, position: Some(Original(959)), where: None, schema: None, table: None, column: None, data_type: None, constraint: None, file: Some("parse_relation.c"), line: Some(3827), routine: Some("errorMissingColumn") })
