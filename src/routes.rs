@@ -252,3 +252,5 @@ pub use chat_routes::chat_routes;
 
 pub mod kyc;
 pub use kyc::kyc_routes;
+
+pub mod chat;

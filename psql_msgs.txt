@@ -1,0 +1,15 @@
+                              Table "public.messages"
+   Column   |           Type           | Collation | Nullable |      Default       
+------------+--------------------------+-----------+----------+--------------------
+ id         | uuid                     |           | not null | uuid_generate_v4()
+ chat_id    | uuid                     |           | not null | 
+ sender_id  | uuid                     |           | not null | 
+ content    | text                     |           | not null | 
+ created_at | timestamp with time zone |           | not null | now()
+Indexes:
+    "messages_pkey" PRIMARY KEY, btree (id)
+    "idx_messages_chat_id_created_at" btree (chat_id, created_at DESC)
+Foreign-key constraints:
+    "messages_chat_id_fkey" FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE
+    "messages_sender_id_fkey" FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL
+

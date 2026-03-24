@@ -127,6 +127,7 @@ async fn main() {
         .merge(broker_routes())
         .merge(crate::routes::chat_routes())
         .merge(crate::routes::kyc_routes())
+        .merge(crate::routes::chat::api_chats_routes())
         // ── Property Search, Filters, Suggestions (Steps 1-3) ──
         .merge(property_search_routes())
         .merge(suggestions_routes())

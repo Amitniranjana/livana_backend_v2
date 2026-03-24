@@ -659,3 +659,4 @@ Get all bookings for a provider. Includes customer name, email, phone.
 | POST | `/api/v1/carecrew/bookings` | 🔒 | Create booking |
 | PUT | `/api/v1/carecrew/bookings/{id}/status` | 🔒 | Update booking status |
 | GET | `/api/v1/carecrew/providers/{id}/bookings` | 🔒 | Provider's bookings |
+| GET | `/api/chats` | 🔒 | Retrieve all user chats (See [Chat Docs](Chat_API_Documentation.md)) |
