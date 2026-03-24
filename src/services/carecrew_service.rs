@@ -113,7 +113,37 @@ pub async fn get_featured_providers(db: &Pool<Postgres>, limit: i32) -> Result<V
 
 pub async fn get_provider_by_id(db: &Pool<Postgres>, id: Uuid) -> Result<Option<Value>, sqlx::Error> {
     let row = repo::get_provider_by_id(db, id).await?;
-    Ok(row.as_ref().map(provider_row_to_json))
+    match row {
+        Some(ref r) => {
+            let base = provider_row_to_json(r);
+            // Enrich with additional fields the Flutter app expects
+            let enriched = json!({
+                "id":             base["id"],
+                "name":           base["name"],
+                "service_type":   base["serviceType"],
+                "rating":         base["rating"],
+                "review_count":   base["reviewCount"],
+                "location":       base["city"],
+                "phone":          base["phone"],
+                "email":          null,
+                "profile_image":  base["avatarUrl"],
+                "specialties":    [],
+                "hourly_rate":    null,
+                "experience":     null,
+                "is_verified":    base["isFeatured"],
+                "is_saved":       false,
+                "availability":   "available",
+                "bio":            r.try_get::<Option<String>,_>("bio").unwrap_or_default(),
+                "gallery":        [],
+                "reviews":        [],
+                "completed_jobs": 0,
+                "response_time":  null,
+                "available_slots": []
+            });
+            Ok(Some(enriched))
+        }
+        None => Ok(None),
+    }
 }
 
 // ─── Booking APIs ─────────────────────────────────────────────────────────────

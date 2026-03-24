@@ -8,6 +8,9 @@ pub struct CreateJobDto {
     pub description: String,
     pub location: String,
     pub salary_range: String,
+    pub company_name: Option<String>,
+    pub job_type: Option<String>,
+    pub notice_period: Option<String>,
 }
 
 #[allow(dead_code)]

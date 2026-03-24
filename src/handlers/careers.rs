@@ -24,24 +24,13 @@ pub async fn post_job(
 ) -> Result<impl IntoResponse, ApiError> {
     let auth_user_id_uuid = Uuid::parse_str(&auth.user_id).unwrap_or_default();
 
-    // Enforce role: ASSOCIATE Only
-    let user_role: (String,) = sqlx::query_as("SELECT user_role FROM users WHERE id = $1")
-        .bind(auth_user_id_uuid)
-        .fetch_one(&app_state.db)
-        .await
-        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
-
-    if user_role.0 != "ASSOCIATE" {
-        return Err(ApiError::Forbidden("Only associates can post jobs".to_string()));
-    }
-
     let job_id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
     sqlx::query(
         r#"
-        INSERT INTO jobs (id, associate_id, title, description, location, salary_range, status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO jobs (id, associate_id, title, description, location, salary_range, status, created_at, company_name, job_type, notice_period)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
     .bind(job_id)
@@ -52,6 +41,9 @@ pub async fn post_job(
     .bind(&payload.salary_range)
     .bind("ACTIVE")
     .bind(now)
+    .bind(&payload.company_name)
+    .bind(&payload.job_type)
+    .bind(&payload.notice_period)
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create job: {}", e)))?;
@@ -85,7 +77,7 @@ pub async fn apply_job(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
-    if user_role.0 != "USER" && user_role.0 != "user" {
+    if user_role.0.to_lowercase() != "user" {
         return Err(ApiError::Forbidden("Only users can apply to jobs".to_string()));
     }
 
@@ -132,7 +124,7 @@ pub async fn get_applicants(
         .await
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
-    if user_role.0 != "ASSOCIATE" {
+    if user_role.0.to_lowercase() != "associate" {
         return Err(ApiError::Forbidden("Only associates can view applicants".to_string()));
     }
 
