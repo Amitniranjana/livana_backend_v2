@@ -254,3 +254,4 @@ pub mod kyc;
 pub use kyc::kyc_routes;
 
 pub mod chat;
+pub mod visit;

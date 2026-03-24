@@ -96,3 +96,9 @@ pub struct ErrorResponse {
     pub error_code: String,
 }
 
+#[derive(Debug, sqlx::FromRow)]
+pub struct ChatExistsRow {
+    pub chat_id: Uuid,
+    pub is_deleted: bool,
+}
+
