@@ -1,32 +1,30 @@
-use sqlx::PgPool;
 use crate::models::user::User;
+use sqlx::PgPool;
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub struct UserRepository{
+pub struct UserRepository {
     pub pool: PgPool,
 }
 #[allow(dead_code)]
-impl UserRepository{
-    pub fn new(pg_pool: PgPool)->Self{
-        UserRepository{
-            pool: pg_pool
-        }
+impl UserRepository {
+    pub fn new(pg_pool: PgPool) -> Self {
+        UserRepository { pool: pg_pool }
     }
 
     // to find the email
 
-pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> { // <-- Note: Changed signature
-    let result = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
-        .bind(email)
-        .fetch_optional(&self.pool) // <-- Use self.pool
-        .await;
+    pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
+        // <-- Note: Changed signature
+        let result = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+            .bind(email)
+            .fetch_optional(&self.pool) // <-- Use self.pool
+            .await;
 
-    match result {
-        Ok(user) => Ok(user),
-        Err(e) => Err(e.to_string()), // <-- Handle the error
+        match result {
+            Ok(user) => Ok(user),
+            Err(e) => Err(e.to_string()), // <-- Handle the error
+        }
     }
-}
-
 
     // only creates a user
     pub async fn create(&self, user: User) -> Result<(), String> {
@@ -40,8 +38,10 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
             phone_no,
             user_role,
             associate_type
-        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)", );
-         let result=   query.bind(&user.id)
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)",
+        );
+        let result = query
+            .bind(&user.id)
             .bind(&user.first_name)
             .bind(&user.last_name)
             .bind(&user.email)
@@ -49,16 +49,16 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
             .bind(&user.phone_no)
             .bind(&user.user_role)
             .bind(None::<String>)
-            .execute(&self.pool).await;
+            .execute(&self.pool)
+            .await;
 
         match result {
-            Ok(_)=>Ok(()),
-            Err(e)=>{
-                println!("{:?}",e);
+            Ok(_) => Ok(()),
+            Err(e) => {
+                println!("{:?}", e);
                 Err(e.to_string())
-            },
+            }
         }
-
     }
 
     pub async fn find_by_id(&self, id: &str) -> Result<Option<User>, String> {
@@ -74,7 +74,13 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
         }
     }
 
-    pub async fn update_user(&self, id: &str, first_name: Option<String>, last_name: Option<String>, phone_no: Option<String>) -> Result<(), String> {
+    pub async fn update_user(
+        &self,
+        id: &str,
+        first_name: Option<String>,
+        last_name: Option<String>,
+        phone_no: Option<String>,
+    ) -> Result<(), String> {
         let uuid = uuid::Uuid::parse_str(id).map_err(|e| e.to_string())?;
 
         let result = sqlx::query(
@@ -83,7 +89,7 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
              last_name = COALESCE($3, last_name),
              phone_no = COALESCE($4, phone_no),
              updated_at = NOW()
-             WHERE id = $1"
+             WHERE id = $1",
         )
         .bind(uuid)
         .bind(first_name)
@@ -114,7 +120,13 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
 
     // Upsert into user_profiles
     // Note: This assumes a table `user_profiles` exists.
-    pub async fn upsert_profile(&self, user_id: &str, gender: Option<String>, bio: Option<String>, profile_image_url: Option<String>) -> Result<(), String> {
+    pub async fn upsert_profile(
+        &self,
+        user_id: &str,
+        gender: Option<String>,
+        bio: Option<String>,
+        profile_image_url: Option<String>,
+    ) -> Result<(), String> {
         let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
 
         let result = sqlx::query(
@@ -138,7 +150,10 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
         }
     }
 
-    pub async fn get_extended_profile(&self, user_id: &str) -> Result<Option<(Option<String>, Option<String>, Option<String>)>, String> {
+    pub async fn get_extended_profile(
+        &self,
+        user_id: &str,
+    ) -> Result<Option<(Option<String>, Option<String>, Option<String>)>, String> {
         // Returns (gender, bio, profile_image_url)
         let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
 
@@ -169,12 +184,10 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
 
     /// Find a user by their stable Google subject ID (`sub` field).
     pub async fn find_by_google_id(&self, google_id: &str) -> Result<Option<User>, String> {
-        let result = sqlx::query_as::<_, User>(
-            "SELECT * FROM users WHERE google_id = $1"
-        )
-        .bind(google_id)
-        .fetch_optional(&self.pool)
-        .await;
+        let result = sqlx::query_as::<_, User>("SELECT * FROM users WHERE google_id = $1")
+            .bind(google_id)
+            .fetch_optional(&self.pool)
+            .await;
 
         match result {
             Ok(user) => Ok(user),
@@ -197,7 +210,7 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
         // Best-effort split of a display name into first / last
         let parts: Vec<&str> = name.splitn(2, ' ').collect();
         let first_name = parts.first().copied().unwrap_or(name);
-        let last_name  = parts.get(1).copied().unwrap_or("");
+        let last_name = parts.get(1).copied().unwrap_or("");
 
         let result = sqlx::query_as::<_, User>(
             r#"INSERT INTO users
@@ -210,7 +223,7 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
                        last_name       = EXCLUDED.last_name,
                        profile_picture = EXCLUDED.profile_picture,
                        updated_at      = NOW()
-               RETURNING *"#
+               RETURNING *"#,
         )
         .bind(id)
         .bind(google_id)
@@ -223,7 +236,7 @@ pub async fn find_by_email(&self, email: &str) -> Result<Option<User>, String> {
 
         match result {
             Ok(user) => Ok(user),
-            Err(e)   => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 }

@@ -1,14 +1,14 @@
 use axum::{
-    http::{StatusCode, HeaderMap},
-    response::{Json, IntoResponse},
-    extract::{State, Json as ExtractJson},
+    extract::{Json as ExtractJson, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Json},
 };
 use serde_json::json;
 
-use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::models::broker::{BrokerProfile, CreateBrokerProfileRequest};
 use crate::utils::auth::decode_jwt;
+use uuid::Uuid;
 
 /// Broker Onboarding
 /// POST /api/broker/onboarding
@@ -20,18 +20,36 @@ pub async fn onboarding(
     // 1. Authenticate and Extract User
     let auth_header = match headers.get("Authorization") {
         Some(h) => h.to_str().unwrap_or(""),
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Missing Authorization Token"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Missing Authorization Token"})),
+            )
+                .into_response();
+        }
     };
 
     let token = auth_header.trim_start_matches("Bearer ");
     let claims = match decode_jwt(token, &app_state.jwt_secret) {
         Ok(c) => c,
-        Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid Token"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid Token"})),
+            )
+                .into_response();
+        }
     };
 
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
-        Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid User ID in Token"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid User ID in Token"})),
+            )
+                .into_response();
+        }
     };
 
     // 2. Verify User Role is BROKER
@@ -42,11 +60,27 @@ pub async fn onboarding(
     match user_check {
         Ok(Some(record)) => {
             if record.user_role.clone().unwrap_or_default().to_lowercase() != "broker" {
-                 return (StatusCode::FORBIDDEN, Json(json!({"success": false, "message": "User is not a valid BROKER"}))).into_response();
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(json!({"success": false, "message": "User is not a valid BROKER"})),
+                )
+                    .into_response();
             }
-        },
-        Ok(None) => return (StatusCode::NOT_FOUND, Json(json!({"success": false, "message": "User not found"}))).into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Database error: {}", e)}))).into_response(),
+        }
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "message": "User not found"})),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": format!("Database error: {}", e)})),
+            )
+                .into_response();
+        }
     }
 
     // 3. Upsert Broker Profile
@@ -80,15 +114,23 @@ pub async fn onboarding(
     .await;
 
     match result {
-        Ok(profile) => (StatusCode::OK, Json(json!({
-            "success": true,
-            "message": "Broker profile saved successfully",
-            "data": profile
-        }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "success": false,
-            "message": format!("Failed to save profile: {}", e)
-        }))).into_response(),
+        Ok(profile) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Broker profile saved successfully",
+                "data": profile
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "message": format!("Failed to save profile: {}", e)
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -101,18 +143,36 @@ pub async fn get_profile(
     // 1. Authenticate
     let auth_header = match headers.get("Authorization") {
         Some(h) => h.to_str().unwrap_or(""),
-        None => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Missing Authorization Token"}))).into_response(),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Missing Authorization Token"})),
+            )
+                .into_response();
+        }
     };
 
     let token = auth_header.trim_start_matches("Bearer ");
     let claims = match decode_jwt(token, &app_state.jwt_secret) {
         Ok(c) => c,
-        Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid Token"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid Token"})),
+            )
+                .into_response();
+        }
     };
 
     let user_id = match Uuid::parse_str(&claims.sub) {
         Ok(id) => id,
-        Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid User ID in Token"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid User ID in Token"})),
+            )
+                .into_response();
+        }
     };
 
     // 2. Fetch Profile + User Name (for header)
@@ -132,19 +192,31 @@ pub async fn get_profile(
     .await;
 
     match profile {
-        Ok(Some(p)) => (StatusCode::OK, Json(json!({
-            "success": true,
-            "message": "Broker profile retrieved successfully",
-            "data": p
-        }))).into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false,
-            "message": "Broker profile not found. Please complete onboarding.",
-            "code": "PROFILE_NOT_FOUND" // Frontend signal to redirect
-        }))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-            "success": false,
-            "message": format!("Database error: {}", e)
-        }))).into_response(),
+        Ok(Some(p)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Broker profile retrieved successfully",
+                "data": p
+            })),
+        )
+            .into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "message": "Broker profile not found. Please complete onboarding.",
+                "code": "PROFILE_NOT_FOUND" // Frontend signal to redirect
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "message": format!("Database error: {}", e)
+            })),
+        )
+            .into_response(),
     }
 }

@@ -6,10 +6,10 @@
 //   9.3  POST /api/v1/chats/{id}/archive   — Archive a chat
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -42,12 +42,11 @@ pub async fn block_user(
     }
 
     // Verify the target user exists
-    let exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
-            .bind(blocked_user_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
+        .bind(blocked_user_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound("User not found".to_string()));

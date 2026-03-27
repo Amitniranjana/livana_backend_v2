@@ -1,6 +1,6 @@
+use crate::models::kyc::{KycStatus, KycSubmission};
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::kyc::{KycSubmission, KycStatus};
 
 #[derive(Clone, Debug)]
 pub struct KycRepository {
@@ -54,7 +54,7 @@ impl KycRepository {
         status: KycStatus,
         extracted_name: Option<String>,
         name_match: Option<bool>,
-        rejection_reason: Option<String>
+        rejection_reason: Option<String>,
     ) -> Result<KycSubmission, String> {
         let result = sqlx::query_as::<_, KycSubmission>(
             r#"
@@ -99,7 +99,7 @@ impl KycRepository {
 
     #[allow(dead_code)]
     pub async fn find_by_user_id(&self, user_id: Uuid) -> Result<Vec<KycSubmission>, String> {
-         let result = sqlx::query_as::<_, KycSubmission>(
+        let result = sqlx::query_as::<_, KycSubmission>(
             "SELECT id, user_id, email, input_name, doc_type, s3_bucket, s3_key, file_sha256, extracted_name, name_match, status, rejection_reason, created_at, updated_at FROM kyc_submissions WHERE user_id = $1 ORDER BY created_at DESC"
         )
         .bind(user_id)

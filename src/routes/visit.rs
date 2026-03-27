@@ -1,20 +1,19 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, put},
-    Json, Router,
 };
-use uuid::Uuid;
 use chrono::Utc;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::app_state::AppState;
-use crate::utils::auth_extractor::AuthenticationUser;
 use crate::models::visit::{
-    BookVisitRequest, UpdateVisitStatusRequest,
-    SiteVisitRow, VisitItem, PropertyInfo, ProviderInfo,
+    BookVisitRequest, PropertyInfo, ProviderInfo, SiteVisitRow, UpdateVisitStatusRequest, VisitItem,
 };
+use crate::utils::auth_extractor::AuthenticationUser;
 
 // ─────────────────────────────────────────────────────────
 // HELPER: SiteVisitRow → VisitItem
@@ -75,38 +74,49 @@ pub async fn book_visit_handler(
     let user_id = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "success": false,
-                "message": "Invalid token",
-                "error_code": "INVALID_TOKEN"
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "message": "Invalid token",
+                    "error_code": "INVALID_TOKEN"
+                })),
+            )
+                .into_response();
         }
     };
 
     // Check property exists
-    let property_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM properties WHERE id = $1)"
-    )
-    .bind(body.property_id)
-    .fetch_one(&state.db)
-    .await;
+    let property_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM properties WHERE id = $1)")
+            .bind(body.property_id)
+            .fetch_one(&state.db)
+            .await;
 
     match property_exists {
         Ok(true) => {}
         Ok(false) => {
-            return (StatusCode::NOT_FOUND, Json(json!({
-                "success": false,
-                "message": "Property not found",
-                "error_code": "PROPERTY_NOT_FOUND"
-            }))).into_response();
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false,
+                    "message": "Property not found",
+                    "error_code": "PROPERTY_NOT_FOUND"
+                })),
+            )
+                .into_response();
         }
         Err(e) => {
             println!("DB error checking property: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Internal server error",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Internal server error",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response();
         }
     }
 
@@ -130,20 +140,28 @@ pub async fn book_visit_handler(
 
     match duplicate {
         Ok(true) => {
-            return (StatusCode::CONFLICT, Json(json!({
-                "success": false,
-                "message": "You have already booked a visit for this property at the same time",
-                "error_code": "VISIT_ALREADY_EXISTS"
-            }))).into_response();
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "success": false,
+                    "message": "You have already booked a visit for this property at the same time",
+                    "error_code": "VISIT_ALREADY_EXISTS"
+                })),
+            )
+                .into_response();
         }
         Ok(false) => {}
         Err(e) => {
             println!("DB error checking duplicate: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Internal server error",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Internal server error",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response();
         }
     }
 
@@ -171,11 +189,15 @@ pub async fn book_visit_handler(
         Ok(id) => id,
         Err(e) => {
             println!("DB error inserting visit: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Failed to book visit",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to book visit",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response();
         }
     };
 
@@ -194,14 +216,19 @@ pub async fn book_visit_handler(
                 "message": "Visit booked successfully",
                 "data": row_to_visit_item(row)
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => {
             println!("DB error fetching new visit: {:?}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Visit booked but failed to fetch details",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Visit booked but failed to fetch details",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -217,11 +244,15 @@ pub async fn get_visits_handler(
     let user_id = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "success": false,
-                "message": "Invalid token",
-                "error_code": "INVALID_TOKEN"
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "message": "Invalid token",
+                    "error_code": "INVALID_TOKEN"
+                })),
+            )
+                .into_response();
         }
     };
 
@@ -237,18 +268,26 @@ pub async fn get_visits_handler(
     match rows {
         Ok(data) => {
             let visits: Vec<VisitItem> = data.into_iter().map(row_to_visit_item).collect();
-            (StatusCode::OK, Json(json!({
-                "success": true,
-                "data": visits
-            }))).into_response()
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "data": visits
+                })),
+            )
+                .into_response()
         }
         Err(e) => {
             println!("DB error fetching visits: {:?}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Internal server error",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Internal server error",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -265,11 +304,15 @@ pub async fn get_visit_detail_handler(
     let user_id = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "success": false,
-                "message": "Invalid token",
-                "error_code": "INVALID_TOKEN"
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "message": "Invalid token",
+                    "error_code": "INVALID_TOKEN"
+                })),
+            )
+                .into_response();
         }
     };
 
@@ -290,7 +333,8 @@ pub async fn get_visit_detail_handler(
                 "success": true,
                 "data": row_to_visit_item(data)
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -298,14 +342,19 @@ pub async fn get_visit_detail_handler(
                 "message": "Visit not found",
                 "error_code": "VISIT_NOT_FOUND"
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => {
             println!("DB error fetching visit detail: {:?}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Internal server error",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Internal server error",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -323,27 +372,35 @@ pub async fn update_visit_status_handler(
     let provider_id = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
-            return (StatusCode::UNAUTHORIZED, Json(json!({
-                "success": false,
-                "message": "Invalid token",
-                "error_code": "INVALID_TOKEN"
-            }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({
+                    "success": false,
+                    "message": "Invalid token",
+                    "error_code": "INVALID_TOKEN"
+                })),
+            )
+                .into_response();
         }
     };
 
     // Validate status value
     let valid_statuses = ["confirmed", "completed", "cancelled"];
     if !valid_statuses.contains(&body.status.as_str()) {
-        return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false,
-            "message": "Invalid status. Allowed: confirmed, completed, cancelled",
-            "error_code": "INVALID_STATUS"
-        }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "Invalid status. Allowed: confirmed, completed, cancelled",
+                "error_code": "INVALID_STATUS"
+            })),
+        )
+            .into_response();
     }
 
     // Check visit exists and belongs to this provider
     let visit_check = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM site_visits WHERE id = $1 AND provider_id = $2)"
+        "SELECT EXISTS (SELECT 1 FROM site_visits WHERE id = $1 AND provider_id = $2)",
     )
     .bind(visit_id)
     .bind(provider_id)
@@ -353,19 +410,27 @@ pub async fn update_visit_status_handler(
     match visit_check {
         Ok(true) => {}
         Ok(false) => {
-            return (StatusCode::FORBIDDEN, Json(json!({
-                "success": false,
-                "message": "Visit not found or access denied",
-                "error_code": "ACCESS_DENIED"
-            }))).into_response();
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false,
+                    "message": "Visit not found or access denied",
+                    "error_code": "ACCESS_DENIED"
+                })),
+            )
+                .into_response();
         }
         Err(e) => {
             println!("DB error checking visit ownership: {:?}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Internal server error",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Internal server error",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response();
         }
     }
 
@@ -394,14 +459,19 @@ pub async fn update_visit_status_handler(
                 "success": true,
                 "message": format!("Visit status updated to '{}'", body.status)
             })),
-        ).into_response(),
+        )
+            .into_response(),
         Err(e) => {
             println!("DB error updating visit status: {:?}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Failed to update status",
-                "error_code": "DATABASE_ERROR"
-            }))).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to update status",
+                    "error_code": "DATABASE_ERROR"
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -414,5 +484,8 @@ pub fn api_visit_routes() -> Router<AppState> {
         .route("/api/visits", post(book_visit_handler))
         .route("/api/visits", get(get_visits_handler))
         .route("/api/visits/{visit_id}", get(get_visit_detail_handler))
-        .route("/api/visits/{visit_id}/status", put(update_visit_status_handler))
+        .route(
+            "/api/visits/{visit_id}/status",
+            put(update_visit_status_handler),
+        )
 }

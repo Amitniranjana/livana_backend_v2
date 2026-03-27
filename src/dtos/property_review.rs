@@ -1,7 +1,8 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// ── Request DTOs ──
+// ── Requests ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct CreatePropertyReviewRequest {
@@ -23,10 +24,10 @@ pub struct EditPropertyReviewRequest {
     pub value_rating: Option<f64>,
 }
 
-// ── Response DTOs ──
+// ── Responses ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
-pub struct PropertyReviewCreatedData {
+pub struct CreatePropertyReviewData {
     pub review_id: Uuid,
     pub visit_id: Uuid,
     pub property_id: Uuid,
@@ -36,18 +37,7 @@ pub struct PropertyReviewCreatedData {
     pub location_rating: Option<f64>,
     pub cleanliness_rating: Option<f64>,
     pub value_rating: Option<f64>,
-    pub created_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PropertyReviewUpdatedData {
-    pub review_id: Uuid,
-    pub rating: f64,
-    pub comment: Option<String>,
-    pub location_rating: Option<f64>,
-    pub cleanliness_rating: Option<f64>,
-    pub value_rating: Option<f64>,
-    pub updated_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,7 +51,22 @@ pub struct PropertyReviewItem {
     pub cleanliness_rating: Option<f64>,
     pub value_rating: Option<f64>,
     pub reply: Option<String>,
-    pub review_date: String,
+    pub reply_at: Option<DateTime<Utc>>,
+    pub review_date: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PropertyReviewBreakdown {
+    #[serde(rename = "5")]
+    pub five: i64,
+    #[serde(rename = "4")]
+    pub four: i64,
+    #[serde(rename = "3")]
+    pub three: i64,
+    #[serde(rename = "2")]
+    pub two: i64,
+    #[serde(rename = "1")]
+    pub one: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,7 +76,7 @@ pub struct PropertyReviewSummary {
     pub average_location_rating: Option<f64>,
     pub average_cleanliness_rating: Option<f64>,
     pub average_value_rating: Option<f64>,
-    pub breakdown: crate::dtos::carecrew_review::RatingBreakdown,
+    pub breakdown: PropertyReviewBreakdown,
 }
 
 #[derive(Debug, Serialize)]
@@ -81,4 +86,15 @@ pub struct PropertyReviewsListData {
     pub total_count: i64,
     pub current_page: i64,
     pub total_pages: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EditPropertyReviewData {
+    pub review_id: Uuid,
+    pub rating: f64,
+    pub comment: Option<String>,
+    pub location_rating: Option<f64>,
+    pub cleanliness_rating: Option<f64>,
+    pub value_rating: Option<f64>,
+    pub updated_at: DateTime<Utc>,
 }

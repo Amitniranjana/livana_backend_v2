@@ -1,6 +1,9 @@
 // src/otp/email.rs
-use aws_sdk_sesv2::{Client, types::{Content, Body, Message, EmailContent, Destination}};
 use crate::otp::error::OtpError;
+use aws_sdk_sesv2::{
+    Client,
+    types::{Body, Content, Destination, EmailContent, Message},
+};
 use std::env;
 
 pub async fn send_email_otp(email: &str, otp: &str) -> Result<(), OtpError> {
@@ -24,22 +27,13 @@ pub async fn send_email_otp(email: &str, otp: &str) -> Result<(), OtpError> {
         .build()
         .map_err(|_| OtpError::Internal("Failed to build email body content".into()))?;
 
-    let body = Body::builder()
-        .text(body_content)
-        .build(); // Body builder usually returns Body
+    let body = Body::builder().text(body_content).build(); // Body builder usually returns Body
 
-    let message = Message::builder()
-        .subject(subject)
-        .body(body)
-        .build(); // Message builder returns Message
+    let message = Message::builder().subject(subject).body(body).build(); // Message builder returns Message
 
-    let dest = Destination::builder()
-        .to_addresses(email)
-        .build();
+    let dest = Destination::builder().to_addresses(email).build();
 
-    let email_content = EmailContent::builder()
-        .simple(message)
-        .build();
+    let email_content = EmailContent::builder().simple(message).build();
 
     let output = client
         .send_email()

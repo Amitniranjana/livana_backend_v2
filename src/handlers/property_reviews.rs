@@ -8,39 +8,39 @@
 //   POST   /api/reviews/property/{review_id}/reply   — Reply to Review
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use chrono::Utc;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
     dtos::{
-        carecrew_review::{
-            RatingBreakdown, ReplyRequest, ReviewDeletedData,
-            ReviewListQuery, ReviewReplyData,
-        },
+        carecrew_review::{DeleteReviewData, ReplyData, ReplyRequest, ReviewsQuery},
         property_review::{
-            CreatePropertyReviewRequest, EditPropertyReviewRequest,
-            PropertyReviewCreatedData, PropertyReviewItem,
-            PropertyReviewSummary, PropertyReviewUpdatedData,
-            PropertyReviewsListData,
+            CreatePropertyReviewData, CreatePropertyReviewRequest, EditPropertyReviewData,
+            EditPropertyReviewRequest, PropertyReviewBreakdown, PropertyReviewItem,
+            PropertyReviewSummary, PropertyReviewsListData,
         },
         response::ApiResponse,
     },
     utils::{api_error::ApiError, auth_extractor::AuthenticationUser},
 };
 
-fn validate_rating(rating: f64, field_name: &str) -> Result<(), ApiError> {
-    if !(1.0..=5.0).contains(&rating) {
-        return Err(ApiError::CustomError(
-            StatusCode::BAD_REQUEST,
-            format!("{} must be between 1.0 and 5.0", field_name),
-            "INVALID_RATING".to_string(),
-        ));
+fn validate_rating(rating: f64) -> Result<(), ApiError> {
+    if rating < 1.0 || rating > 5.0 {
+        return Err(ApiError::invalid_rating());
+    }
+    Ok(())
+}
+
+fn validate_optional_rating(rating: Option<f64>) -> Result<(), ApiError> {
+    if let Some(r) = rating {
+        validate_rating(r)?;
     }
     Ok(())
 }
@@ -49,70 +49,49 @@ fn validate_rating(rating: f64, field_name: &str) -> Result<(), ApiError> {
 // POST /api/reviews/property — Submit Property Review
 // ---------------------------------------------------------------------------
 
-pub async fn create_property_review(
+pub async fn create_review(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Json(payload): Json<CreatePropertyReviewRequest>,
+    Json(body): Json<CreatePropertyReviewRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let reviewer_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
 
-    // 1. Check visit is completed
-    let visit_row: Option<(String,)> = sqlx::query_as(
-        "SELECT status FROM site_visits WHERE id = $1",
-    )
-    .bind(payload.visit_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    validate_rating(body.rating)?;
+    validate_optional_rating(body.location_rating)?;
+    validate_optional_rating(body.cleanliness_rating)?;
+    validate_optional_rating(body.value_rating)?;
+
+    // 1. Check visit is completed (table: site_visits)
+    let visit_row: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM site_visits WHERE id = $1 AND user_id = $2")
+            .bind(body.visit_id)
+            .bind(reviewer_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     match visit_row {
-        Some((status,)) => {
-            if status != "completed" {
-                return Err(ApiError::CustomError(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "Visit must be completed before submitting a review".to_string(),
-                    "VISIT_NOT_COMPLETED".to_string(),
-                ));
-            }
+        None => return Err(ApiError::NotFound("Visit not found".to_string())),
+        Some((status,)) if status != "completed" => {
+            return Err(ApiError::visit_not_completed());
         }
-        None => {
-            return Err(ApiError::NotFound("Visit not found".to_string()));
-        }
+        _ => {}
     }
 
-    // 2. Check for existing review on this visit
-    let existing: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT id FROM property_reviews WHERE visit_id = $1",
-    )
-    .bind(payload.visit_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    // 2. Check for duplicate review
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM property_reviews WHERE visit_id = $1)")
+            .bind(body.visit_id)
+            .fetch_one(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
-    if existing.is_some() {
-        return Err(ApiError::CustomError(
-            StatusCode::CONFLICT,
-            "A review already exists for this visit".to_string(),
-            "REVIEW_ALREADY_EXISTS".to_string(),
-        ));
+    if exists {
+        return Err(ApiError::review_already_exists());
     }
 
-    // 3. Validate rating
-    validate_rating(payload.rating, "rating")?;
-
-    // 4. Validate sub-ratings if provided
-    if let Some(lr) = payload.location_rating {
-        validate_rating(lr, "location_rating")?;
-    }
-    if let Some(cr) = payload.cleanliness_rating {
-        validate_rating(cr, "cleanliness_rating")?;
-    }
-    if let Some(vr) = payload.value_rating {
-        validate_rating(vr, "value_rating")?;
-    }
-
-    // 5. Insert review
+    // 3. Insert review
     let review_id = Uuid::new_v4();
     let now = Utc::now();
 
@@ -125,14 +104,14 @@ pub async fn create_property_review(
         "#,
     )
     .bind(review_id)
-    .bind(payload.visit_id)
-    .bind(payload.property_id)
+    .bind(body.visit_id)
+    .bind(body.property_id)
     .bind(reviewer_id)
-    .bind(payload.rating)
-    .bind(&payload.comment)
-    .bind(payload.location_rating)
-    .bind(payload.cleanliness_rating)
-    .bind(payload.value_rating)
+    .bind(body.rating)
+    .bind(&body.comment)
+    .bind(body.location_rating)
+    .bind(body.cleanliness_rating)
+    .bind(body.value_rating)
     .bind(now)
     .execute(&app_state.db)
     .await
@@ -141,17 +120,17 @@ pub async fn create_property_review(
     let response = ApiResponse {
         success: true,
         message: "Review submitted successfully".to_string(),
-        data: PropertyReviewCreatedData {
+        data: CreatePropertyReviewData {
             review_id,
-            visit_id: payload.visit_id,
-            property_id: payload.property_id,
+            visit_id: body.visit_id,
+            property_id: body.property_id,
             reviewer_id,
-            rating: payload.rating,
-            comment: payload.comment,
-            location_rating: payload.location_rating,
-            cleanliness_rating: payload.cleanliness_rating,
-            value_rating: payload.value_rating,
-            created_at: now.to_rfc3339(),
+            rating: body.rating,
+            comment: body.comment,
+            location_rating: body.location_rating,
+            cleanliness_rating: body.cleanliness_rating,
+            value_rating: body.value_rating,
+            created_at: now,
         },
     };
 
@@ -166,82 +145,59 @@ pub async fn get_property_reviews(
     State(app_state): State<AppState>,
     _auth: AuthenticationUser,
     Path(property_id): Path<Uuid>,
-    Query(params): Query<ReviewListQuery>,
+    Query(params): Query<ReviewsQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let limit = params.limit.unwrap_or(10).clamp(1, 100);
+    let limit = params.limit.unwrap_or(10).min(100).max(1);
     let offset = params.offset.unwrap_or(0).max(0);
 
+
+
     // Total count
-    let total_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM property_reviews WHERE property_id = $1",
+    let total_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM property_reviews WHERE property_id = $1")
+            .bind(property_id)
+            .fetch_one(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    // Summary with sub-rating averages and breakdown
+    let summary_row = sqlx::query(
+        r#"
+        SELECT
+            COALESCE(AVG(rating), 0.0)::FLOAT8              AS avg_rating,
+            COUNT(*)                                        AS total,
+            AVG(location_rating)::FLOAT8                    AS avg_location,
+            AVG(cleanliness_rating)::FLOAT8                 AS avg_cleanliness,
+            AVG(value_rating)::FLOAT8                       AS avg_value,
+            COUNT(*) FILTER (WHERE rating >= 4.5)           AS five_star,
+            COUNT(*) FILTER (WHERE rating >= 3.5 AND rating < 4.5) AS four_star,
+            COUNT(*) FILTER (WHERE rating >= 2.5 AND rating < 3.5) AS three_star,
+            COUNT(*) FILTER (WHERE rating >= 1.5 AND rating < 2.5) AS two_star,
+            COUNT(*) FILTER (WHERE rating < 1.5)            AS one_star
+        FROM property_reviews
+        WHERE property_id = $1
+        "#,
     )
     .bind(property_id)
     .fetch_one(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
-    // Summary aggregation
-    let summary_row: Option<(Option<f64>, Option<f64>, Option<f64>, Option<f64>)> = sqlx::query_as(
-        r#"
-        SELECT
-            AVG(rating)::FLOAT8,
-            AVG(location_rating)::FLOAT8,
-            AVG(cleanliness_rating)::FLOAT8,
-            AVG(value_rating)::FLOAT8
-        FROM property_reviews
-        WHERE property_id = $1
-        "#,
-    )
-    .bind(property_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
-
-    let (avg_rating, avg_location, avg_cleanliness, avg_value) =
-        summary_row.unwrap_or((None, None, None, None));
-
-    // Rating breakdown
-    let breakdown_rows: Vec<(i32, i64)> = sqlx::query_as(
-        r#"
-        SELECT FLOOR(rating)::INT as star, COUNT(*) as cnt
-        FROM property_reviews
-        WHERE property_id = $1
-        GROUP BY star
-        "#,
-    )
-    .bind(property_id)
-    .fetch_all(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
-
-    let mut breakdown = RatingBreakdown {
-        five: 0, four: 0, three: 0, two: 0, one: 0,
-    };
-    for (star, cnt) in &breakdown_rows {
-        match star {
-            5 => breakdown.five = *cnt,
-            4 => breakdown.four = *cnt,
-            3 => breakdown.three = *cnt,
-            2 => breakdown.two = *cnt,
-            1 => breakdown.one = *cnt,
-            _ => {}
-        }
-    }
-
     // Paginated reviews with reviewer info
-    let review_rows: Vec<(Uuid, Option<String>, Option<String>, f64, Option<String>, Option<f64>, Option<f64>, Option<f64>, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+    let review_rows = sqlx::query(
         r#"
         SELECT
             pr.id,
-            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as reviewer_name,
-            u.profile_image_url as reviewer_image,
+            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS reviewer_name,
+            u.profile_image_url                                                 AS reviewer_image,
             pr.rating::FLOAT8,
             pr.comment,
             pr.location_rating::FLOAT8,
             pr.cleanliness_rating::FLOAT8,
             pr.value_rating::FLOAT8,
             pr.reply,
-            pr.created_at
+            pr.reply_at,
+            pr.created_at                                                       AS review_date
         FROM property_reviews pr
         LEFT JOIN users u ON u.id = pr.reviewer_id
         WHERE pr.property_id = $1
@@ -257,25 +213,30 @@ pub async fn get_property_reviews(
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let reviews: Vec<PropertyReviewItem> = review_rows
-        .into_iter()
-        .map(|(id, reviewer_name, reviewer_image, rating, comment, location_rating, cleanliness_rating, value_rating, reply, created_at)| {
-            PropertyReviewItem {
-                id,
-                reviewer_name: reviewer_name.unwrap_or_default(),
-                reviewer_image,
-                rating,
-                comment,
-                location_rating,
-                cleanliness_rating,
-                value_rating,
-                reply,
-                review_date: created_at.to_rfc3339(),
-            }
+        .iter()
+        .map(|r| PropertyReviewItem {
+            id: r.get("id"),
+            reviewer_name: r
+                .get::<Option<String>, _>("reviewer_name")
+                .unwrap_or_default(),
+            reviewer_image: r.get("reviewer_image"),
+            rating: r.get("rating"),
+            comment: r.get("comment"),
+            location_rating: r.get("location_rating"),
+            cleanliness_rating: r.get("cleanliness_rating"),
+            value_rating: r.get("value_rating"),
+            reply: r.get("reply"),
+            reply_at: r.get("reply_at"),
+            review_date: r.get("review_date"),
         })
         .collect();
 
+    let total_pages = if total_count == 0 {
+        0
+    } else {
+        (total_count as f64 / limit as f64).ceil() as i64
+    };
     let current_page = (offset / limit) + 1;
-    let total_pages = if total_count == 0 { 0 } else { (total_count + limit - 1) / limit };
 
     let response = ApiResponse {
         success: true,
@@ -283,12 +244,18 @@ pub async fn get_property_reviews(
         data: PropertyReviewsListData {
             reviews,
             summary: PropertyReviewSummary {
-                average_rating: avg_rating.unwrap_or(0.0),
-                total_reviews: total_count,
-                average_location_rating: avg_location,
-                average_cleanliness_rating: avg_cleanliness,
-                average_value_rating: avg_value,
-                breakdown,
+                average_rating: summary_row.get::<f64, _>("avg_rating"),
+                total_reviews: summary_row.get("total"),
+                average_location_rating: summary_row.get("avg_location"),
+                average_cleanliness_rating: summary_row.get("avg_cleanliness"),
+                average_value_rating: summary_row.get("avg_value"),
+                breakdown: PropertyReviewBreakdown {
+                    five: summary_row.get("five_star"),
+                    four: summary_row.get("four_star"),
+                    three: summary_row.get("three_star"),
+                    two: summary_row.get("two_star"),
+                    one: summary_row.get("one_star"),
+                },
             },
             total_count,
             current_page,
@@ -303,76 +270,55 @@ pub async fn get_property_reviews(
 // PUT /api/reviews/property/{review_id} — Edit Property Review
 // ---------------------------------------------------------------------------
 
-pub async fn edit_property_review(
+pub async fn edit_review(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
     Path(review_id): Path<Uuid>,
-    Json(payload): Json<EditPropertyReviewRequest>,
+    Json(body): Json<EditPropertyReviewRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
 
-    // 1. Review must exist
-    let review_row: Option<(Uuid, chrono::DateTime<chrono::Utc>, f64, Option<String>, Option<f64>, Option<f64>, Option<f64>)> = sqlx::query_as(
+    if let Some(r) = body.rating {
+        validate_rating(r)?;
+    }
+    validate_optional_rating(body.location_rating)?;
+    validate_optional_rating(body.cleanliness_rating)?;
+    validate_optional_rating(body.value_rating)?;
+
+    let review_row = sqlx::query(
         r#"
-        SELECT reviewer_id, created_at, rating::FLOAT8, comment,
-               location_rating::FLOAT8, cleanliness_rating::FLOAT8, value_rating::FLOAT8
+        SELECT reviewer_id, rating::FLOAT8, comment,
+               location_rating::FLOAT8, cleanliness_rating::FLOAT8, value_rating::FLOAT8, created_at
         FROM property_reviews WHERE id = $1
         "#,
     )
     .bind(review_id)
     .fetch_optional(&app_state.db)
     .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or_else(ApiError::review_not_found)?;
 
-    let (reviewer_id, created_at, current_rating, current_comment, cur_loc, cur_clean, cur_val) = match review_row {
-        Some(row) => row,
-        None => {
-            return Err(ApiError::CustomError(
-                StatusCode::NOT_FOUND,
-                "Review not found".to_string(),
-                "REVIEW_NOT_FOUND".to_string(),
-            ));
-        }
-    };
+    let reviewer_id: Uuid = review_row.get("reviewer_id");
+    let created_at: chrono::DateTime<Utc> = review_row.get("created_at");
+    let current_rating: f64 = review_row.get("rating");
+    let current_comment: Option<String> = review_row.get("comment");
+    let cur_loc: Option<f64> = review_row.get("location_rating");
+    let cur_clean: Option<f64> = review_row.get("cleanliness_rating");
+    let cur_val: Option<f64> = review_row.get("value_rating");
 
-    // 2. Must be the reviewer
     if user_id != reviewer_id {
-        return Err(ApiError::CustomError(
-            StatusCode::FORBIDDEN,
-            "You can only edit your own reviews".to_string(),
-            "ACCESS_DENIED".to_string(),
-        ));
+        return Err(ApiError::access_denied());
+    }
+    if (Utc::now() - created_at).num_days() > 30 {
+        return Err(ApiError::edit_period_expired());
     }
 
-    // 3. Within 30 days
-    let days_since = (Utc::now() - created_at).num_days();
-    if days_since > 30 {
-        return Err(ApiError::CustomError(
-            StatusCode::FORBIDDEN,
-            "Review edit period has expired (30 days)".to_string(),
-            "EDIT_PERIOD_EXPIRED".to_string(),
-        ));
-    }
-
-    // 4. Validate ratings
-    let new_rating = payload.rating.unwrap_or(current_rating);
-    validate_rating(new_rating, "rating")?;
-
-    let new_loc = payload.location_rating.or(cur_loc);
-    if let Some(lr) = new_loc {
-        validate_rating(lr, "location_rating")?;
-    }
-    let new_clean = payload.cleanliness_rating.or(cur_clean);
-    if let Some(cr) = new_clean {
-        validate_rating(cr, "cleanliness_rating")?;
-    }
-    let new_val = payload.value_rating.or(cur_val);
-    if let Some(vr) = new_val {
-        validate_rating(vr, "value_rating")?;
-    }
-
-    let new_comment = payload.comment.or(current_comment);
+    let new_rating = body.rating.unwrap_or(current_rating);
+    let new_comment = body.comment.or(current_comment);
+    let new_loc = body.location_rating.or(cur_loc);
+    let new_clean = body.cleanliness_rating.or(cur_clean);
+    let new_val = body.value_rating.or(cur_val);
     let now = Utc::now();
 
     sqlx::query(
@@ -397,14 +343,14 @@ pub async fn edit_property_review(
     let response = ApiResponse {
         success: true,
         message: "Review updated successfully".to_string(),
-        data: PropertyReviewUpdatedData {
+        data: EditPropertyReviewData {
             review_id,
             rating: new_rating,
             comment: new_comment,
             location_rating: new_loc,
             cleanliness_rating: new_clean,
             value_rating: new_val,
-            updated_at: now.to_rfc3339(),
+            updated_at: now,
         },
     };
 
@@ -415,7 +361,7 @@ pub async fn edit_property_review(
 // DELETE /api/reviews/property/{review_id} — Delete Property Review
 // ---------------------------------------------------------------------------
 
-pub async fn delete_property_review(
+pub async fn delete_review(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
     Path(review_id): Path<Uuid>,
@@ -423,43 +369,22 @@ pub async fn delete_property_review(
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
 
-    // 1. Review must exist
-    let review_row: Option<(Uuid, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-        "SELECT reviewer_id, created_at FROM property_reviews WHERE id = $1",
-    )
-    .bind(review_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let review_row =
+        sqlx::query("SELECT reviewer_id, created_at FROM property_reviews WHERE id = $1")
+            .bind(review_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+            .ok_or_else(ApiError::review_not_found)?;
 
-    let (reviewer_id, created_at) = match review_row {
-        Some(row) => row,
-        None => {
-            return Err(ApiError::CustomError(
-                StatusCode::NOT_FOUND,
-                "Review not found".to_string(),
-                "REVIEW_NOT_FOUND".to_string(),
-            ));
-        }
-    };
+    let reviewer_id: Uuid = review_row.get("reviewer_id");
+    let created_at: chrono::DateTime<Utc> = review_row.get("created_at");
 
-    // 2. Must be the reviewer
     if user_id != reviewer_id {
-        return Err(ApiError::CustomError(
-            StatusCode::FORBIDDEN,
-            "You can only delete your own reviews".to_string(),
-            "ACCESS_DENIED".to_string(),
-        ));
+        return Err(ApiError::access_denied());
     }
-
-    // 3. Within 30 days
-    let days_since = (Utc::now() - created_at).num_days();
-    if days_since > 30 {
-        return Err(ApiError::CustomError(
-            StatusCode::FORBIDDEN,
-            "Review delete period has expired (30 days)".to_string(),
-            "EDIT_PERIOD_EXPIRED".to_string(),
-        ));
+    if (Utc::now() - created_at).num_days() > 30 {
+        return Err(ApiError::edit_period_expired());
     }
 
     sqlx::query("DELETE FROM property_reviews WHERE id = $1")
@@ -471,7 +396,7 @@ pub async fn delete_property_review(
     let response = ApiResponse {
         success: true,
         message: "Review deleted successfully".to_string(),
-        data: ReviewDeletedData {
+        data: DeleteReviewData {
             deleted: true,
             review_id,
         },
@@ -484,85 +409,62 @@ pub async fn delete_property_review(
 // POST /api/reviews/property/{review_id}/reply — Reply to Property Review
 // ---------------------------------------------------------------------------
 
-pub async fn reply_to_property_review(
+pub async fn reply_to_review(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
     Path(review_id): Path<Uuid>,
-    Json(payload): Json<ReplyRequest>,
+    Json(body): Json<ReplyRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
 
-    // 1. Review must exist
-    let review_row: Option<(Uuid, Option<String>)> = sqlx::query_as(
-        "SELECT property_id, reply FROM property_reviews WHERE id = $1",
+    // Review with property owner check via JOIN
+    let review_row = sqlx::query(
+        r#"
+        SELECT pr.reply, p.user_id AS owner_id
+        FROM property_reviews pr
+        JOIN properties p ON p.id = pr.property_id
+        WHERE pr.id = $1
+        "#,
     )
     .bind(review_id)
     .fetch_optional(&app_state.db)
     .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+    .ok_or_else(ApiError::review_not_found)?;
 
-    let (property_id, existing_reply) = match review_row {
-        Some(row) => row,
-        None => {
-            return Err(ApiError::CustomError(
-                StatusCode::NOT_FOUND,
-                "Review not found".to_string(),
-                "REVIEW_NOT_FOUND".to_string(),
-            ));
-        }
-    };
+    let owner_id: Option<Uuid> = review_row.get("owner_id");
+    let existing_reply: Option<String> = review_row.get("reply");
 
-    // 2. Must be the property owner — check properties.user_id
-    let owner_row: Option<(Uuid,)> = sqlx::query_as(
-        "SELECT user_id FROM properties WHERE id = $1",
-    )
-    .bind(property_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
-
-    let is_owner = match owner_row {
-        Some((owner_id,)) => owner_id == user_id,
+    let is_owner = match owner_id {
+        Some(uid) => uid == user_id,
         None => false,
     };
 
     if !is_owner {
-        return Err(ApiError::CustomError(
-            StatusCode::FORBIDDEN,
-            "Only the property owner can reply to reviews".to_string(),
-            "ACCESS_DENIED".to_string(),
-        ));
+        return Err(ApiError::access_denied());
     }
-
-    // 3. No existing reply
     if existing_reply.is_some() {
-        return Err(ApiError::CustomError(
-            StatusCode::CONFLICT,
-            "A reply already exists for this review".to_string(),
-            "REPLY_ALREADY_EXISTS".to_string(),
-        ));
+        return Err(ApiError::reply_already_exists());
     }
 
     let now = Utc::now();
 
-    sqlx::query(
-        "UPDATE property_reviews SET reply = $1, reply_at = $2 WHERE id = $3",
-    )
-    .bind(&payload.reply)
-    .bind(now)
-    .bind(review_id)
-    .execute(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to add reply: {}", e)))?;
+    sqlx::query("UPDATE property_reviews SET reply = $1, reply_at = $2 WHERE id = $3")
+        .bind(&body.reply)
+        .bind(now)
+        .bind(review_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to add reply: {}", e)))?;
 
     let response = ApiResponse {
         success: true,
         message: "Reply added successfully".to_string(),
-        data: ReviewReplyData {
+        data: ReplyData {
             review_id,
-            reply: payload.reply,
-            replied_at: now.to_rfc3339(),
+            reply: body.reply,
+            replied_at: now,
         },
     };
 

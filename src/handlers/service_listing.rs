@@ -6,11 +6,12 @@
 //   GET  /api/services/providers    — Filter Providers by Service
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -18,9 +19,8 @@ use crate::{
     dtos::{
         response::ApiResponse,
         service::{
-            AddServiceRequest, ServiceResponseData, ServiceItem,
-            ServicesListData, ServicesListQuery,
-            ProvidersFilterQuery, ProviderItem, ProvidersListData,
+            AddServiceRequest, ProviderItem, ProvidersFilterQuery, ProvidersListData, ServiceItem,
+            ServiceResponse, ServicesListData, ServicesQuery,
         },
     },
     utils::{api_error::ApiError, auth_extractor::AuthenticationUser},
@@ -42,27 +42,13 @@ const VALID_CATEGORIES: &[&str] = &[
 pub async fn add_service(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Json(payload): Json<AddServiceRequest>,
+    Json(body): Json<AddServiceRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let provider_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
 
-    // Validate required fields
-    if payload.service_name.trim().is_empty() {
-        return Err(ApiError::CustomError(
-            StatusCode::BAD_REQUEST,
-            "service_name is required".to_string(),
-            "VALIDATION_ERROR".to_string(),
-        ));
-    }
-    if payload.category.trim().is_empty() {
-        return Err(ApiError::CustomError(
-            StatusCode::BAD_REQUEST,
-            "category is required".to_string(),
-            "VALIDATION_ERROR".to_string(),
-        ));
-    }
-    if !VALID_CATEGORIES.contains(&payload.category.as_str()) {
+    // Validate category
+    if !VALID_CATEGORIES.contains(&body.category.as_str()) {
         return Err(ApiError::CustomError(
             StatusCode::BAD_REQUEST,
             format!(
@@ -72,24 +58,12 @@ pub async fn add_service(
             "VALIDATION_ERROR".to_string(),
         ));
     }
-    if payload.description.trim().is_empty() {
+
+    // Validate price > 0
+    if body.price <= 0 {
         return Err(ApiError::CustomError(
             StatusCode::BAD_REQUEST,
-            "description is required".to_string(),
-            "VALIDATION_ERROR".to_string(),
-        ));
-    }
-    if payload.experience.trim().is_empty() {
-        return Err(ApiError::CustomError(
-            StatusCode::BAD_REQUEST,
-            "experience is required".to_string(),
-            "VALIDATION_ERROR".to_string(),
-        ));
-    }
-    if payload.location.trim().is_empty() {
-        return Err(ApiError::CustomError(
-            StatusCode::BAD_REQUEST,
-            "location is required".to_string(),
+            "Price must be greater than 0".to_string(),
             "VALIDATION_ERROR".to_string(),
         ));
     }
@@ -105,12 +79,12 @@ pub async fn add_service(
     )
     .bind(service_id)
     .bind(provider_id)
-    .bind(&payload.service_name)
-    .bind(&payload.category)
-    .bind(payload.price)
-    .bind(&payload.description)
-    .bind(&payload.experience)
-    .bind(&payload.location)
+    .bind(&body.service_name)
+    .bind(&body.category)
+    .bind(body.price)
+    .bind(&body.description)
+    .bind(&body.experience)
+    .bind(&body.location)
     .bind(now)
     .execute(&app_state.db)
     .await
@@ -119,16 +93,16 @@ pub async fn add_service(
     let response = ApiResponse {
         success: true,
         message: "Service added successfully".to_string(),
-        data: ServiceResponseData {
+        data: ServiceResponse {
             service_id,
             provider_id,
-            service_name: payload.service_name,
-            category: payload.category,
-            price: payload.price,
-            description: payload.description,
-            experience: payload.experience,
-            location: payload.location,
-            created_at: now.to_rfc3339(),
+            service_name: body.service_name,
+            category: body.category,
+            price: body.price,
+            description: body.description,
+            experience: body.experience,
+            location: body.location,
+            created_at: now,
         },
     };
 
@@ -142,57 +116,53 @@ pub async fn add_service(
 pub async fn get_all_services(
     State(app_state): State<AppState>,
     _auth: AuthenticationUser,
-    Query(params): Query<ServicesListQuery>,
+    Query(params): Query<ServicesQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let limit = params.limit.unwrap_or(10).clamp(1, 100);
+    let limit = params.limit.unwrap_or(10).min(100).max(1);
     let offset = params.offset.unwrap_or(0).max(0);
 
     // Get total count
-    let total_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM services")
-            .fetch_one(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
-
-    // Get paginated rows
-    let rows: Vec<(Uuid, Uuid, String, String, i32, String, String, String, chrono::DateTime<chrono::Utc>)> =
-        sqlx::query_as(
-            r#"
-            SELECT id, provider_id, service_name, category, price, description, experience, location, created_at
-            FROM services
-            ORDER BY created_at DESC
-            LIMIT $1 OFFSET $2
-            "#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&app_state.db)
+    let total_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM services")
+        .fetch_one(&app_state.db)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
+    // Get paginated rows
+    let rows = sqlx::query(
+        r#"
+        SELECT id, provider_id, service_name, category, price, description, experience, location, created_at
+        FROM services
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+        "#,
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
     let services: Vec<ServiceItem> = rows
-        .into_iter()
-        .map(|(id, provider_id, service_name, category, price, description, experience, location, created_at)| {
-            ServiceItem {
-                id,
-                provider_id,
-                service_name,
-                category,
-                price,
-                description,
-                experience,
-                location,
-                created_at: created_at.to_rfc3339(),
-            }
+        .iter()
+        .map(|r| ServiceItem {
+            id: r.get("id"),
+            provider_id: r.get("provider_id"),
+            service_name: r.get("service_name"),
+            category: r.get("category"),
+            price: r.get("price"),
+            description: r.get("description"),
+            experience: r.get("experience"),
+            location: r.get("location"),
+            created_at: r.get("created_at"),
         })
         .collect();
 
-    let current_page = (offset / limit) + 1;
     let total_pages = if total_count == 0 {
         0
     } else {
-        (total_count + limit - 1) / limit
+        (total_count as f64 / limit as f64).ceil() as i64
     };
+    let current_page = (offset / limit) + 1;
 
     let response = ApiResponse {
         success: true,
@@ -217,31 +187,34 @@ pub async fn filter_providers(
     _auth: AuthenticationUser,
     Query(params): Query<ProvidersFilterQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let service_type = params.service_type.as_deref().unwrap_or("");
+    let service_type = params.service_type.as_deref().unwrap_or("").trim();
     if service_type.is_empty() {
         return Err(ApiError::CustomError(
             StatusCode::BAD_REQUEST,
-            "service_type query parameter is required".to_string(),
+            "service_type is required".to_string(),
             "VALIDATION_ERROR".to_string(),
         ));
     }
 
-    let sort_by = params.sort_by.as_deref().unwrap_or("rating");
-    let limit = params.limit.unwrap_or(10).clamp(1, 100);
+    let limit = params.limit.unwrap_or(10).min(100).max(1);
     let offset = params.offset.unwrap_or(0).max(0);
+    let sort_by = params.sort_by.as_deref().unwrap_or("rating");
 
-    let order_clause = match sort_by {
-        "price" => "s.price ASC",
-        "experience" => "s.experience DESC",
-        _ => "p.rating DESC", // default: rating
-    };
+    // Validate sort_by
+    if !["rating", "price", "experience"].contains(&sort_by) {
+        return Err(ApiError::CustomError(
+            StatusCode::BAD_REQUEST,
+            "sort_by must be one of: rating, price, experience".to_string(),
+            "VALIDATION_ERROR".to_string(),
+        ));
+    }
 
     // Count total matching providers
     let total_count: i64 = sqlx::query_scalar(
         r#"
-        SELECT COUNT(DISTINCT p.id)
-        FROM carecrew_providers p
-        WHERE LOWER(p.service_type) = LOWER($1) AND p.is_active = TRUE
+        SELECT COUNT(DISTINCT s.provider_id)
+        FROM services s
+        WHERE LOWER(s.category) = LOWER($1)
         "#,
     )
     .bind(service_type)
@@ -249,68 +222,69 @@ pub async fn filter_providers(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
-    // Build the query with dynamic ORDER BY (safe since we control the string)
-    let query_str = format!(
+    // ORDER BY clause — safe because we control the string from a validated enum.
+    let order_clause = match sort_by {
+        "price" => "MIN(s.price) ASC",
+        "experience" => "s.experience DESC",
+        _ => "COALESCE(AVG(cr.rating), 0) DESC",
+    };
+
+    // We use format! only for the ORDER BY clause which cannot be parameterized.
+    // All user-supplied values (service_type, limit, offset) remain parameterized.
+    let query = format!(
         r#"
         SELECT
-            p.id,
-            p.name,
-            p.service_type,
-            COALESCE(p.rating, 0.0) as rating,
-            COALESCE(p.review_count, 0) as review_count,
-            COALESCE(p.city, '') as location,
-            COALESCE(
-                (SELECT s.price FROM services s WHERE s.provider_id = p.user_id AND LOWER(s.category) = LOWER($1) LIMIT 1),
-                0
-            ) as hourly_rate,
-            COALESCE(
-                (SELECT s.experience FROM services s WHERE s.provider_id = p.user_id AND LOWER(s.category) = LOWER($1) LIMIT 1),
-                ''
-            ) as experience,
-            CASE WHEN p.is_active THEN TRUE ELSE FALSE END as is_verified,
-            'available' as availability
-        FROM carecrew_providers p
-        WHERE LOWER(p.service_type) = LOWER($1) AND p.is_active = TRUE
-        ORDER BY {}
+            u.id,
+            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS name,
+            s.category                                      AS service_type,
+            COALESCE(AVG(cr.rating), 0.0)::FLOAT8           AS rating,
+            COUNT(cr.id)                                    AS review_count,
+            s.location,
+            MIN(s.price)::FLOAT8                            AS hourly_rate,
+            s.experience,
+            COALESCE(u.verified, false)                     AS is_verified,
+            'available'                                     AS availability
+        FROM services s
+        JOIN users u ON u.id = s.provider_id
+        LEFT JOIN carecrew_reviews cr ON cr.provider_id = s.provider_id
+        WHERE LOWER(s.category) = LOWER($1)
+        GROUP BY u.id, u.first_name, u.last_name, s.category, s.location, s.experience, u.verified
+        ORDER BY {order_clause}
         LIMIT $2 OFFSET $3
-        "#,
-        order_clause
+        "#
     );
 
-    let rows: Vec<(Uuid, String, String, f32, i32, String, i32, String, bool, String)> =
-        sqlx::query_as(&query_str)
-            .bind(service_type)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let rows = sqlx::query(&query)
+        .bind(service_type)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let providers: Vec<ProviderItem> = rows
-        .into_iter()
-        .map(|(id, name, svc_type, rating, review_count, location, hourly_rate, experience, is_verified, availability)| {
-            ProviderItem {
-                id,
-                name,
-                service_type: svc_type,
-                rating: f64::from(rating),
-                review_count,
-                location,
-                hourly_rate: f64::from(hourly_rate),
-                experience,
-                is_verified,
-                availability,
-                distance_km: None, // geolocation not supported yet
-            }
+        .iter()
+        .map(|r| ProviderItem {
+            id: r.get("id"),
+            name: r.get("name"),
+            service_type: r.get("service_type"),
+            rating: r.get::<f64, _>("rating"),
+            review_count: r.get("review_count"),
+            location: r.get("location"),
+            hourly_rate: r.get("hourly_rate"),
+            experience: r.get("experience"),
+            is_verified: r.get("is_verified"),
+            availability: r.get("availability"),
+            distance_km: None, // geolocation not in DB; placeholder
         })
         .collect();
 
-    let current_page = (offset / limit) + 1;
     let total_pages = if total_count == 0 {
         0
     } else {
-        (total_count + limit - 1) / limit
+        (total_count as f64 / limit as f64).ceil() as i64
     };
+    let current_page = (offset / limit) + 1;
 
     let response = ApiResponse {
         success: true,

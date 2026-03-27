@@ -2,10 +2,10 @@
 //
 // Data model returned by the GET /api/v1/chats/recent endpoint.
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::FromRow;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 /// One entry in the recent-chats list.
 /// Mapped directly from the SQLx query result.

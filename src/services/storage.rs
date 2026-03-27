@@ -1,7 +1,7 @@
 use anyhow::Result;
+use async_trait::async_trait;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::primitives::ByteStream;
-use async_trait::async_trait;
 
 #[async_trait]
 pub trait StorageService: Send + Sync {

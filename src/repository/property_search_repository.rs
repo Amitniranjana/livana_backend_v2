@@ -1,7 +1,6 @@
 /// Property Search Repository
 /// Handles all raw SQL queries for property search, filters, and suggestions.
 /// Uses `sqlx::query()` inline approach — consistent with the rest of the codebase.
-
 use sqlx::{Pool, Postgres, Row};
 
 /// Strongly-typed filter params passed from the service layer.
@@ -93,7 +92,9 @@ pub async fn search_properties(
 
     if let Some(bhks) = &filters.bhk {
         if !bhks.is_empty() {
-            let placeholders: Vec<String> = bhks.iter().enumerate()
+            let placeholders: Vec<String> = bhks
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.bhk IN ({})", placeholders.join(", ")));
@@ -103,7 +104,9 @@ pub async fn search_properties(
 
     if let Some(ptypes) = &filters.property_type {
         if !ptypes.is_empty() {
-            let placeholders: Vec<String> = ptypes.iter().enumerate()
+            let placeholders: Vec<String> = ptypes
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.property_type IN ({})", placeholders.join(", ")));
@@ -113,7 +116,9 @@ pub async fn search_properties(
 
     if let Some(furnishings) = &filters.furnishing {
         if !furnishings.is_empty() {
-            let placeholders: Vec<String> = furnishings.iter().enumerate()
+            let placeholders: Vec<String> = furnishings
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.furnishing IN ({})", placeholders.join(", ")));
@@ -144,7 +149,9 @@ pub async fn search_properties(
 
     if let Some(posted_by) = &filters.posted_by {
         if !posted_by.is_empty() {
-            let placeholders: Vec<String> = posted_by.iter().enumerate()
+            let placeholders: Vec<String> = posted_by
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.posted_by IN ({})", placeholders.join(", ")));
@@ -286,7 +293,9 @@ pub async fn count_search_results(
     }
     if let Some(bhks) = &filters.bhk {
         if !bhks.is_empty() {
-            let placeholders: Vec<String> = bhks.iter().enumerate()
+            let placeholders: Vec<String> = bhks
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.bhk IN ({})", placeholders.join(", ")));
@@ -295,7 +304,9 @@ pub async fn count_search_results(
     }
     if let Some(ptypes) = &filters.property_type {
         if !ptypes.is_empty() {
-            let placeholders: Vec<String> = ptypes.iter().enumerate()
+            let placeholders: Vec<String> = ptypes
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.property_type IN ({})", placeholders.join(", ")));
@@ -304,7 +315,9 @@ pub async fn count_search_results(
     }
     if let Some(furnishings) = &filters.furnishing {
         if !furnishings.is_empty() {
-            let placeholders: Vec<String> = furnishings.iter().enumerate()
+            let placeholders: Vec<String> = furnishings
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.furnishing IN ({})", placeholders.join(", ")));
@@ -327,7 +340,9 @@ pub async fn count_search_results(
     }
     if let Some(posted_by) = &filters.posted_by {
         if !posted_by.is_empty() {
-            let placeholders: Vec<String> = posted_by.iter().enumerate()
+            let placeholders: Vec<String> = posted_by
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("${}", param_idx + i as i32))
                 .collect();
             conditions.push(format!("p.posted_by IN ({})", placeholders.join(", ")));
@@ -361,20 +376,42 @@ pub async fn count_search_results(
             q = q.bind(pincode.clone());
         }
     }
-    if let Some(v) = filters.min_price { q = q.bind(v); }
-    if let Some(v) = filters.max_price { q = q.bind(v); }
-    if let Some(bhks) = &filters.bhk { for b in bhks { q = q.bind(*b); } }
-    if let Some(ptypes) = &filters.property_type { for p in ptypes { q = q.bind(p.clone()); } }
-    if let Some(furnishings) = &filters.furnishing { for f in furnishings { q = q.bind(f.clone()); } }
-    if let Some(v) = filters.min_area { q = q.bind(v); }
-    if let Some(v) = filters.max_area { q = q.bind(v); }
+    if let Some(v) = filters.min_price {
+        q = q.bind(v);
+    }
+    if let Some(v) = filters.max_price {
+        q = q.bind(v);
+    }
+    if let Some(bhks) = &filters.bhk {
+        for b in bhks {
+            q = q.bind(*b);
+        }
+    }
+    if let Some(ptypes) = &filters.property_type {
+        for p in ptypes {
+            q = q.bind(p.clone());
+        }
+    }
+    if let Some(furnishings) = &filters.furnishing {
+        for f in furnishings {
+            q = q.bind(f.clone());
+        }
+    }
+    if let Some(v) = filters.min_area {
+        q = q.bind(v);
+    }
+    if let Some(v) = filters.max_area {
+        q = q.bind(v);
+    }
     if let Some(amenity_list) = &filters.amenities {
         for amenity in amenity_list {
             q = q.bind(serde_json::json!([amenity]));
         }
     }
     if let Some(posted_by) = &filters.posted_by {
-        for pb in posted_by { q = q.bind(pb.clone()); }
+        for pb in posted_by {
+            q = q.bind(pb.clone());
+        }
     }
 
     let row = q.fetch_one(db).await?;
@@ -397,7 +434,7 @@ pub async fn get_price_area_ranges(
                     COALESCE(MAX(area_sqft), 10000) AS max_area
                 FROM properties
                 WHERE status = 'active' AND city ILIKE $1
-                "#
+                "#,
             )
             .bind(format!("%{}%", c))
             .fetch_one(db)

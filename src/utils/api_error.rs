@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -52,24 +52,9 @@ impl IntoResponse for ApiError {
                 "UNAUTHORIZED".to_string(),
                 None,
             ),
-            ApiError::Forbidden(msg) => (
-                StatusCode::FORBIDDEN,
-                msg,
-                "FORBIDDEN".to_string(),
-                None,
-            ),
-            ApiError::NotFound(msg) => (
-                StatusCode::NOT_FOUND,
-                msg,
-                "NOT_FOUND".to_string(),
-                None,
-            ),
-            ApiError::Conflict(msg) => (
-                StatusCode::CONFLICT,
-                msg,
-                "CONFLICT".to_string(),
-                None,
-            ),
+            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg, "FORBIDDEN".to_string(), None),
+            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg, "NOT_FOUND".to_string(), None),
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg, "CONFLICT".to_string(), None),
             ApiError::UnprocessableEntity(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
                 msg,
@@ -82,12 +67,7 @@ impl IntoResponse for ApiError {
                 "INTERNAL_SERVER_ERROR".to_string(),
                 None,
             ),
-            ApiError::CustomError(status, msg, code) => (
-                status,
-                msg,
-                code,
-                None,
-            ),
+            ApiError::CustomError(status, msg, code) => (status, msg, code, None),
         };
 
         let body = ApiErrorResponse {
@@ -101,3 +81,62 @@ impl IntoResponse for ApiError {
     }
 }
 
+#[allow(dead_code)]
+impl ApiError {
+    pub fn booking_not_completed() -> Self {
+        ApiError::CustomError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Booking is not completed yet".to_string(),
+            "BOOKING_NOT_COMPLETED".to_string(),
+        )
+    }
+    pub fn visit_not_completed() -> Self {
+        ApiError::CustomError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Visit is not completed yet".to_string(),
+            "VISIT_NOT_COMPLETED".to_string(),
+        )
+    }
+    pub fn review_already_exists() -> Self {
+        ApiError::CustomError(
+            StatusCode::CONFLICT,
+            "A review already exists for this booking/visit".to_string(),
+            "REVIEW_ALREADY_EXISTS".to_string(),
+        )
+    }
+    pub fn review_not_found() -> Self {
+        ApiError::CustomError(
+            StatusCode::NOT_FOUND,
+            "Review not found".to_string(),
+            "REVIEW_NOT_FOUND".to_string(),
+        )
+    }
+    pub fn edit_period_expired() -> Self {
+        ApiError::CustomError(
+            StatusCode::FORBIDDEN,
+            "Edit/delete period of 30 days has expired".to_string(),
+            "EDIT_PERIOD_EXPIRED".to_string(),
+        )
+    }
+    pub fn reply_already_exists() -> Self {
+        ApiError::CustomError(
+            StatusCode::CONFLICT,
+            "A reply already exists for this review".to_string(),
+            "REPLY_ALREADY_EXISTS".to_string(),
+        )
+    }
+    pub fn invalid_rating() -> Self {
+        ApiError::CustomError(
+            StatusCode::BAD_REQUEST,
+            "Rating must be between 1.0 and 5.0".to_string(),
+            "INVALID_RATING".to_string(),
+        )
+    }
+    pub fn access_denied() -> Self {
+        ApiError::CustomError(
+            StatusCode::FORBIDDEN,
+            "You do not have permission to perform this action".to_string(),
+            "ACCESS_DENIED".to_string(),
+        )
+    }
+}

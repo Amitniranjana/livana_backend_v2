@@ -1,7 +1,8 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// ── Request DTOs ──
+// ── Requests ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCarecrewReviewRequest {
@@ -23,59 +24,38 @@ pub struct ReplyRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ReviewListQuery {
+pub struct ReviewsQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
 
-// ── Response DTOs ──
+// ── Responses ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
-pub struct CarecrewReviewCreatedData {
+pub struct CreateReviewData {
     pub review_id: Uuid,
     pub booking_id: Uuid,
     pub provider_id: Uuid,
     pub reviewer_id: Uuid,
     pub rating: f64,
     pub comment: Option<String>,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CarecrewReviewUpdatedData {
-    pub review_id: Uuid,
-    pub rating: f64,
-    pub comment: Option<String>,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ReviewDeletedData {
-    pub deleted: bool,
-    pub review_id: Uuid,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ReviewReplyData {
-    pub review_id: Uuid,
-    pub reply: String,
-    pub replied_at: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct CarecrewReviewItem {
+pub struct ReviewItem {
     pub id: Uuid,
     pub reviewer_name: String,
     pub reviewer_image: Option<String>,
     pub rating: f64,
     pub comment: Option<String>,
     pub reply: Option<String>,
-    pub reply_at: Option<String>,
-    pub review_date: String,
+    pub reply_at: Option<DateTime<Utc>>,
+    pub review_date: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct RatingBreakdown {
+pub struct ReviewBreakdown {
     #[serde(rename = "5")]
     pub five: i64,
     #[serde(rename = "4")]
@@ -89,17 +69,38 @@ pub struct RatingBreakdown {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CarecrewReviewSummary {
+pub struct ReviewSummary {
     pub average_rating: f64,
     pub total_reviews: i64,
-    pub breakdown: RatingBreakdown,
+    pub breakdown: ReviewBreakdown,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CarecrewReviewsListData {
-    pub reviews: Vec<CarecrewReviewItem>,
-    pub summary: CarecrewReviewSummary,
+pub struct ReviewsListData {
+    pub reviews: Vec<ReviewItem>,
+    pub summary: ReviewSummary,
     pub total_count: i64,
     pub current_page: i64,
     pub total_pages: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EditReviewData {
+    pub review_id: Uuid,
+    pub rating: f64,
+    pub comment: Option<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteReviewData {
+    pub deleted: bool,
+    pub review_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReplyData {
+    pub review_id: Uuid,
+    pub reply: String,
+    pub replied_at: DateTime<Utc>,
 }

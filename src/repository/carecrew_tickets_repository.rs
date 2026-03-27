@@ -1,6 +1,5 @@
 /// CareCrew Tickets Repository
 /// Raw sqlx::query() functions for ticket CRUD operations.
-
 use sqlx::{Pool, Postgres, Row};
 use uuid::Uuid;
 
@@ -48,37 +47,69 @@ pub async fn list_tickets_for_user(
 
     // Build WHERE clause dynamically
     match (status_filter, priority_filter) {
-        (Some(s), Some(p)) => sqlx::query(
-            r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
+        (Some(s), Some(p)) => {
+            sqlx::query(
+                r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                       priority, status, created_at, updated_at
                FROM carecrew_tickets
                WHERE user_id = $1 AND status = $2 AND priority = $3
-               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#
-        ).bind(user_id).bind(s).bind(p).bind(limit as i64).bind(offset).fetch_all(db).await,
+               ORDER BY created_at DESC LIMIT $4 OFFSET $5"#,
+            )
+            .bind(user_id)
+            .bind(s)
+            .bind(p)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await
+        }
 
-        (Some(s), None) => sqlx::query(
-            r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
+        (Some(s), None) => {
+            sqlx::query(
+                r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                       priority, status, created_at, updated_at
                FROM carecrew_tickets
                WHERE user_id = $1 AND status = $2
-               ORDER BY created_at DESC LIMIT $3 OFFSET $4"#
-        ).bind(user_id).bind(s).bind(limit as i64).bind(offset).fetch_all(db).await,
+               ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+            )
+            .bind(user_id)
+            .bind(s)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await
+        }
 
-        (None, Some(p)) => sqlx::query(
-            r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
+        (None, Some(p)) => {
+            sqlx::query(
+                r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                       priority, status, created_at, updated_at
                FROM carecrew_tickets
                WHERE user_id = $1 AND priority = $2
-               ORDER BY created_at DESC LIMIT $3 OFFSET $4"#
-        ).bind(user_id).bind(p).bind(limit as i64).bind(offset).fetch_all(db).await,
+               ORDER BY created_at DESC LIMIT $3 OFFSET $4"#,
+            )
+            .bind(user_id)
+            .bind(p)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await
+        }
 
-        (None, None) => sqlx::query(
-            r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
+        (None, None) => {
+            sqlx::query(
+                r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                       priority, status, created_at, updated_at
                FROM carecrew_tickets
                WHERE user_id = $1
-               ORDER BY created_at DESC LIMIT $2 OFFSET $3"#
-        ).bind(user_id).bind(limit as i64).bind(offset).fetch_all(db).await,
+               ORDER BY created_at DESC LIMIT $2 OFFSET $3"#,
+            )
+            .bind(user_id)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await
+        }
     }
 }
 
@@ -114,7 +145,7 @@ pub async fn get_ticket_by_id(
     sqlx::query(
         r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                   priority, status, created_at, updated_at
-           FROM carecrew_tickets WHERE id = $1"#
+           FROM carecrew_tickets WHERE id = $1"#,
     )
     .bind(ticket_id)
     .fetch_optional(db)
@@ -131,7 +162,7 @@ pub async fn get_comments_for_ticket(
         r#"SELECT id, ticket_id, commenter_id, comment, created_at
            FROM carecrew_ticket_comments
            WHERE ticket_id = $1
-           ORDER BY created_at ASC"#
+           ORDER BY created_at ASC"#,
     )
     .bind(ticket_id)
     .fetch_all(db)
@@ -148,7 +179,7 @@ pub async fn add_comment(
     sqlx::query(
         r#"INSERT INTO carecrew_ticket_comments (id, ticket_id, commenter_id, comment, created_at)
            VALUES ($1, $2, $3, $4, NOW())
-           RETURNING id, ticket_id, commenter_id, comment, created_at"#
+           RETURNING id, ticket_id, commenter_id, comment, created_at"#,
     )
     .bind(id)
     .bind(ticket_id)
@@ -167,34 +198,56 @@ pub async fn update_ticket(
     assignee_id: Option<Uuid>,
 ) -> Result<sqlx::postgres::PgRow, sqlx::Error> {
     match (new_status, assignee_id) {
-        (Some(s), Some(a)) => sqlx::query(
-            r#"UPDATE carecrew_tickets SET status=$1, assignee_id=$2, updated_at=NOW()
+        (Some(s), Some(a)) => {
+            sqlx::query(
+                r#"UPDATE carecrew_tickets SET status=$1, assignee_id=$2, updated_at=NOW()
                WHERE id=$3
                RETURNING id, user_id, property_id, assignee_id, issue_type, description,
-                         priority, status, created_at, updated_at"#
-        ).bind(s).bind(a).bind(ticket_id).fetch_one(db).await,
+                         priority, status, created_at, updated_at"#,
+            )
+            .bind(s)
+            .bind(a)
+            .bind(ticket_id)
+            .fetch_one(db)
+            .await
+        }
 
-        (Some(s), None) => sqlx::query(
-            r#"UPDATE carecrew_tickets SET status=$1, updated_at=NOW()
+        (Some(s), None) => {
+            sqlx::query(
+                r#"UPDATE carecrew_tickets SET status=$1, updated_at=NOW()
                WHERE id=$2
                RETURNING id, user_id, property_id, assignee_id, issue_type, description,
-                         priority, status, created_at, updated_at"#
-        ).bind(s).bind(ticket_id).fetch_one(db).await,
+                         priority, status, created_at, updated_at"#,
+            )
+            .bind(s)
+            .bind(ticket_id)
+            .fetch_one(db)
+            .await
+        }
 
-        (None, Some(a)) => sqlx::query(
-            r#"UPDATE carecrew_tickets SET assignee_id=$1, updated_at=NOW()
+        (None, Some(a)) => {
+            sqlx::query(
+                r#"UPDATE carecrew_tickets SET assignee_id=$1, updated_at=NOW()
                WHERE id=$2
                RETURNING id, user_id, property_id, assignee_id, issue_type, description,
-                         priority, status, created_at, updated_at"#
-        ).bind(a).bind(ticket_id).fetch_one(db).await,
+                         priority, status, created_at, updated_at"#,
+            )
+            .bind(a)
+            .bind(ticket_id)
+            .fetch_one(db)
+            .await
+        }
 
         (None, None) => {
             // Nothing to update — just return current state
             sqlx::query(
                 r#"SELECT id, user_id, property_id, assignee_id, issue_type, description,
                           priority, status, created_at, updated_at
-                   FROM carecrew_tickets WHERE id=$1"#
-            ).bind(ticket_id).fetch_one(db).await
+                   FROM carecrew_tickets WHERE id=$1"#,
+            )
+            .bind(ticket_id)
+            .fetch_one(db)
+            .await
         }
     }
 }

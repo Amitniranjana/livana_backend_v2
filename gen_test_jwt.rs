@@ -1,7 +1,7 @@
 // tmp script to generate a test JWT using the same secret as the server
-use jsonwebtoken::{encode, EncodingKey, Header};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{EncodingKey, Header, encode};
 use serde::{Deserialize, Serialize};
-use chrono::{Utc, Duration};
 
 #[derive(Serialize, Deserialize)]
 struct Claims {

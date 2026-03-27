@@ -1,26 +1,23 @@
 // src/handlers/auth.rs
 
-use axum::{
-    http::StatusCode,
-    response::Json,
-    extract::{State, Json as ExtractJson},
-    response::IntoResponse,
-};
 use crate::app_state::AppState;
 use crate::dtos::request::{
-    ForgotPasswordRequest,
-    ResetPasswordRequest,
-    SigninRequest,
-    SignupRequest
+    ForgotPasswordRequest, ResetPasswordRequest, SigninRequest, SignupRequest,
+};
+use crate::dtos::response::{SignupResponseData, SignupUserData};
+use crate::utils::auth::{create_jwt, verify_password};
+use crate::utils::util::hash_string;
+use axum::{
+    extract::{Json as ExtractJson, State},
+    http::StatusCode,
+    response::IntoResponse,
+    response::Json,
 };
 use serde::Deserialize;
 use serde_json::json;
-use crate::utils::util::hash_string;
-use crate::utils::auth::{create_jwt, verify_password};
-use crate::dtos::response::{SignupResponseData, SignupUserData};
 
 // Import OTP functions
-use crate::otp::{generate_otp, send_sms_otp, send_email_otp};
+use crate::otp::{generate_otp, send_email_otp, send_sms_otp};
 
 // --- DTO for Testing OTP (Internal use) ---
 #[derive(Deserialize, Debug)]
@@ -51,7 +48,8 @@ pub async fn signup(
     let hashed_password = hash_string(&payload.password);
 
     // 1. Create user in database
-    let user_result = app_state.user_service
+    let user_result = app_state
+        .user_service
         .create_user(
             &payload.first_name,
             &payload.last_name,
@@ -99,14 +97,20 @@ pub async fn signup(
 
     // Send Email OTP
     if let Err(e) = send_email_otp(&user.email, &verification_otp).await {
-        eprintln!("Warning: Failed to send signup email OTP to {}: {:?}", user.email, e);
+        eprintln!(
+            "Warning: Failed to send signup email OTP to {}: {:?}",
+            user.email, e
+        );
     } else {
         println!("✓ Signup email OTP sent to {}", user.email);
     }
 
     // Send SMS OTP
     if let Err(e) = send_sms_otp(&user.phone_no, &verification_otp).await {
-        eprintln!("Warning: Failed to send signup SMS OTP to {}: {:?}", user.phone_no, e);
+        eprintln!(
+            "Warning: Failed to send signup SMS OTP to {}: {:?}",
+            user.phone_no, e
+        );
     } else {
         println!("✓ Signup SMS OTP sent to {}", user.phone_no);
     }
@@ -259,9 +263,7 @@ pub async fn signin(
     ),
     tag = "Authentication"
 )]
-pub async fn signout(
-    State(_app_state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn signout(State(_app_state): State<AppState>) -> impl IntoResponse {
     let response = json!({
         "success": true,
         "message": "User signed out successfully",
@@ -319,7 +321,8 @@ pub async fn send_forgot_password_link(
     println!("========================================");
 
     // 3. Store reset code in database
-    if let Err(e) = app_state.user_service
+    if let Err(e) = app_state
+        .user_service
         .store_reset_code(&user.id.to_string(), &reset_code)
         .await
     {
@@ -333,7 +336,10 @@ pub async fn send_forgot_password_link(
 
     // 4. Send reset code via email
     if let Err(e) = send_email_otp(&user.email, &reset_code).await {
-        eprintln!("Warning: Failed to send password reset email to {}: {:?}", user.email, e);
+        eprintln!(
+            "Warning: Failed to send password reset email to {}: {:?}",
+            user.email, e
+        );
         // WE DO NOT RETURN ERROR IN DEV MODE TO ALLOW TESTING TO PROCEED
     } else {
         println!("✓ Password reset OTP sent to {}", user.email);
@@ -377,7 +383,8 @@ pub async fn reset_password(
     ExtractJson(payload): ExtractJson<ResetPasswordRequest>,
 ) -> impl IntoResponse {
     // 1. Verify reset code
-    let user_id = match app_state.user_service
+    let user_id = match app_state
+        .user_service
         .verify_reset_code(&payload.code)
         .await
     {
@@ -404,7 +411,8 @@ pub async fn reset_password(
     let hashed_password = hash_string(&payload.new_password);
 
     // 3. Update user password
-    if let Err(e) = app_state.user_service
+    if let Err(e) = app_state
+        .user_service
         .update_password(&user_id, &hashed_password)
         .await
     {
@@ -417,7 +425,10 @@ pub async fn reset_password(
     }
 
     // 4. Delete used reset code
-    let _ = app_state.user_service.delete_reset_code(&payload.code).await;
+    let _ = app_state
+        .user_service
+        .delete_reset_code(&payload.code)
+        .await;
 
     // 5. Return response
     let response = json!({
@@ -455,7 +466,10 @@ pub async fn test_otp_delivery(
     // --- DEVELOPER FALLBACK ---
     println!("========================================");
     println!("🔑 [DEV MODE] TEST DELIVERY OTP INTERCEPT:");
-    println!("Channel: {} | Destination: {}", payload.channel, payload.destination);
+    println!(
+        "Channel: {} | Destination: {}",
+        payload.channel, payload.destination
+    );
     println!("OTP Code: {}", otp);
     println!("========================================");
 
@@ -484,7 +498,7 @@ pub async fn test_otp_delivery(
             let response = json!({
                 "success": true, // Returning true to unblock frontend testing
                 "message": format!("Delivery failed natively due to AWS ({}). OTP was generated and printed in server logs.", e),
-                "otp": otp 
+                "otp": otp
             });
             (StatusCode::OK, Json(response)).into_response()
         }

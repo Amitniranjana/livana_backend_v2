@@ -1,30 +1,38 @@
-use crate::repository::user_repository::UserRepository;
-use crate::models::user::User;
-use crate::dtos::response::UserResponse;
 use crate::dtos::request::UpdateProfileRequest;
-use uuid::Uuid;
+use crate::dtos::response::UserResponse;
+use crate::models::user::User;
+use crate::repository::user_repository::UserRepository;
 use chrono::Utc;
-use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
-pub struct UserService{
-    pub user_repository:UserRepository,
+pub struct UserService {
+    pub user_repository: UserRepository,
     // in-memory store for reset codes: user_id -> code
     pub reset_codes: Arc<Mutex<HashMap<String, String>>>,
 }
 
-
-impl UserService{
-    pub fn new(user_repository: UserRepository)->Self{
-        UserService{
+impl UserService {
+    pub fn new(user_repository: UserRepository) -> Self {
+        UserService {
             user_repository,
             reset_codes: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub async fn create_user(&self, first_name: &str, last_name: &str, email: &str, phone_no: &str, password: &str, _gender: &str , user_role: &str) -> Result<User, String> {
+    pub async fn create_user(
+        &self,
+        first_name: &str,
+        last_name: &str,
+        email: &str,
+        phone_no: &str,
+        password: &str,
+        _gender: &str,
+        user_role: &str,
+    ) -> Result<User, String> {
         let user = User {
             id: Uuid::new_v4(),
             first_name: first_name.to_string(),
@@ -77,7 +85,9 @@ impl UserService{
 
     pub async fn delete_reset_code(&self, code: &str) -> Result<(), String> {
         let mut map = self.reset_codes.lock().map_err(|e| e.to_string())?;
-        let key = map.iter().find_map(|(k, v)| if v == code { Some(k.clone()) } else { None });
+        let key = map
+            .iter()
+            .find_map(|(k, v)| if v == code { Some(k.clone()) } else { None });
         if let Some(k) = key {
             map.remove(&k);
         }
@@ -86,13 +96,20 @@ impl UserService{
 
     pub async fn get_user_profile(&self, user_id: &str) -> Result<UserResponse, String> {
         // 1. Get basic user info
-        let user = self.user_repository.find_by_id(user_id).await?
+        let user = self
+            .user_repository
+            .find_by_id(user_id)
+            .await?
             .ok_or_else(|| "User not found".to_string())?;
 
         // 2. Get extended profile info (from user_profiles)
         // Ignoring error if table doesn't exist or query fails (optional)
         // But better to handle it.
-        let extended = self.user_repository.get_extended_profile(user_id).await.unwrap_or(None);
+        let extended = self
+            .user_repository
+            .get_extended_profile(user_id)
+            .await
+            .unwrap_or(None);
         let (gender, bio, profile_image_url) = extended.unwrap_or((None, None, None));
 
         // 3. Construct response
@@ -120,24 +137,40 @@ impl UserService{
         })
     }
 
-    pub async fn update_user_profile(&self, user_id: &str, req: UpdateProfileRequest) -> Result<UserResponse, String> {
+    pub async fn update_user_profile(
+        &self,
+        user_id: &str,
+        req: UpdateProfileRequest,
+    ) -> Result<UserResponse, String> {
         // 1. Update basic user info
-        self.user_repository.update_user(user_id, req.first_name, req.last_name, req.phone_no).await?;
+        self.user_repository
+            .update_user(user_id, req.first_name, req.last_name, req.phone_no)
+            .await?;
 
         // 2. Update extended profile info
-        self.user_repository.upsert_profile(user_id, req.gender, req.bio, None).await?;
+        self.user_repository
+            .upsert_profile(user_id, req.gender, req.bio, None)
+            .await?;
 
         // 3. Return updated profile
         self.get_user_profile(user_id).await
     }
 
-    pub async fn update_profile_image(&self, user_id: &str, image_url: &str) -> Result<UserResponse, String> {
+    pub async fn update_profile_image(
+        &self,
+        user_id: &str,
+        image_url: &str,
+    ) -> Result<UserResponse, String> {
         // Update only image url
-        self.user_repository.upsert_profile(user_id, None, None, Some(image_url.to_string())).await?;
+        self.user_repository
+            .upsert_profile(user_id, None, None, Some(image_url.to_string()))
+            .await?;
         self.get_user_profile(user_id).await
     }
 
     pub async fn update_chime_arn(&self, user_id: &str, arn: &str) -> Result<(), String> {
-        self.user_repository.update_chime_user_arn(user_id, arn).await
+        self.user_repository
+            .update_chime_user_arn(user_id, arn)
+            .await
     }
 }

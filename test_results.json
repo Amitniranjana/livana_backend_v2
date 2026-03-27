@@ -1,0 +1,334 @@
+[
+  {
+    "endpoint": "POST /api/services",
+    "status": 201,
+    "res": {
+      "status": 201,
+      "json": {
+        "success": true,
+        "message": "Service added successfully",
+        "data": {
+          "service_id": "bbf85b78-6c6a-4782-8f38-b1c0decb9c2a",
+          "provider_id": "11111111-1111-1111-1111-111111111111",
+          "service_name": "Emergency Pipe Fixing",
+          "category": "plumber",
+          "price": 500,
+          "description": "Fixing pipes fast",
+          "experience": "5 years",
+          "location": "Mumbai",
+          "created_at": "2026-03-27T21:22:26.266155800Z"
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "GET /api/services",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Services retrieved successfully",
+        "data": {
+          "services": [
+            {
+              "id": "bbf85b78-6c6a-4782-8f38-b1c0decb9c2a",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:22:26.266155Z"
+            },
+            {
+              "id": "acc33047-5daa-4010-9f59-9f3ff1a3b4e5",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:17:21.645101Z"
+            },
+            {
+              "id": "47b67c1c-4192-46b6-b5f7-324e6649724c",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:16:14.398175Z"
+            },
+            {
+              "id": "52e077ed-a058-4383-9821-b0afcbbf73fa",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:13:27.317581Z"
+            },
+            {
+              "id": "fa96e022-ae68-4663-999f-d72eec1b5d59",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:12:24.575772Z"
+            },
+            {
+              "id": "1fae2204-5f9c-4b01-a3c5-de24398b18ec",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:09:58.762815Z"
+            },
+            {
+              "id": "9b21eb47-f858-4133-bb3d-a3b2576edd2c",
+              "provider_id": "11111111-1111-1111-1111-111111111111",
+              "service_name": "Emergency Pipe Fixing",
+              "category": "plumber",
+              "price": 500,
+              "description": "Fixing pipes fast",
+              "experience": "5 years",
+              "location": "Mumbai",
+              "created_at": "2026-03-27T21:09:14.866177Z"
+            }
+          ],
+          "total_count": 7,
+          "current_page": 1,
+          "total_pages": 1
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "GET /api/services/providers",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Providers retrieved successfully",
+        "data": {
+          "providers": [
+            {
+              "id": "11111111-1111-1111-1111-111111111111",
+              "name": "Test Provider",
+              "service_type": "plumber",
+              "rating": 0,
+              "review_count": 0,
+              "location": "Mumbai",
+              "hourly_rate": 500,
+              "experience": "5 years",
+              "is_verified": true,
+              "availability": "available",
+              "distance_km": null
+            }
+          ],
+          "total_count": 1,
+          "current_page": 1,
+          "total_pages": 1
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "POST /api/reviews/carecrew",
+    "status": 201,
+    "res": {
+      "status": 201,
+      "json": {
+        "success": true,
+        "message": "Review submitted successfully",
+        "data": {
+          "review_id": "73782758-8758-41bd-a79a-c7909e0e3867",
+          "booking_id": "44444444-4444-4444-4444-444444444444",
+          "provider_id": "11111111-1111-1111-1111-111111111111",
+          "reviewer_id": "22222222-2222-2222-2222-222222222222",
+          "rating": 4.5,
+          "comment": "Great work!",
+          "created_at": "2026-03-27T21:22:26.352593600Z"
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "GET /api/reviews/carecrew/:id",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Reviews retrieved successfully",
+        "data": {
+          "reviews": [
+            {
+              "id": "73782758-8758-41bd-a79a-c7909e0e3867",
+              "reviewer_name": "Test Customer",
+              "reviewer_image": null,
+              "rating": 4.5,
+              "comment": "Great work!",
+              "reply": null,
+              "reply_at": null,
+              "review_date": "2026-03-27T21:22:26.352593Z"
+            }
+          ],
+          "summary": {
+            "average_rating": 4.5,
+            "total_reviews": 1,
+            "breakdown": {
+              "1": 0,
+              "2": 0,
+              "3": 0,
+              "4": 0,
+              "5": 1
+            }
+          },
+          "total_count": 1,
+          "current_page": 1,
+          "total_pages": 1
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "PUT /api/reviews/carecrew/:id",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Review updated successfully",
+        "data": {
+          "review_id": "73782758-8758-41bd-a79a-c7909e0e3867",
+          "rating": 5,
+          "comment": "Great work!",
+          "updated_at": "2026-03-27T21:22:26.360450600Z"
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "POST /api/reviews/carecrew/:id/reply",
+    "status": 403,
+    "res": {
+      "status": 403,
+      "json": {
+        "success": false,
+        "message": "You do not have permission to perform this action",
+        "error_code": "ACCESS_DENIED"
+      }
+    }
+  },
+  {
+    "endpoint": "DELETE /api/reviews/carecrew/:id",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Review deleted successfully",
+        "data": {
+          "deleted": true,
+          "review_id": "73782758-8758-41bd-a79a-c7909e0e3867"
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "POST /api/reviews/property",
+    "status": 409,
+    "res": {
+      "status": 409,
+      "json": {
+        "success": false,
+        "message": "A review already exists for this booking/visit",
+        "error_code": "REVIEW_ALREADY_EXISTS"
+      }
+    }
+  },
+  {
+    "endpoint": "GET /api/reviews/property/:id",
+    "status": 200,
+    "res": {
+      "status": 200,
+      "json": {
+        "success": true,
+        "message": "Reviews retrieved successfully",
+        "data": {
+          "reviews": [
+            {
+              "id": "b6304d59-6c3f-4093-99c9-6085e8f4ec3b",
+              "reviewer_name": "Test Customer",
+              "reviewer_image": null,
+              "rating": 4,
+              "comment": "Nice place",
+              "location_rating": 4.5,
+              "cleanliness_rating": 4.8,
+              "value_rating": null,
+              "reply": null,
+              "reply_at": null,
+              "review_date": "2026-03-27T21:09:15.011737Z"
+            }
+          ],
+          "summary": {
+            "average_rating": 4,
+            "total_reviews": 1,
+            "average_location_rating": 4.5,
+            "average_cleanliness_rating": 4.8,
+            "average_value_rating": null,
+            "breakdown": {
+              "1": 0,
+              "2": 0,
+              "3": 0,
+              "4": 1,
+              "5": 0
+            }
+          },
+          "total_count": 1,
+          "current_page": 1,
+          "total_pages": 1
+        }
+      }
+    }
+  },
+  {
+    "endpoint": "PUT /api/reviews/property/:id",
+    "status": 400,
+    "res": {
+      "status": 400,
+      "json": "Invalid URL: Cannot parse `id` with value `null`: UUID parsing failed: invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1"
+    }
+  },
+  {
+    "endpoint": "POST /api/reviews/property/:id/reply",
+    "status": 400,
+    "res": {
+      "status": 400,
+      "json": "Invalid URL: Cannot parse `id` with value `null`: UUID parsing failed: invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1"
+    }
+  },
+  {
+    "endpoint": "DELETE /api/reviews/property/:id",
+    "status": 400,
+    "res": {
+      "status": 400,
+      "json": "Invalid URL: Cannot parse `id` with value `null`: UUID parsing failed: invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1"
+    }
+  }
+]

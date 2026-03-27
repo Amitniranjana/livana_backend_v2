@@ -40,11 +40,7 @@ pub async fn google_signin(
     ExtractJson(payload): ExtractJson<GoogleSigninRequest>,
 ) -> impl IntoResponse {
     // ── Step 1: Verify the token with Google ──────────────────────────────
-    let google_user = match verify_google_id_token(
-        &payload.id_token,
-        &state.google_client_id,
-    )
-    .await
+    let google_user = match verify_google_id_token(&payload.id_token, &state.google_client_id).await
     {
         Ok(u) => u,
         Err(e) => {

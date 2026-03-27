@@ -8,10 +8,10 @@
 //   API 5: GET  /api/expo/{expo_id}/participants — Get Expo Participants (Admin)
 
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -19,10 +19,9 @@ use crate::{
     app_state::AppState,
     dtos::{
         expo::{
-            CreateExpoRequest, CreateExpoResponseData,
-            ExpoEventListItem, ExpoEventsData, ExpoListQuery,
-            ExpoDetailData, RegisterExpoRequest,
-            ExpoParticipantsQuery, ParticipantItem, ExpoParticipantsData,
+            CreateExpoRequest, CreateExpoResponseData, ExpoDetailData, ExpoEventListItem,
+            ExpoEventsData, ExpoListQuery, ExpoParticipantsData, ExpoParticipantsQuery,
+            ParticipantItem, RegisterExpoRequest,
         },
         response::ApiResponse,
     },
@@ -43,18 +42,24 @@ pub async fn create_expo(
         return Err(ApiError::BadRequest("Title cannot be empty".to_string()));
     }
     if payload.description.trim().is_empty() {
-        return Err(ApiError::BadRequest("Description cannot be empty".to_string()));
+        return Err(ApiError::BadRequest(
+            "Description cannot be empty".to_string(),
+        ));
     }
     if payload.location.trim().is_empty() {
         return Err(ApiError::BadRequest("Location cannot be empty".to_string()));
     }
 
     // Parse date & time strings
-    let event_date = chrono::NaiveDate::parse_from_str(&payload.event_date, "%Y-%m-%d")
-        .map_err(|_| ApiError::BadRequest("Invalid event_date format. Expected YYYY-MM-DD".to_string()))?;
+    let event_date =
+        chrono::NaiveDate::parse_from_str(&payload.event_date, "%Y-%m-%d").map_err(|_| {
+            ApiError::BadRequest("Invalid event_date format. Expected YYYY-MM-DD".to_string())
+        })?;
 
-    let start_time = chrono::NaiveTime::parse_from_str(&payload.start_time, "%H:%M")
-        .map_err(|_| ApiError::BadRequest("Invalid start_time format. Expected HH:MM".to_string()))?;
+    let start_time =
+        chrono::NaiveTime::parse_from_str(&payload.start_time, "%H:%M").map_err(|_| {
+            ApiError::BadRequest("Invalid start_time format. Expected HH:MM".to_string())
+        })?;
 
     let end_time = chrono::NaiveTime::parse_from_str(&payload.end_time, "%H:%M")
         .map_err(|_| ApiError::BadRequest("Invalid end_time format. Expected HH:MM".to_string()))?;
@@ -63,7 +68,9 @@ pub async fn create_expo(
         .map_err(|_| ApiError::BadRequest("Invalid organizer_id UUID".to_string()))?;
 
     if payload.max_participants <= 0 {
-        return Err(ApiError::BadRequest("max_participants must be greater than 0".to_string()));
+        return Err(ApiError::BadRequest(
+            "max_participants must be greater than 0".to_string(),
+        ));
     }
 
     let expo_id = Uuid::new_v4();
@@ -157,13 +164,15 @@ pub async fn get_all_expos(
 
     let events: Vec<ExpoEventListItem> = rows
         .into_iter()
-        .map(|(id, title, location, event_date, registered_count)| ExpoEventListItem {
-            expo_id: id,
-            title,
-            location,
-            event_date: event_date.to_string(),
-            registered_count,
-        })
+        .map(
+            |(id, title, location, event_date, registered_count)| ExpoEventListItem {
+                expo_id: id,
+                title,
+                location,
+                event_date: event_date.to_string(),
+                registered_count,
+            },
+        )
         .collect();
 
     let response = ApiResponse {
@@ -186,16 +195,16 @@ pub async fn get_expo_details(
 ) -> Result<impl IntoResponse, ApiError> {
     // Fetch the event row
     let row: Option<(
-        Uuid,        // id
-        String,      // title
-        String,      // description
-        String,      // location
-        chrono::NaiveDate,  // event_date
-        chrono::NaiveTime,  // start_time
-        chrono::NaiveTime,  // end_time
-        Uuid,        // organizer_id
-        String,      // banner_image
-        i32,         // max_participants
+        Uuid,                          // id
+        String,                        // title
+        String,                        // description
+        String,                        // location
+        chrono::NaiveDate,             // event_date
+        chrono::NaiveTime,             // start_time
+        chrono::NaiveTime,             // end_time
+        Uuid,                          // organizer_id
+        String,                        // banner_image
+        i32,                           // max_participants
         chrono::DateTime<chrono::Utc>, // created_at
     )> = sqlx::query_as(
         r#"
@@ -212,9 +221,17 @@ pub async fn get_expo_details(
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let (
-        id, title, description, location, event_date,
-        start_time, end_time, organizer_id, banner_image,
-        max_participants, created_at,
+        id,
+        title,
+        description,
+        location,
+        event_date,
+        start_time,
+        end_time,
+        organizer_id,
+        banner_image,
+        max_participants,
+        created_at,
     ) = row.ok_or_else(|| ApiError::NotFound("Expo event not found".to_string()))?;
 
     // Get live participants count from expo_registrations
@@ -269,17 +286,18 @@ pub async fn register_for_expo(
         .map_err(|_| ApiError::BadRequest("Invalid user_id UUID".to_string()))?;
 
     if payload.user_type.trim().is_empty() {
-        return Err(ApiError::BadRequest("user_type cannot be empty".to_string()));
+        return Err(ApiError::BadRequest(
+            "user_type cannot be empty".to_string(),
+        ));
     }
 
     // 1. Verify the expo exists and fetch max_participants
-    let expo_row: Option<(i32,)> = sqlx::query_as(
-        "SELECT max_participants FROM expo_events WHERE id = $1",
-    )
-    .bind(expo_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let expo_row: Option<(i32,)> =
+        sqlx::query_as("SELECT max_participants FROM expo_events WHERE id = $1")
+            .bind(expo_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let (max_participants,) =
         expo_row.ok_or_else(|| ApiError::NotFound("Expo event not found".to_string()))?;
@@ -345,13 +363,12 @@ pub async fn get_expo_participants(
     let offset = params.offset.max(0);
 
     // 1. Verify the expo event exists
-    let expo_exists: Option<(i32,)> = sqlx::query_as(
-        "SELECT max_participants FROM expo_events WHERE id = $1",
-    )
-    .bind(expo_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let expo_exists: Option<(i32,)> =
+        sqlx::query_as("SELECT max_participants FROM expo_events WHERE id = $1")
+            .bind(expo_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if expo_exists.is_none() {
         return Err(ApiError::NotFound("Expo event not found".to_string()));
@@ -368,61 +385,66 @@ pub async fn get_expo_participants(
         .await
         .unwrap_or(0)
     } else {
-        sqlx::query_scalar(
-            "SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1",
-        )
-        .bind(expo_id)
-        .fetch_one(&app_state.db)
-        .await
-        .unwrap_or(0)
+        sqlx::query_scalar("SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1")
+            .bind(expo_id)
+            .fetch_one(&app_state.db)
+            .await
+            .unwrap_or(0)
     };
 
     // 3. Fetch paginated participant rows
-    let rows: Vec<(Uuid, Uuid, String, Option<String>, chrono::DateTime<chrono::Utc>)> =
-        if let Some(ref user_type) = params.user_type {
-            sqlx::query_as(
-                r#"
+    let rows: Vec<(
+        Uuid,
+        Uuid,
+        String,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = if let Some(ref user_type) = params.user_type {
+        sqlx::query_as(
+            r#"
                 SELECT id, user_id, user_type, company_name, registered_at
                 FROM expo_registrations
                 WHERE expo_id = $1 AND user_type = $2
                 ORDER BY registered_at DESC
                 LIMIT $3 OFFSET $4
                 "#,
-            )
-            .bind(expo_id)
-            .bind(user_type)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
-        } else {
-            sqlx::query_as(
-                r#"
+        )
+        .bind(expo_id)
+        .bind(user_type)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+    } else {
+        sqlx::query_as(
+            r#"
                 SELECT id, user_id, user_type, company_name, registered_at
                 FROM expo_registrations
                 WHERE expo_id = $1
                 ORDER BY registered_at DESC
                 LIMIT $2 OFFSET $3
                 "#,
-            )
-            .bind(expo_id)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
-        };
+        )
+        .bind(expo_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?
+    };
 
     let participants: Vec<ParticipantItem> = rows
         .into_iter()
-        .map(|(id, user_id, user_type, company_name, registered_at)| ParticipantItem {
-            registration_id: id,
-            user_id,
-            user_type,
-            company_name,
-            registered_at: registered_at.to_rfc3339(),
-        })
+        .map(
+            |(id, user_id, user_type, company_name, registered_at)| ParticipantItem {
+                registration_id: id,
+                user_id,
+                user_type,
+                company_name,
+                registered_at: registered_at.to_rfc3339(),
+            },
+        )
         .collect();
 
     // 4. Compute pagination metadata

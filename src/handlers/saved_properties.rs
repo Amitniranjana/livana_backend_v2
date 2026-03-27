@@ -6,10 +6,10 @@
 //   5.3  GET    /api/v1/users/me/saved-properties
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -35,13 +35,12 @@ pub async fn save_property(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Verify the property exists
-    let exists: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM properties WHERE id = $1 AND status = 'active'"
-    )
-    .bind(property_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM properties WHERE id = $1 AND status = 'active'")
+            .bind(property_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound("Property not found".to_string()));
@@ -87,14 +86,14 @@ pub async fn unsave_property(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Delete — if it wasn't saved, this is a no-op (graceful)
-    sqlx::query(
-        "DELETE FROM saved_properties WHERE user_id = $1 AND property_id = $2"
-    )
-    .bind(user_id)
-    .bind(property_id)
-    .execute(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to remove saved property: {}", e)))?;
+    sqlx::query("DELETE FROM saved_properties WHERE user_id = $1 AND property_id = $2")
+        .bind(user_id)
+        .bind(property_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| {
+            ApiError::InternalServerError(format!("Failed to remove saved property: {}", e))
+        })?;
 
     let response = ApiResponse {
         success: true,
@@ -119,20 +118,25 @@ pub async fn get_saved_properties(
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
-    let rows: Vec<(Uuid, String, Option<i64>, Option<String>, chrono::DateTime<chrono::Utc>)> =
-        sqlx::query_as(
-            r#"
+    let rows: Vec<(
+        Uuid,
+        String,
+        Option<i64>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        r#"
             SELECT p.id, p.title, p.price, p.city AS location, p.created_at
             FROM saved_properties sp
             JOIN properties p ON sp.property_id = p.id
             WHERE sp.user_id = $1 AND p.status = 'active'
             ORDER BY sp.created_at DESC
             "#,
-        )
-        .bind(user_id)
-        .fetch_all(&app_state.db)
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    )
+    .bind(user_id)
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let properties: Vec<PropertyDto> = rows
         .into_iter()

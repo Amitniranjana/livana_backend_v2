@@ -7,10 +7,10 @@
 //   10.4  GET  /api/v1/vibes/matches      — Get all matches
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -42,12 +42,11 @@ pub async fn send_vibe(
         ));
     }
 
-    let exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
-            .bind(payload.target_user_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE id = $1")
+        .bind(payload.target_user_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound("Target user not found".to_string()));
@@ -112,13 +111,12 @@ pub async fn accept_vibe(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Fetch the vibe and verify ownership
-    let vibe: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT target_user_id, status FROM vibes WHERE id = $1",
-    )
-    .bind(vibe_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let vibe: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT target_user_id, status FROM vibes WHERE id = $1")
+            .bind(vibe_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     match vibe {
         None => return Err(ApiError::NotFound("Vibe not found".to_string())),
@@ -165,13 +163,12 @@ pub async fn reject_vibe(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Fetch the vibe and verify ownership
-    let vibe: Option<(Uuid, String)> = sqlx::query_as(
-        "SELECT target_user_id, status FROM vibes WHERE id = $1",
-    )
-    .bind(vibe_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let vibe: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT target_user_id, status FROM vibes WHERE id = $1")
+            .bind(vibe_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     match vibe {
         None => return Err(ApiError::NotFound("Vibe not found".to_string())),
@@ -218,9 +215,16 @@ pub async fn get_matches(
 
     // Find all ACCEPTED vibes where user is sender OR target,
     // and join the OTHER user's profile info.
-    let rows: Vec<(Uuid, Uuid, String, String, Option<String>, Uuid, chrono::DateTime<chrono::Utc>)> =
-        sqlx::query_as(
-            r#"
+    let rows: Vec<(
+        Uuid,
+        Uuid,
+        String,
+        String,
+        Option<String>,
+        Uuid,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
+        r#"
             SELECT
                 v.id AS match_id,
                 CASE
@@ -241,16 +245,24 @@ pub async fn get_matches(
               AND (v.sender_id = $1 OR v.target_user_id = $1)
             ORDER BY v.updated_at DESC
             "#,
-        )
-        .bind(user_id)
-        .fetch_all(&app_state.db)
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    )
+    .bind(user_id)
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let matches: Vec<MatchDto> = rows
         .into_iter()
         .map(
-            |(match_id, matched_user_id, first_name, last_name, profile_image, property_id, matched_at)| {
+            |(
+                match_id,
+                matched_user_id,
+                first_name,
+                last_name,
+                profile_image,
+                property_id,
+                matched_at,
+            )| {
                 MatchDto {
                     match_id,
                     matched_user_id,

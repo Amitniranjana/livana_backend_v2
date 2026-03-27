@@ -1,6 +1,5 @@
 /// CareCrew Repository
 /// Raw sqlx::query() functions for all CareCrew CRUD operations.
-
 use sqlx::{Pool, Postgres, Row};
 use uuid::Uuid;
 
@@ -8,14 +7,12 @@ use uuid::Uuid;
 // Services
 // ──────────────────────────────────────────────────────────────────────────────
 
-pub async fn list_services(
-    db: &Pool<Postgres>,
-) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
+pub async fn list_services(db: &Pool<Postgres>) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
     sqlx::query(
         "SELECT id, name, description, icon_url, category, is_active, created_at
          FROM carecrew_services
          WHERE is_active = true
-         ORDER BY name ASC"
+         ORDER BY name ASC",
     )
     .fetch_all(db)
     .await
@@ -28,7 +25,7 @@ pub async fn get_service_by_id(
     sqlx::query(
         "SELECT id, name, description, icon_url, category, is_active, created_at
          FROM carecrew_services
-         WHERE id = $1"
+         WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(db)
@@ -196,7 +193,7 @@ pub async fn get_booking_by_id(
 ) -> Result<Option<sqlx::postgres::PgRow>, sqlx::Error> {
     sqlx::query(
         "SELECT id, provider_id, service_id, user_id, scheduled_at, status, notes, created_at
-         FROM carecrew_bookings WHERE id = $1"
+         FROM carecrew_bookings WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(db)
@@ -235,7 +232,7 @@ pub async fn get_bookings_for_provider(
         WHERE b.provider_id = $1
         ORDER BY b.scheduled_at DESC
         LIMIT $2 OFFSET $3
-        "#
+        "#,
     )
     .bind(provider_id)
     .bind(limit as i64)
@@ -248,22 +245,17 @@ pub async fn count_bookings_for_provider(
     db: &Pool<Postgres>,
     provider_id: Uuid,
 ) -> Result<i64, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT COUNT(*) as total FROM carecrew_bookings WHERE provider_id = $1"
-    )
-    .bind(provider_id)
-    .fetch_one(db)
-    .await?;
+    let row = sqlx::query("SELECT COUNT(*) as total FROM carecrew_bookings WHERE provider_id = $1")
+        .bind(provider_id)
+        .fetch_one(db)
+        .await?;
     Ok(row.get::<i64, _>("total"))
 }
 
 /// Checks if provider exists and is active.
-pub async fn provider_exists(
-    db: &Pool<Postgres>,
-    provider_id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn provider_exists(db: &Pool<Postgres>, provider_id: Uuid) -> Result<bool, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT COUNT(*) as total FROM carecrew_providers WHERE id = $1 AND is_active = true"
+        "SELECT COUNT(*) as total FROM carecrew_providers WHERE id = $1 AND is_active = true",
     )
     .bind(provider_id)
     .fetch_one(db)
@@ -272,12 +264,9 @@ pub async fn provider_exists(
 }
 
 /// Checks if service exists and is active.
-pub async fn service_exists(
-    db: &Pool<Postgres>,
-    service_id: Uuid,
-) -> Result<bool, sqlx::Error> {
+pub async fn service_exists(db: &Pool<Postgres>, service_id: Uuid) -> Result<bool, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT COUNT(*) as total FROM carecrew_services WHERE id = $1 AND is_active = true"
+        "SELECT COUNT(*) as total FROM carecrew_services WHERE id = $1 AND is_active = true",
     )
     .bind(service_id)
     .fetch_one(db)

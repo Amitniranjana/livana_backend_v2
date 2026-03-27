@@ -1,12 +1,11 @@
 /// CareCrew Tickets Service
 /// Business logic layer: row mapping, validation, state machine enforcement.
-
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::{Pool, Postgres, Row};
 use uuid::Uuid;
 
+use crate::models::carecrew::{TicketPriority, TicketStatus, validate_ticket_transition};
 use crate::repository::carecrew_tickets_repository as repo;
-use crate::models::carecrew::{validate_ticket_transition, TicketPriority, TicketStatus};
 
 // ─── Domain Errors ────────────────────────────────────────────────────────────
 
@@ -76,25 +75,33 @@ pub async fn create_ticket(
     // Validate and default priority
     let priority = priority_str.as_deref().unwrap_or("MEDIUM");
     if !TicketPriority::is_valid(priority) {
-        return Err(TicketError::InvalidPriority(
-            format!("'{}' is not valid. Use LOW, MEDIUM, or HIGH", priority)
-        ));
+        return Err(TicketError::InvalidPriority(format!(
+            "'{}' is not valid. Use LOW, MEDIUM, or HIGH",
+            priority
+        )));
     }
     let priority_upper = priority.to_uppercase();
 
     // Parse optional property_id
-    let property_id: Option<Uuid> = match property_id_str {
-        Some(ref s) => Some(s.parse::<Uuid>().map_err(|_| {
-            TicketError::MissingFields("property_id must be a valid UUID".into())
-        })?),
-        None => None,
-    };
+    let property_id: Option<Uuid> =
+        match property_id_str {
+            Some(ref s) => Some(s.parse::<Uuid>().map_err(|_| {
+                TicketError::MissingFields("property_id must be a valid UUID".into())
+            })?),
+            None => None,
+        };
 
     let ticket_id = Uuid::new_v4();
     let row = repo::create_ticket(
-        db, ticket_id, user_id, property_id,
-        &issue_type, &description, &priority_upper,
-    ).await?;
+        db,
+        ticket_id,
+        user_id,
+        property_id,
+        &issue_type,
+        &description,
+        &priority_upper,
+    )
+    .await?;
 
     Ok(row_to_ticket_json(&row))
 }
@@ -108,37 +115,46 @@ pub async fn list_tickets(
     page: i32,
     limit: i32,
 ) -> Result<(Vec<Value>, i64), TicketError> {
-    let page  = page.max(1);
+    let page = page.max(1);
     let limit = limit.clamp(1, 50);
 
     // Validate filters if provided
     if let Some(ref s) = status_filter {
         if !TicketStatus::is_valid(s) {
-            return Err(TicketError::InvalidStatus(
-                format!("'{}' is not valid. Use OPEN, IN_PROGRESS, RESOLVED, or CLOSED", s)
-            ));
+            return Err(TicketError::InvalidStatus(format!(
+                "'{}' is not valid. Use OPEN, IN_PROGRESS, RESOLVED, or CLOSED",
+                s
+            )));
         }
     }
     if let Some(ref p) = priority_filter {
         if !TicketPriority::is_valid(p) {
-            return Err(TicketError::InvalidPriority(
-                format!("'{}' is not valid. Use LOW, MEDIUM, or HIGH", p)
-            ));
+            return Err(TicketError::InvalidPriority(format!(
+                "'{}' is not valid. Use LOW, MEDIUM, or HIGH",
+                p
+            )));
         }
     }
 
-    let status_upper  = status_filter.as_deref().map(|s| s.to_uppercase());
+    let status_upper = status_filter.as_deref().map(|s| s.to_uppercase());
     let priority_upper = priority_filter.as_deref().map(|p| p.to_uppercase());
 
     let rows = repo::list_tickets_for_user(
-        db, user_id,
-        status_upper.as_deref(), priority_upper.as_deref(),
-        page, limit,
-    ).await?;
+        db,
+        user_id,
+        status_upper.as_deref(),
+        priority_upper.as_deref(),
+        page,
+        limit,
+    )
+    .await?;
     let total = repo::count_tickets_for_user(
-        db, user_id,
-        status_upper.as_deref(), priority_upper.as_deref(),
-    ).await?;
+        db,
+        user_id,
+        status_upper.as_deref(),
+        priority_upper.as_deref(),
+    )
+    .await?;
 
     let tickets: Vec<Value> = rows.iter().map(row_to_ticket_json).collect();
     Ok((tickets, total))
@@ -150,11 +166,14 @@ pub async fn get_ticket_detail(
     ticket_id: Uuid,
     caller_user_id: Uuid,
 ) -> Result<Value, TicketError> {
-    let row = repo::get_ticket_by_id(db, ticket_id).await?
+    let row = repo::get_ticket_by_id(db, ticket_id)
+        .await?
         .ok_or(TicketError::NotFound)?;
 
     // Ownership check
-    let owner_id: Uuid = row.try_get("user_id").map_err(|e| TicketError::DbError(e))?;
+    let owner_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|e| TicketError::DbError(e))?;
     if owner_id != caller_user_id {
         return Err(TicketError::Forbidden);
     }
@@ -175,10 +194,13 @@ pub async fn update_ticket(
     assignee_id_str: Option<String>,
 ) -> Result<Value, TicketError> {
     // Load current ticket
-    let row = repo::get_ticket_by_id(db, ticket_id).await?
+    let row = repo::get_ticket_by_id(db, ticket_id)
+        .await?
         .ok_or(TicketError::NotFound)?;
 
-    let owner_id: Uuid = row.try_get("user_id").map_err(|e| TicketError::DbError(e))?;
+    let owner_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|e| TicketError::DbError(e))?;
     if owner_id != caller_user_id {
         return Err(TicketError::Forbidden);
     }
@@ -188,9 +210,10 @@ pub async fn update_ticket(
     // Validate and enforce state machine if status is being updated
     let new_status_upper: Option<String> = if let Some(ref s) = new_status_str {
         if !TicketStatus::is_valid(s) {
-            return Err(TicketError::InvalidStatus(
-                format!("'{}' is not a valid status.", s)
-            ));
+            return Err(TicketError::InvalidStatus(format!(
+                "'{}' is not a valid status.",
+                s
+            )));
         }
         let upper = s.to_uppercase();
         if current_status == "CLOSED" {
@@ -204,16 +227,16 @@ pub async fn update_ticket(
     };
 
     // Parse optional assignee UUID
-    let assignee_id: Option<Uuid> = match assignee_id_str {
-        Some(ref s) => Some(s.parse::<Uuid>().map_err(|_| {
-            TicketError::MissingFields("assignee_id must be a valid UUID".into())
-        })?),
-        None => None,
-    };
+    let assignee_id: Option<Uuid> =
+        match assignee_id_str {
+            Some(ref s) => Some(s.parse::<Uuid>().map_err(|_| {
+                TicketError::MissingFields("assignee_id must be a valid UUID".into())
+            })?),
+            None => None,
+        };
 
-    let updated = repo::update_ticket(
-        db, ticket_id, new_status_upper.as_deref(), assignee_id,
-    ).await?;
+    let updated =
+        repo::update_ticket(db, ticket_id, new_status_upper.as_deref(), assignee_id).await?;
 
     Ok(row_to_ticket_json(&updated))
 }
@@ -230,7 +253,8 @@ pub async fn add_comment(
     }
 
     // Verify ticket exists
-    let row = repo::get_ticket_by_id(db, ticket_id).await?
+    let row = repo::get_ticket_by_id(db, ticket_id)
+        .await?
         .ok_or(TicketError::NotFound)?;
 
     // Cannot comment on a closed ticket

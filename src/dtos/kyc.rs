@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
@@ -20,9 +20,9 @@ pub enum VerificationStatus {
 impl std::fmt::Display for VerificationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Pending       => write!(f, "pending"),
-            Self::Verified      => write!(f, "verified"),
-            Self::Rejected      => write!(f, "rejected"),
+            Self::Pending => write!(f, "pending"),
+            Self::Verified => write!(f, "verified"),
+            Self::Rejected => write!(f, "rejected"),
             Self::PendingReview => write!(f, "pending_review"),
         }
     }
@@ -61,7 +61,7 @@ pub struct KycSubmitRequest {
     pub longitude: f64,
 
     // Government ID
-    pub govt_id_type: String,        // "aadhaar" | "pan" | "passport" | "driving_license"
+    pub govt_id_type: String, // "aadhaar" | "pan" | "passport" | "driving_license"
     pub govt_id_number: String,
     pub govt_id_document_url: String,
 
@@ -211,39 +211,38 @@ pub struct KycRow {
 
 impl From<KycRow> for KycResponse {
     fn from(r: KycRow) -> Self {
-        let services: Option<Vec<String>> = r
-            .services_json
-            .and_then(|v| serde_json::from_value(v).ok());
+        let services: Option<Vec<String>> =
+            r.services_json.and_then(|v| serde_json::from_value(v).ok());
         KycResponse {
-            id:                          r.id.to_string(),
-            user_id:                     r.user_id.to_string(),
-            full_name:                   r.full_name,
-            mobile_number:               r.mobile_number,
-            email_id:                    r.email_id,
-            gender:                      r.gender,
-            date_of_birth:               r.date_of_birth,
-            profile_picture_url:         r.profile_picture_url,
-            apartment_name:              r.apartment_name,
-            street_address:              r.street_address,
-            landmark:                    r.landmark,
-            city:                        r.city,
-            zip_code:                    r.zip_code,
-            state:                       r.state,
-            country:                     r.country,
-            permanent_address:           r.permanent_address,
+            id: r.id.to_string(),
+            user_id: r.user_id.to_string(),
+            full_name: r.full_name,
+            mobile_number: r.mobile_number,
+            email_id: r.email_id,
+            gender: r.gender,
+            date_of_birth: r.date_of_birth,
+            profile_picture_url: r.profile_picture_url,
+            apartment_name: r.apartment_name,
+            street_address: r.street_address,
+            landmark: r.landmark,
+            city: r.city,
+            zip_code: r.zip_code,
+            state: r.state,
+            country: r.country,
+            permanent_address: r.permanent_address,
             is_permanent_same_as_present: r.is_permanent_same_as_present,
-            latitude:                    r.latitude,
-            longitude:                   r.longitude,
-            govt_id_type:                r.govt_id_type,
-            govt_id_number:              r.govt_id_number,
-            govt_id_document_url:        r.govt_id_document_url,
-            company_name:                r.company_name,
+            latitude: r.latitude,
+            longitude: r.longitude,
+            govt_id_type: r.govt_id_type,
+            govt_id_number: r.govt_id_number,
+            govt_id_document_url: r.govt_id_document_url,
+            company_name: r.company_name,
             services,
-            experience_document_url:     r.experience_document_url,
-            verification_status:         r.verification_status,
-            submitted_at:                r.submitted_at.map(|d| d.to_rfc3339()),
-            verified_at:                 r.verified_at.map(|d| d.to_rfc3339()),
-            rejection_reason:            r.rejection_reason,
+            experience_document_url: r.experience_document_url,
+            verification_status: r.verification_status,
+            submitted_at: r.submitted_at.map(|d| d.to_rfc3339()),
+            verified_at: r.verified_at.map(|d| d.to_rfc3339()),
+            rejection_reason: r.rejection_reason,
         }
     }
 }

@@ -1,20 +1,21 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-// ── Request DTOs ──
+// ── Request ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct AddServiceRequest {
     pub service_name: String,
     pub category: String,
-    pub price: i32,
+    pub price: i32, // hourly rate in INR
     pub description: String,
     pub experience: String,
     pub location: String,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ServicesListQuery {
+pub struct ServicesQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -22,17 +23,17 @@ pub struct ServicesListQuery {
 #[derive(Debug, Deserialize)]
 pub struct ProvidersFilterQuery {
     pub service_type: Option<String>,
-    pub sort_by: Option<String>,
+    pub sort_by: Option<String>, // "rating" | "price" | "experience"
     pub limit: Option<i64>,
     pub offset: Option<i64>,
     pub latitude: Option<f64>,
     pub longitude: Option<f64>,
 }
 
-// ── Response DTOs ──
+// ── Response ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
-pub struct ServiceResponseData {
+pub struct ServiceResponse {
     pub service_id: Uuid,
     pub provider_id: Uuid,
     pub service_name: String,
@@ -41,7 +42,7 @@ pub struct ServiceResponseData {
     pub description: String,
     pub experience: String,
     pub location: String,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,7 +55,7 @@ pub struct ServiceItem {
     pub description: String,
     pub experience: String,
     pub location: String,
-    pub created_at: String,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -71,7 +72,7 @@ pub struct ProviderItem {
     pub name: String,
     pub service_type: String,
     pub rating: f64,
-    pub review_count: i32,
+    pub review_count: i64,
     pub location: String,
     pub hourly_rate: f64,
     pub experience: String,
