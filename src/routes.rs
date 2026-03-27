@@ -247,6 +247,45 @@ pub fn expo_routes() -> Router<AppState> {
         .route("/api/expo/{expo_id}/participants", get(get_expo_participants))
 }
 
+/// Service Provider Listing APIs
+pub fn service_listing_routes() -> Router<AppState> {
+    use crate::handlers::service_listing::{add_service, get_all_services, filter_providers};
+    Router::new()
+        .route("/api/services", post(add_service))
+        .route("/api/services", get(get_all_services))
+        .route("/api/services/providers", get(filter_providers))
+}
+
+/// CareCrew Review APIs
+pub fn carecrew_review_routes() -> Router<AppState> {
+    use crate::handlers::carecrew_reviews::{
+        create_carecrew_review, get_carecrew_reviews,
+        edit_carecrew_review, delete_carecrew_review,
+        reply_to_carecrew_review,
+    };
+    Router::new()
+        .route("/api/reviews/carecrew", post(create_carecrew_review))
+        .route("/api/reviews/carecrew/{provider_id}", get(get_carecrew_reviews))
+        .route("/api/reviews/carecrew/{review_id}", put(edit_carecrew_review))
+        .route("/api/reviews/carecrew/{review_id}", delete(delete_carecrew_review))
+        .route("/api/reviews/carecrew/{review_id}/reply", post(reply_to_carecrew_review))
+}
+
+/// Property Review APIs
+pub fn property_review_routes() -> Router<AppState> {
+    use crate::handlers::property_reviews::{
+        create_property_review, get_property_reviews,
+        edit_property_review, delete_property_review,
+        reply_to_property_review,
+    };
+    Router::new()
+        .route("/api/reviews/property", post(create_property_review))
+        .route("/api/reviews/property/{property_id}", get(get_property_reviews))
+        .route("/api/reviews/property/{review_id}", put(edit_property_review))
+        .route("/api/reviews/property/{review_id}", delete(delete_property_review))
+        .route("/api/reviews/property/{review_id}/reply", post(reply_to_property_review))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 

@@ -28,6 +28,7 @@ use crate::{
         property_filter_routes, community_routes,
         moderation_routes, vibes_routes, language_routes,
         expo_routes,
+        service_listing_routes, carecrew_review_routes, property_review_routes,
     },
 
 
@@ -156,6 +157,10 @@ async fn main() {
         .merge(language_routes())
         // ── Expo Event System (JWT-protected) ────────────────
         .merge(expo_routes())
+        // ── Service Listing + Reviews (JWT-protected) ────────
+        .merge(service_listing_routes())
+        .merge(carecrew_review_routes())
+        .merge(property_review_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
 
         .with_state(app_state);

@@ -26,6 +26,9 @@ pub enum ApiError {
     NotFound(String),
     InternalServerError(String),
     Conflict(String),
+    UnprocessableEntity(String),
+    /// Custom error: (StatusCode, message, error_code)
+    CustomError(StatusCode, String, String),
 }
 
 impl IntoResponse for ApiError {
@@ -67,10 +70,22 @@ impl IntoResponse for ApiError {
                 "CONFLICT".to_string(),
                 None,
             ),
+            ApiError::UnprocessableEntity(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                msg,
+                "UNPROCESSABLE_ENTITY".to_string(),
+                None,
+            ),
             ApiError::InternalServerError(msg) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 msg,
                 "INTERNAL_SERVER_ERROR".to_string(),
+                None,
+            ),
+            ApiError::CustomError(status, msg, code) => (
+                status,
+                msg,
+                code,
                 None,
             ),
         };
@@ -85,3 +100,4 @@ impl IntoResponse for ApiError {
         (status, Json(body)).into_response()
     }
 }
+
