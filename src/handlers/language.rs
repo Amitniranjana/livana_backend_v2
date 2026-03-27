@@ -4,12 +4,7 @@
 //   11.1  GET   /api/v1/languages           — Get available languages
 //   11.2  PATCH /api/v1/users/me/language   — Set preferred language
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    Json,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use uuid::Uuid;
 
 use crate::{
@@ -29,12 +24,11 @@ pub async fn get_languages(
     State(app_state): State<AppState>,
     _auth: AuthenticationUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT code, name FROM languages ORDER BY name ASC",
-    )
-    .fetch_all(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let rows: Vec<(String, String)> =
+        sqlx::query_as("SELECT code, name FROM languages ORDER BY name ASC")
+            .fetch_all(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let languages: Vec<LanguageDto> = rows
         .into_iter()
@@ -71,12 +65,11 @@ pub async fn set_preferred_language(
     }
 
     // Verify the language code exists
-    let exists: Option<String> =
-        sqlx::query_scalar("SELECT code FROM languages WHERE code = $1")
-            .bind(&code)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<String> = sqlx::query_scalar("SELECT code FROM languages WHERE code = $1")
+        .bind(&code)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound(

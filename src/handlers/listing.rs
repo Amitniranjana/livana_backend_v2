@@ -1,24 +1,24 @@
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
-    Json,
 };
 use chrono::Utc;
 use jsonwebtoken::DecodingKey;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
-use crate::dtos::request::{CreatePropertyRequest, UpdatePropertyRequest, ReportPropertyRequest};
+use crate::dtos::request::{CreatePropertyRequest, ReportPropertyRequest, UpdatePropertyRequest};
 
 // ---------------------------------------------------------------------------
 // JWT Helper
 // ---------------------------------------------------------------------------
 
 fn extract_user_id_from_jwt(token: &str, decoding_key: &DecodingKey) -> Result<Uuid, String> {
-    use jsonwebtoken::{decode, Algorithm, Validation};
+    use jsonwebtoken::{Algorithm, Validation, decode};
     #[derive(serde::Deserialize)]
     struct Claims {
         sub: String,
@@ -213,10 +213,10 @@ pub async fn get_properties(
     let offset = params.offset.unwrap_or(0);
 
     let order_by = match params.sort_by.as_deref() {
-        Some("price_asc")  => "p.price ASC",
+        Some("price_asc") => "p.price ASC",
         Some("price_desc") => "p.price DESC",
-        Some("popular")    => "p.likes_count DESC",
-        _                  => "p.created_at DESC",
+        Some("popular") => "p.likes_count DESC",
+        _ => "p.created_at DESC",
     };
 
     let caller = Uuid::nil(); // public endpoint, no auth
@@ -275,7 +275,10 @@ pub async fn get_properties(
         .await
         .unwrap_or(0);
 
-    let properties: Vec<Value> = rows.iter().map(|r| row_to_property_json(r, caller)).collect();
+    let properties: Vec<Value> = rows
+        .iter()
+        .map(|r| row_to_property_json(r, caller))
+        .collect();
 
     (
         StatusCode::OK,
@@ -386,7 +389,8 @@ pub async fn create_property(
     let now = Utc::now();
 
     let images_json = serde_json::to_value(payload.images.unwrap_or_default()).unwrap_or(json!([]));
-    let amenities_json = serde_json::to_value(payload.amenities.unwrap_or_default()).unwrap_or(json!([]));
+    let amenities_json =
+        serde_json::to_value(payload.amenities.unwrap_or_default()).unwrap_or(json!([]));
     let nearby_json = payload.nearby_places.unwrap_or(json!({}));
 
     let result = sqlx::query(
@@ -481,7 +485,7 @@ pub async fn update_property(
 
     // Ownership check
     let owner: Option<Uuid> = match sqlx::query_scalar(
-        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'"
+        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'",
     )
     .bind(property_id)
     .fetch_optional(&app_state.db)
@@ -506,7 +510,9 @@ pub async fn update_property(
         Some(o) if o != user_id => {
             return (
                 StatusCode::FORBIDDEN,
-                Json(json!({"success":false,"message":"You don't have permission to update this property"})),
+                Json(
+                    json!({"success":false,"message":"You don't have permission to update this property"}),
+                ),
             );
         }
         _ => {}
@@ -517,37 +523,103 @@ pub async fn update_property(
         sqlx::QueryBuilder::new("UPDATE listings SET updated_at = ");
     qb.push_bind(updated_at);
 
-    if let Some(v) = &payload.title         { qb.push(", title = "); qb.push_bind(v); }
-    if let Some(v) = &payload.description   { qb.push(", description = "); qb.push_bind(v); }
-    if let Some(v) = &payload.property_type { qb.push(", property_type = "); qb.push_bind(v); }
-    if let Some(v) = payload.price          { qb.push(", price = "); qb.push_bind(v); }
-    if let Some(v) = payload.deposit        { qb.push(", deposit = "); qb.push_bind(v); }
-    if let Some(v) = &payload.location      { qb.push(", location = "); qb.push_bind(v); }
-    if let Some(v) = payload.area_sqft      { qb.push(", area_sqft = "); qb.push_bind(v); }
-    if let Some(v) = payload.bedrooms       { qb.push(", bedrooms = "); qb.push_bind(v); }
-    if let Some(v) = payload.bathrooms      { qb.push(", bathrooms = "); qb.push_bind(v); }
-    if let Some(v) = &payload.furnishing    { qb.push(", furnishing = "); qb.push_bind(v); }
-    if let Some(v) = payload.floor          { qb.push(", floor = "); qb.push_bind(v); }
-    if let Some(v) = payload.total_floors   { qb.push(", total_floors = "); qb.push_bind(v); }
-    if let Some(v) = payload.age_years      { qb.push(", age_years = "); qb.push_bind(v); }
-    if let Some(v) = &payload.facing        { qb.push(", facing = "); qb.push_bind(v); }
-    if let Some(v) = payload.parking        { qb.push(", parking = "); qb.push_bind(v); }
-    if let Some(v) = payload.parking_count  { qb.push(", parking_count = "); qb.push_bind(v); }
-    if let Some(v) = &payload.video_url     { qb.push(", video_url = "); qb.push_bind(v); }
-    if let Some(v) = payload.latitude       { qb.push(", latitude = "); qb.push_bind(v); }
-    if let Some(v) = payload.longitude      { qb.push(", longitude = "); qb.push_bind(v); }
-    if let Some(v) = &payload.status        { qb.push(", status = "); qb.push_bind(v); }
-    if let Some(v) = &payload.user_type     { qb.push(", user_type = "); qb.push_bind(v); }
+    if let Some(v) = &payload.title {
+        qb.push(", title = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.description {
+        qb.push(", description = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.property_type {
+        qb.push(", property_type = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.price {
+        qb.push(", price = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.deposit {
+        qb.push(", deposit = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.location {
+        qb.push(", location = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.area_sqft {
+        qb.push(", area_sqft = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.bedrooms {
+        qb.push(", bedrooms = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.bathrooms {
+        qb.push(", bathrooms = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.furnishing {
+        qb.push(", furnishing = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.floor {
+        qb.push(", floor = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.total_floors {
+        qb.push(", total_floors = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.age_years {
+        qb.push(", age_years = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.facing {
+        qb.push(", facing = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.parking {
+        qb.push(", parking = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.parking_count {
+        qb.push(", parking_count = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.video_url {
+        qb.push(", video_url = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.latitude {
+        qb.push(", latitude = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.longitude {
+        qb.push(", longitude = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.status {
+        qb.push(", status = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.user_type {
+        qb.push(", user_type = ");
+        qb.push_bind(v);
+    }
     if let Some(v) = &payload.images {
         let j = serde_json::to_value(v).unwrap_or(json!([]));
-        qb.push(", images = "); qb.push_bind(j);
+        qb.push(", images = ");
+        qb.push_bind(j);
     }
     if let Some(v) = &payload.amenities {
         let j = serde_json::to_value(v).unwrap_or(json!([]));
-        qb.push(", amenities = "); qb.push_bind(j);
+        qb.push(", amenities = ");
+        qb.push_bind(j);
     }
     if let Some(v) = &payload.nearby_places {
-        qb.push(", nearby_places = "); qb.push_bind(v.clone());
+        qb.push(", nearby_places = ");
+        qb.push_bind(v.clone());
     }
 
     qb.push(" WHERE id = ");
@@ -561,10 +633,7 @@ pub async fn update_property(
     }
 
     // Fetch updated property — $1 = caller (owner), $2 = property_id
-    let sql = format!(
-        "{} WHERE p.id = $2",
-        property_select_sql(1)
-    );
+    let sql = format!("{} WHERE p.id = $2", property_select_sql(1));
     let row = match sqlx::query(&sql)
         .bind(user_id)
         .bind(property_id)
@@ -612,7 +681,7 @@ pub async fn delete_property(
     };
 
     let owner: Option<Uuid> = match sqlx::query_scalar(
-        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'"
+        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'",
     )
     .bind(property_id)
     .fetch_optional(&app_state.db)
@@ -637,19 +706,19 @@ pub async fn delete_property(
         Some(o) if o != user_id => {
             return (
                 StatusCode::FORBIDDEN,
-                Json(json!({"success":false,"message":"You don't have permission to delete this property"})),
+                Json(
+                    json!({"success":false,"message":"You don't have permission to delete this property"}),
+                ),
             );
         }
         _ => {}
     }
 
-    let _ = sqlx::query(
-        "UPDATE listings SET status = 'deleted', updated_at = $1 WHERE id = $2"
-    )
-    .bind(Utc::now())
-    .bind(property_id)
-    .execute(&app_state.db)
-    .await;
+    let _ = sqlx::query("UPDATE listings SET status = 'deleted', updated_at = $1 WHERE id = $2")
+        .bind(Utc::now())
+        .bind(property_id)
+        .execute(&app_state.db)
+        .await;
 
     (
         StatusCode::OK,
@@ -701,16 +770,18 @@ pub async fn get_broker_properties(
         }
     };
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM listings WHERE user_id = $1 AND status = $2"
-    )
-    .bind(user_id)
-    .bind(status_filter)
-    .fetch_one(&app_state.db)
-    .await
-    .unwrap_or(0);
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM listings WHERE user_id = $1 AND status = $2")
+            .bind(user_id)
+            .bind(status_filter)
+            .fetch_one(&app_state.db)
+            .await
+            .unwrap_or(0);
 
-    let properties: Vec<Value> = rows.iter().map(|r| row_to_property_json(r, user_id)).collect();
+    let properties: Vec<Value> = rows
+        .iter()
+        .map(|r| row_to_property_json(r, user_id))
+        .collect();
 
     (
         StatusCode::OK,
@@ -755,7 +826,11 @@ pub async fn search_properties(
     let mut next_bind = 2usize;
 
     // We'll store typed enum to avoid type erasure issues
-    enum BindVal { Str(String), I64(i64), I32(i32) }
+    enum BindVal {
+        Str(String),
+        I64(i64),
+        I32(i32),
+    }
     let mut binds: Vec<BindVal> = vec![];
 
     if let Some(ref q) = params.query {
@@ -821,7 +896,10 @@ pub async fn search_properties(
         }
     };
 
-    let properties: Vec<Value> = rows.iter().map(|r| row_to_property_json(r, caller)).collect();
+    let properties: Vec<Value> = rows
+        .iter()
+        .map(|r| row_to_property_json(r, caller))
+        .collect();
 
     (
         StatusCode::OK,
@@ -858,18 +936,17 @@ pub async fn like_property(
         }
     };
 
-    let already: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM listing_likes WHERE listing_id = $1 AND user_id = $2"
-    )
-    .bind(property_id)
-    .bind(user_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .unwrap_or(None);
+    let already: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM listing_likes WHERE listing_id = $1 AND user_id = $2")
+            .bind(property_id)
+            .bind(user_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .unwrap_or(None);
 
     if already.is_none() {
         let _ = sqlx::query(
-            "INSERT INTO listing_likes (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)"
+            "INSERT INTO listing_likes (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
         )
         .bind(Uuid::new_v4())
         .bind(property_id)
@@ -878,21 +955,17 @@ pub async fn like_property(
         .execute(&app_state.db)
         .await;
 
-        let _ = sqlx::query(
-            "UPDATE listings SET likes_count = likes_count + 1 WHERE id = $1"
-        )
-        .bind(property_id)
-        .execute(&app_state.db)
-        .await;
+        let _ = sqlx::query("UPDATE listings SET likes_count = likes_count + 1 WHERE id = $1")
+            .bind(property_id)
+            .execute(&app_state.db)
+            .await;
     }
 
-    let likes_count: i32 = sqlx::query_scalar(
-        "SELECT likes_count FROM listings WHERE id = $1"
-    )
-    .bind(property_id)
-    .fetch_one(&app_state.db)
-    .await
-    .unwrap_or(0);
+    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM listings WHERE id = $1")
+        .bind(property_id)
+        .fetch_one(&app_state.db)
+        .await
+        .unwrap_or(0);
 
     (
         StatusCode::OK,
@@ -929,18 +1002,16 @@ pub async fn unlike_property(
         }
     };
 
-    let result = sqlx::query(
-        "DELETE FROM listing_likes WHERE listing_id = $1 AND user_id = $2"
-    )
-    .bind(property_id)
-    .bind(user_id)
-    .execute(&app_state.db)
-    .await;
+    let result = sqlx::query("DELETE FROM listing_likes WHERE listing_id = $1 AND user_id = $2")
+        .bind(property_id)
+        .bind(user_id)
+        .execute(&app_state.db)
+        .await;
 
     if let Ok(r) = result {
         if r.rows_affected() > 0 {
             let _ = sqlx::query(
-                "UPDATE listings SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1"
+                "UPDATE listings SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1",
             )
             .bind(property_id)
             .execute(&app_state.db)
@@ -948,13 +1019,11 @@ pub async fn unlike_property(
         }
     }
 
-    let likes_count: i32 = sqlx::query_scalar(
-        "SELECT likes_count FROM listings WHERE id = $1"
-    )
-    .bind(property_id)
-    .fetch_one(&app_state.db)
-    .await
-    .unwrap_or(0);
+    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM listings WHERE id = $1")
+        .bind(property_id)
+        .fetch_one(&app_state.db)
+        .await
+        .unwrap_or(0);
 
     (
         StatusCode::OK,
@@ -991,18 +1060,17 @@ pub async fn save_property(
         }
     };
 
-    let already: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM saved_listings WHERE listing_id = $1 AND user_id = $2"
-    )
-    .bind(property_id)
-    .bind(user_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .unwrap_or(None);
+    let already: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM saved_listings WHERE listing_id = $1 AND user_id = $2")
+            .bind(property_id)
+            .bind(user_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .unwrap_or(None);
 
     if already.is_none() {
         let _ = sqlx::query(
-            "INSERT INTO saved_listings (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)"
+            "INSERT INTO saved_listings (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
         )
         .bind(Uuid::new_v4())
         .bind(property_id)
@@ -1043,13 +1111,11 @@ pub async fn unsave_property(
         }
     };
 
-    let _ = sqlx::query(
-        "DELETE FROM saved_listings WHERE listing_id = $1 AND user_id = $2"
-    )
-    .bind(property_id)
-    .bind(user_id)
-    .execute(&app_state.db)
-    .await;
+    let _ = sqlx::query("DELETE FROM saved_listings WHERE listing_id = $1 AND user_id = $2")
+        .bind(property_id)
+        .bind(user_id)
+        .execute(&app_state.db)
+        .await;
 
     (
         StatusCode::OK,
@@ -1083,13 +1149,12 @@ pub async fn report_property(
         }
     };
 
-    let exists: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM listings WHERE id = $1 AND status != 'deleted'"
-    )
-    .bind(property_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .unwrap_or(None);
+    let exists: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM listings WHERE id = $1 AND status != 'deleted'")
+            .bind(property_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .unwrap_or(None);
 
     if exists.is_none() {
         return (
@@ -1103,7 +1168,7 @@ pub async fn report_property(
         INSERT INTO property_reports (id, property_id, reporter_id, reason, description, created_at)
         VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT DO NOTHING
-        "#
+        "#,
     )
     .bind(Uuid::new_v4())
     .bind(property_id)
@@ -1186,7 +1251,10 @@ pub async fn get_saved_properties(
     .await
     .unwrap_or(0);
 
-    let properties: Vec<Value> = rows.iter().map(|r| row_to_property_json(r, user_id)).collect();
+    let properties: Vec<Value> = rows
+        .iter()
+        .map(|r| row_to_property_json(r, user_id))
+        .collect();
 
     (
         StatusCode::OK,

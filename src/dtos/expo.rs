@@ -9,10 +9,10 @@ pub struct CreateExpoRequest {
     pub title: String,
     pub description: String,
     pub location: String,
-    pub event_date: String,      // "2026-05-10"
-    pub start_time: String,      // "10:00"
-    pub end_time: String,        // "18:00"
-    pub organizer_id: String,    // UUID as string
+    pub event_date: String,   // "2026-05-10"
+    pub start_time: String,   // "10:00"
+    pub end_time: String,     // "18:00"
+    pub organizer_id: String, // UUID as string
     pub banner_image: Option<String>,
     pub max_participants: i32,
 }
@@ -29,8 +29,12 @@ pub struct CreateExpoResponseData {
 
 // ── GET /api/expo — Query params ────────────────────────────────────────────
 
-fn default_limit() -> i64 { 10 }
-fn default_offset() -> i64 { 0 }
+fn default_limit() -> i64 {
+    10
+}
+fn default_offset() -> i64 {
+    0
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]

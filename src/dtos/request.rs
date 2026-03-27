@@ -68,7 +68,9 @@ pub struct UpdateProfileRequest {
     pub phone_no: Option<String>,
     #[schema(example = "male")]
     pub gender: Option<String>,
-    #[schema(example = "Updated bio: Full-stack developer passionate about creating user-friendly applications")]
+    #[schema(
+        example = "Updated bio: Full-stack developer passionate about creating user-friendly applications"
+    )]
     pub bio: Option<String>,
     #[schema(example = "Premium Properties")]
     pub business_name: Option<String>,

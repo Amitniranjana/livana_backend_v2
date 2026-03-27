@@ -1,4 +1,3 @@
-
 use serde::Serialize;
 
 use utoipa::ToSchema;
@@ -29,22 +28,18 @@ pub struct SignupResponseData {
     pub user: SignupUserData,
 }
 
-
 #[allow(dead_code)]
 #[derive(Debug, Serialize, ToSchema)]
 pub struct AuthResponse {
     #[schema(example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...")]
-
     pub token: String,
     pub user_id: String,
     pub email: String,
     pub first_name: String,
     pub last_name: String,
-
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-
 #[allow(dead_code)]
 pub struct UserResponse {
     #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
@@ -147,11 +142,10 @@ pub struct ApiResponse<T> {
     pub success: bool,
     #[schema(example = "Operation completed successfully")]
     pub message: String,
-       #[schema(example = "you can write your message here")]
+    #[schema(example = "you can write your message here")]
     pub data: T,
 }
 #[derive(Debug, Serialize, ToSchema)]
-
 #[allow(dead_code)]
 pub struct ApiAuthData {
     pub user: ApiResponse<UserResponse>,

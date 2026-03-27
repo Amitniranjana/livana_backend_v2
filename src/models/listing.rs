@@ -9,7 +9,9 @@ pub struct Listing {
     pub id: String,
     #[schema(example = "Modern 2BHK Apartment in City Center")]
     pub title: String,
-    #[schema(example = "Beautiful 2BHK apartment with modern amenities, located in the heart of the city.")]
+    #[schema(
+        example = "Beautiful 2BHK apartment with modern amenities, located in the heart of the city."
+    )]
     pub description: String,
     #[schema(example = "Mumbai")]
     pub city: String,

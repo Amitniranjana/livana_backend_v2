@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 use validator::Validate;
@@ -10,8 +10,8 @@ use validator::Validate;
 use crate::{
     app_state::AppState,
     dtos::{
-        reviews::{CreateReviewDto, CreateReviewResponseDto, ReviewDto},
         response::ApiResponse,
+        reviews::{CreateReviewDto, CreateReviewResponseDto, ReviewDto},
     },
     utils::{api_error::ApiError, auth_extractor::AuthenticationUser},
 };
@@ -45,7 +45,9 @@ pub async fn add_review(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     if user_role.0 != "USER" && user_role.0 != "user" {
-        return Err(ApiError::Forbidden("Only users can add reviews".to_string()));
+        return Err(ApiError::Forbidden(
+            "Only users can add reviews".to_string(),
+        ));
     }
 
     // 3. Create Review
@@ -87,16 +89,17 @@ pub async fn get_reviews(
 ) -> Result<impl IntoResponse, ApiError> {
     // Role: Public (Anyone can read reviews)
 
-    let reviews_result: Result<Vec<(Uuid, Uuid, i32, String, chrono::DateTime<chrono::Utc>)>, _> = sqlx::query_as(
-        r#"
+    let reviews_result: Result<Vec<(Uuid, Uuid, i32, String, chrono::DateTime<chrono::Utc>)>, _> =
+        sqlx::query_as(
+            r#"
         SELECT id, user_id, rating, comment, created_at
         FROM reviews
         WHERE associate_id = $1
         "#,
-    )
-    .bind(associate_id)
-    .fetch_all(&app_state.db)
-    .await;
+        )
+        .bind(associate_id)
+        .fetch_all(&app_state.db)
+        .await;
 
     let mut reviews = vec![];
     if let Ok(records) = reviews_result {

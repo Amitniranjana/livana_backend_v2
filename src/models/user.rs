@@ -42,7 +42,6 @@ pub struct UserProfile {
     pub is_verified_broker: bool,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 #[allow(dead_code)]
 pub struct User {

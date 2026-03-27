@@ -1,20 +1,17 @@
 /// CareCrew Tickets Handlers
 /// 5 authenticated Axum endpoints for the ticket lifecycle.
-
 use axum::{
+    Json,
     extract::{Path, Query, State},
     http::StatusCode,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::app_state::AppState;
+use crate::models::carecrew::{AddTicketCommentRequest, CreateTicketRequest, UpdateTicketRequest};
 use crate::services::carecrew_tickets_service::{self as svc, TicketError};
-use crate::models::carecrew::{
-    CreateTicketRequest, UpdateTicketRequest, AddTicketCommentRequest,
-};
 
 // ─── JWT extraction helper (same pattern as carecrew.rs) ─────────────────────
 
@@ -35,11 +32,15 @@ fn ticket_err_response(err: TicketError) -> (StatusCode, Json<Value>) {
     match err {
         TicketError::NotFound => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "success": false, "message": "Ticket not found", "error_code": "NOT_FOUND" })),
+            Json(
+                json!({ "success": false, "message": "Ticket not found", "error_code": "NOT_FOUND" }),
+            ),
         ),
         TicketError::Forbidden => (
             StatusCode::FORBIDDEN,
-            Json(json!({ "success": false, "message": "Access denied", "error_code": "FORBIDDEN" })),
+            Json(
+                json!({ "success": false, "message": "Access denied", "error_code": "FORBIDDEN" }),
+            ),
         ),
         TicketError::InvalidPriority(msg) => (
             StatusCode::BAD_REQUEST,
@@ -55,7 +56,9 @@ fn ticket_err_response(err: TicketError) -> (StatusCode, Json<Value>) {
         ),
         TicketError::TicketClosed => (
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({ "success": false, "message": "Ticket is CLOSED — no further changes allowed", "error_code": "TICKET_CLOSED" })),
+            Json(
+                json!({ "success": false, "message": "Ticket is CLOSED — no further changes allowed", "error_code": "TICKET_CLOSED" }),
+            ),
         ),
         TicketError::MissingFields(msg) => (
             StatusCode::BAD_REQUEST,
@@ -65,7 +68,9 @@ fn ticket_err_response(err: TicketError) -> (StatusCode, Json<Value>) {
             tracing::error!("Ticket DB error: {:?}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({ "success": false, "message": "Internal server error", "error_code": "DB_ERROR" })),
+                Json(
+                    json!({ "success": false, "message": "Internal server error", "error_code": "DB_ERROR" }),
+                ),
             )
         }
     }
@@ -80,10 +85,14 @@ pub async fn create_ticket_handler(
 ) -> (StatusCode, Json<Value>) {
     let user_id = match extract_user_id(&headers, &state.jwt_secret) {
         Some(u) => u,
-        None => return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" })),
-        ),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" }),
+                ),
+            );
+        }
     };
 
     match svc::create_ticket(
@@ -93,10 +102,14 @@ pub async fn create_ticket_handler(
         body.issue_type,
         body.description,
         body.priority,
-    ).await {
+    )
+    .await
+    {
         Ok(ticket) => (
             StatusCode::CREATED,
-            Json(json!({ "success": true, "message": "Ticket created successfully", "data": { "ticket": ticket } })),
+            Json(
+                json!({ "success": true, "message": "Ticket created successfully", "data": { "ticket": ticket } }),
+            ),
         ),
         Err(e) => ticket_err_response(e),
     }
@@ -106,10 +119,10 @@ pub async fn create_ticket_handler(
 
 #[derive(Deserialize)]
 pub struct ListTicketsQuery {
-    pub status:   Option<String>,
+    pub status: Option<String>,
     pub priority: Option<String>,
-    pub page:     Option<i32>,
-    pub limit:    Option<i32>,
+    pub page: Option<i32>,
+    pub limit: Option<i32>,
 }
 
 pub async fn list_tickets_handler(
@@ -119,31 +132,47 @@ pub async fn list_tickets_handler(
 ) -> (StatusCode, Json<Value>) {
     let user_id = match extract_user_id(&headers, &state.jwt_secret) {
         Some(u) => u,
-        None => return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" })),
-        ),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" }),
+                ),
+            );
+        }
     };
 
-    let page  = params.page.unwrap_or(1).max(1);
+    let page = params.page.unwrap_or(1).max(1);
     let limit = params.limit.unwrap_or(10).clamp(1, 50);
 
-    match svc::list_tickets(&state.db, user_id, params.status, params.priority, page, limit).await {
+    match svc::list_tickets(
+        &state.db,
+        user_id,
+        params.status,
+        params.priority,
+        page,
+        limit,
+    )
+    .await
+    {
         Ok((tickets, total)) => {
             let total_pages = ((total as f64) / (limit as f64)).ceil() as i64;
-            (StatusCode::OK, Json(json!({
-                "success": true,
-                "message": "Tickets retrieved successfully",
-                "data": {
-                    "tickets": tickets,
-                    "pagination": {
-                        "total_count":   total,
-                        "current_page":  page,
-                        "total_pages":   total_pages,
-                        "limit":         limit
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "Tickets retrieved successfully",
+                    "data": {
+                        "tickets": tickets,
+                        "pagination": {
+                            "total_count":   total,
+                            "current_page":  page,
+                            "total_pages":   total_pages,
+                            "limit":         limit
+                        }
                     }
-                }
-            })))
+                })),
+            )
         }
         Err(e) => ticket_err_response(e),
     }
@@ -158,24 +187,34 @@ pub async fn get_ticket_handler(
 ) -> (StatusCode, Json<Value>) {
     let user_id = match extract_user_id(&headers, &state.jwt_secret) {
         Some(u) => u,
-        None => return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" })),
-        ),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" }),
+                ),
+            );
+        }
     };
 
     let ticket_id = match ticket_id_str.parse::<Uuid>() {
         Ok(u) => u,
-        Err(_) => return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" })),
-        ),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" }),
+                ),
+            );
+        }
     };
 
     match svc::get_ticket_detail(&state.db, ticket_id, user_id).await {
         Ok(data) => (
             StatusCode::OK,
-            Json(json!({ "success": true, "message": "Ticket retrieved successfully", "data": data })),
+            Json(
+                json!({ "success": true, "message": "Ticket retrieved successfully", "data": data }),
+            ),
         ),
         Err(e) => ticket_err_response(e),
     }
@@ -191,24 +230,34 @@ pub async fn update_ticket_handler(
 ) -> (StatusCode, Json<Value>) {
     let user_id = match extract_user_id(&headers, &state.jwt_secret) {
         Some(u) => u,
-        None => return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" })),
-        ),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" }),
+                ),
+            );
+        }
     };
 
     let ticket_id = match ticket_id_str.parse::<Uuid>() {
         Ok(u) => u,
-        Err(_) => return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" })),
-        ),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" }),
+                ),
+            );
+        }
     };
 
     match svc::update_ticket(&state.db, ticket_id, user_id, body.status, body.assignee_id).await {
         Ok(ticket) => (
             StatusCode::OK,
-            Json(json!({ "success": true, "message": "Ticket updated successfully", "data": { "ticket": ticket } })),
+            Json(
+                json!({ "success": true, "message": "Ticket updated successfully", "data": { "ticket": ticket } }),
+            ),
         ),
         Err(e) => ticket_err_response(e),
     }
@@ -224,24 +273,34 @@ pub async fn add_comment_handler(
 ) -> (StatusCode, Json<Value>) {
     let user_id = match extract_user_id(&headers, &state.jwt_secret) {
         Some(u) => u,
-        None => return (
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" })),
-        ),
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    json!({ "success": false, "message": "Unauthorized", "error_code": "UNAUTHORIZED" }),
+                ),
+            );
+        }
     };
 
     let ticket_id = match ticket_id_str.parse::<Uuid>() {
         Ok(u) => u,
-        Err(_) => return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" })),
-        ),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(
+                    json!({ "success": false, "message": "Invalid ticket ID", "error_code": "INVALID_UUID" }),
+                ),
+            );
+        }
     };
 
     match svc::add_comment(&state.db, ticket_id, user_id, body.comment).await {
         Ok(comment) => (
             StatusCode::CREATED,
-            Json(json!({ "success": true, "message": "Comment added successfully", "data": { "comment": comment } })),
+            Json(
+                json!({ "success": true, "message": "Comment added successfully", "data": { "comment": comment } }),
+            ),
         ),
         Err(e) => ticket_err_response(e),
     }
@@ -251,7 +310,7 @@ pub async fn add_comment_handler(
 
 #[cfg(test)]
 mod tests {
-    use crate::models::carecrew::{validate_ticket_transition, TicketStatus, TicketPriority};
+    use crate::models::carecrew::{TicketPriority, TicketStatus, validate_ticket_transition};
 
     #[test]
     fn test_ticket_lifecycle_open_to_closed() {

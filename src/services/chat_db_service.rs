@@ -4,9 +4,9 @@
 // Converts the string user_id (from the JWT extractor) to a UUID,
 // then delegates to the repository.
 
-use uuid::Uuid;
 use crate::models::recent_chat::RecentChat;
 use crate::repository::chat_repository::ChatRepository;
+use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct ChatDbService {
@@ -45,7 +45,8 @@ mod tests {
         let result = Uuid::parse_str(bad_id);
         assert!(
             result.is_err(),
-            "Parsing a non-UUID string should fail, got: {:?}", result
+            "Parsing a non-UUID string should fail, got: {:?}",
+            result
         );
     }
 
@@ -53,10 +54,7 @@ mod tests {
     fn test_valid_user_id_parses_correctly() {
         let good_id = "550e8400-e29b-41d4-a716-446655440000";
         let result = Uuid::parse_str(good_id);
-        assert!(
-            result.is_ok(),
-            "Parsing a valid UUID string should succeed"
-        );
+        assert!(result.is_ok(), "Parsing a valid UUID string should succeed");
         assert_eq!(result.unwrap().to_string(), good_id);
     }
 

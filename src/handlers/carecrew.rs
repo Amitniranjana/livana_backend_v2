@@ -1,3 +1,4 @@
+use axum::Json;
 /// CareCrew Handlers (Step 4)
 /// All 8 endpoints for the CareCrew module:
 ///
@@ -9,14 +10,12 @@
 ///   POST /api/v1/carecrew/bookings                        – create booking (auth)
 ///   PUT  /api/v1/carecrew/bookings/{id}/status            – update status  (auth)
 ///   GET  /api/v1/carecrew/providers/{id}/bookings         – provider bookings (auth)
-
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Json;
+use jsonwebtoken::{DecodingKey, Validation, decode};
 use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
-use jsonwebtoken::{DecodingKey, Validation, decode};
 
 use crate::app_state::AppState;
 use crate::models::carecrew::{CreateBookingRequest, UpdateBookingStatusRequest};
@@ -25,15 +24,20 @@ use crate::services::carecrew_service::{self, BookingCreateError, BookingUpdateE
 // ─── JWT helper (mirrors the pattern in listing.rs) ───────────────────────────
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct Claims { sub: String, exp: usize }
+struct Claims {
+    sub: String,
+    exp: usize,
+}
 
 fn extract_user_id_from_jwt(token: &str, key: &DecodingKey) -> Result<Uuid, String> {
-    let data = decode::<Claims>(token, key, &Validation::default())
-        .map_err(|e| e.to_string())?;
+    let data = decode::<Claims>(token, key, &Validation::default()).map_err(|e| e.to_string())?;
     Uuid::parse_str(&data.claims.sub).map_err(|e| e.to_string())
 }
 
-fn require_auth(headers: &HeaderMap, jwt_secret: &str) -> Result<Uuid, (StatusCode, axum::Json<serde_json::Value>)> {
+fn require_auth(
+    headers: &HeaderMap,
+    jwt_secret: &str,
+) -> Result<Uuid, (StatusCode, axum::Json<serde_json::Value>)> {
     let bearer = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
@@ -71,9 +75,7 @@ pub struct ProviderSearchQuery {
 // ─── 1. List Services ─────────────────────────────────────────────────────────
 
 /// GET /api/v1/carecrew/services
-pub async fn list_services(
-    State(app_state): State<AppState>,
-) -> impl axum::response::IntoResponse {
+pub async fn list_services(State(app_state): State<AppState>) -> impl axum::response::IntoResponse {
     match carecrew_service::list_services(&app_state.db).await {
         Ok(data) => {
             let body = json!({
@@ -85,12 +87,15 @@ pub async fn list_services(
         }
         Err(e) => {
             log::error!("CareCrew list_services error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false,
-                "message": "Failed to retrieve services",
-                "error_code": "DB_ERROR",
-                "errors": [e.to_string()]
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to retrieve services",
+                    "error_code": "DB_ERROR",
+                    "errors": [e.to_string()]
+                })),
+            )
         }
     }
 }
@@ -104,24 +109,38 @@ pub async fn get_service(
 ) -> impl axum::response::IntoResponse {
     let service_id = match Uuid::parse_str(&id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid service ID", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid service ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
 
     match carecrew_service::get_service_by_id(&app_state.db, service_id).await {
-        Ok(Some(service)) => (StatusCode::OK, Json(json!({
-            "success": true, "message": "Service retrieved successfully",
-            "data": { "service": service }
-        }))),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false, "message": "Service not found", "error_code": "NOT_FOUND"
-        }))),
+        Ok(Some(service)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true, "message": "Service retrieved successfully",
+                "data": { "service": service }
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Service not found", "error_code": "NOT_FOUND"
+            })),
+        ),
         Err(e) => {
             log::error!("get_service DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -142,25 +161,33 @@ pub async fn search_providers(
         q.city.as_deref(),
         page,
         limit,
-    ).await {
-        Ok(result) => (StatusCode::OK, Json(json!({
-            "success": true,
-            "message": "Providers retrieved successfully",
-            "data": {
-                "providers": result.providers,
-                "pagination": {
-                    "total_count": result.total_count,
-                    "current_page": result.current_page,
-                    "total_pages": result.total_pages,
-                    "limit": limit
+    )
+    .await
+    {
+        Ok(result) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Providers retrieved successfully",
+                "data": {
+                    "providers": result.providers,
+                    "pagination": {
+                        "total_count": result.total_count,
+                        "current_page": result.current_page,
+                        "total_pages": result.total_pages,
+                        "limit": limit
+                    }
                 }
-            }
-        }))),
+            })),
+        ),
         Err(e) => {
             log::error!("search_providers DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -172,16 +199,22 @@ pub async fn get_featured_providers(
     State(app_state): State<AppState>,
 ) -> impl axum::response::IntoResponse {
     match carecrew_service::get_featured_providers(&app_state.db, 10).await {
-        Ok(data) => (StatusCode::OK, Json(json!({
-            "success": true,
-            "message": "Featured providers retrieved successfully",
-            "data": data
-        }))),
+        Ok(data) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Featured providers retrieved successfully",
+                "data": data
+            })),
+        ),
         Err(e) => {
             log::error!("get_featured_providers DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -195,24 +228,38 @@ pub async fn get_provider(
 ) -> impl axum::response::IntoResponse {
     let provider_id = match Uuid::parse_str(&id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid provider ID", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid provider ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
 
     match carecrew_service::get_provider_by_id(&app_state.db, provider_id).await {
-        Ok(Some(provider)) => (StatusCode::OK, Json(json!({
-            "success": true, "message": "Provider retrieved successfully",
-            "data": { "provider": provider }
-        }))),
-        Ok(None) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false, "message": "Provider not found", "error_code": "NOT_FOUND"
-        }))),
+        Ok(Some(provider)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true, "message": "Provider retrieved successfully",
+                "data": { "provider": provider }
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Provider not found", "error_code": "NOT_FOUND"
+            })),
+        ),
         Err(e) => {
             log::error!("get_provider DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -234,15 +281,25 @@ pub async fn create_booking(
     // Validate UUIDs from payload
     let provider_id = match Uuid::parse_str(&payload.provider_id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid provider_id", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid provider_id", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
     let service_id = match Uuid::parse_str(&payload.service_id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid service_id", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid service_id", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
 
     match carecrew_service::create_booking(
@@ -252,27 +309,44 @@ pub async fn create_booking(
         user_id,
         &payload.scheduled_at,
         payload.notes.as_deref(),
-    ).await {
-        Ok(booking) => (StatusCode::CREATED, Json(json!({
-            "success": true, "message": "Booking created successfully",
-            "data": { "booking": booking }
-        }))),
-        Err(BookingCreateError::ProviderNotFound) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false, "message": "Provider not found", "error_code": "PROVIDER_NOT_FOUND"
-        }))),
-        Err(BookingCreateError::ServiceNotFound) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false, "message": "Service not found", "error_code": "SERVICE_NOT_FOUND"
-        }))),
-        Err(BookingCreateError::InvalidScheduledAt) => (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false,
-            "message": "Invalid scheduled_at format — must be ISO 8601 e.g. 2026-03-01T10:00:00Z",
-            "error_code": "INVALID_DATETIME"
-        }))),
+    )
+    .await
+    {
+        Ok(booking) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "success": true, "message": "Booking created successfully",
+                "data": { "booking": booking }
+            })),
+        ),
+        Err(BookingCreateError::ProviderNotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Provider not found", "error_code": "PROVIDER_NOT_FOUND"
+            })),
+        ),
+        Err(BookingCreateError::ServiceNotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Service not found", "error_code": "SERVICE_NOT_FOUND"
+            })),
+        ),
+        Err(BookingCreateError::InvalidScheduledAt) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "Invalid scheduled_at format — must be ISO 8601 e.g. 2026-03-01T10:00:00Z",
+                "error_code": "INVALID_DATETIME"
+            })),
+        ),
         Err(BookingCreateError::DbError(e)) => {
             log::error!("create_booking DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -295,34 +369,55 @@ pub async fn update_booking_status(
 
     let booking_id = match Uuid::parse_str(&id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid booking ID", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid booking ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
 
-    match carecrew_service::update_booking_status(&app_state.db, booking_id, &payload.status).await {
-        Ok(booking) => (StatusCode::OK, Json(json!({
-            "success": true, "message": "Booking status updated successfully",
-            "data": { "booking": booking }
-        }))),
-        Err(BookingUpdateError::BookingNotFound) => (StatusCode::NOT_FOUND, Json(json!({
-            "success": false, "message": "Booking not found", "error_code": "NOT_FOUND"
-        }))),
-        Err(BookingUpdateError::InvalidStatus(s)) => (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false,
-            "message": format!("'{}' is not a valid status. Allowed: pending, confirmed, in_progress, completed, cancelled", s),
-            "error_code": "INVALID_STATUS"
-        }))),
-        Err(BookingUpdateError::InvalidTransition { from, to }) => (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({
-            "success": false,
-            "message": format!("Cannot transition booking from '{}' to '{}'", from, to),
-            "error_code": "INVALID_TRANSITION"
-        }))),
+    match carecrew_service::update_booking_status(&app_state.db, booking_id, &payload.status).await
+    {
+        Ok(booking) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true, "message": "Booking status updated successfully",
+                "data": { "booking": booking }
+            })),
+        ),
+        Err(BookingUpdateError::BookingNotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Booking not found", "error_code": "NOT_FOUND"
+            })),
+        ),
+        Err(BookingUpdateError::InvalidStatus(s)) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": format!("'{}' is not a valid status. Allowed: pending, confirmed, in_progress, completed, cancelled", s),
+                "error_code": "INVALID_STATUS"
+            })),
+        ),
+        Err(BookingUpdateError::InvalidTransition { from, to }) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "success": false,
+                "message": format!("Cannot transition booking from '{}' to '{}'", from, to),
+                "error_code": "INVALID_TRANSITION"
+            })),
+        ),
         Err(BookingUpdateError::DbError(e)) => {
             log::error!("update_booking_status DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -344,33 +439,44 @@ pub async fn get_provider_bookings(
 
     let provider_id = match Uuid::parse_str(&id) {
         Ok(u) => u,
-        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({
-            "success": false, "message": "Invalid provider ID", "error_code": "INVALID_UUID"
-        }))),
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid provider ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
     };
 
     let page = q.page.unwrap_or(1).max(1);
     let limit = q.limit.unwrap_or(10).clamp(1, 50);
 
     match carecrew_service::get_provider_bookings(&app_state.db, provider_id, page, limit).await {
-        Ok(result) => (StatusCode::OK, Json(json!({
-            "success": true,
-            "message": "Bookings retrieved successfully",
-            "data": {
-                "bookings": result.providers, // using providers field for bookings list
-                "pagination": {
-                    "total_count": result.total_count,
-                    "current_page": result.current_page,
-                    "total_pages": result.total_pages,
-                    "limit": limit
+        Ok(result) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Bookings retrieved successfully",
+                "data": {
+                    "bookings": result.providers, // using providers field for bookings list
+                    "pagination": {
+                        "total_count": result.total_count,
+                        "current_page": result.current_page,
+                        "total_pages": result.total_pages,
+                        "limit": limit
+                    }
                 }
-            }
-        }))),
+            })),
+        ),
         Err(e) => {
             log::error!("get_provider_bookings DB error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
-                "success": false, "message": "Database error", "error_code": "DB_ERROR"
-            })))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
         }
     }
 }
@@ -379,7 +485,9 @@ pub async fn get_provider_bookings(
 
 #[cfg(test)]
 mod tests {
-    use crate::models::carecrew::{is_valid_status, is_valid_transition, UpdateBookingStatusRequest, CreateBookingRequest};
+    use crate::models::carecrew::{
+        CreateBookingRequest, UpdateBookingStatusRequest, is_valid_status, is_valid_transition,
+    };
 
     #[test]
     fn test_provider_pagination_offset() {

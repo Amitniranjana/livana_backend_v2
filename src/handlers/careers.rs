@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -78,7 +78,9 @@ pub async fn apply_job(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     if user_role.0.to_lowercase() != "user" {
-        return Err(ApiError::Forbidden("Only users can apply to jobs".to_string()));
+        return Err(ApiError::Forbidden(
+            "Only users can apply to jobs".to_string(),
+        ));
     }
 
     let application_id = Uuid::new_v4();
@@ -125,7 +127,9 @@ pub async fn get_applicants(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     if user_role.0.to_lowercase() != "associate" {
-        return Err(ApiError::Forbidden("Only associates can view applicants".to_string()));
+        return Err(ApiError::Forbidden(
+            "Only associates can view applicants".to_string(),
+        ));
     }
 
     // 2. Security Check: Ensure the ASSOCIATE requesting this is the actual owner/creator of the job_id
@@ -133,19 +137,26 @@ pub async fn get_applicants(
         .bind(job_id)
         .fetch_optional(&app_state.db)
         .await
-        .map_err(|_| ApiError::InternalServerError("Database error checking job owner".to_string()))?;
+        .map_err(|_| {
+            ApiError::InternalServerError("Database error checking job owner".to_string())
+        })?;
 
     match job_owner {
         Some((owner_id,)) => {
             if owner_id != auth_user_id_uuid {
-                return Err(ApiError::Forbidden("You are not authorized to view applicants for this job".to_string()));
+                return Err(ApiError::Forbidden(
+                    "You are not authorized to view applicants for this job".to_string(),
+                ));
             }
         }
         None => return Err(ApiError::NotFound("Job not found".to_string())),
     }
 
     // 3. Fetch applicants
-    let applicants_result: Result<Vec<(Uuid, Uuid, String, String, chrono::DateTime<chrono::Utc>)>, _> = sqlx::query_as(
+    let applicants_result: Result<
+        Vec<(Uuid, Uuid, String, String, chrono::DateTime<chrono::Utc>)>,
+        _,
+    > = sqlx::query_as(
         r#"
         SELECT id, user_id, resume_url, cover_letter, applied_at
         FROM job_applications

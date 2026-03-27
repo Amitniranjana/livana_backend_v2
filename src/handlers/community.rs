@@ -6,10 +6,10 @@
 //   8.3  POST /api/v1/communities/{id}/posts — Post in community
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -107,12 +107,11 @@ pub async fn join_community(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Verify the community exists
-    let exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
-            .bind(community_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
+        .bind(community_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound("Community not found".to_string()));
@@ -157,12 +156,11 @@ pub async fn create_community_post(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Verify the community exists
-    let exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
-            .bind(community_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM communities WHERE id = $1")
+        .bind(community_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     if exists.is_none() {
         return Err(ApiError::NotFound("Community not found".to_string()));

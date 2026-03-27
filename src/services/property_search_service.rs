@@ -1,12 +1,9 @@
+use crate::repository::property_search_repository::{self, PropertySearchFilters};
+use serde_json::{Value, json};
 /// Property Search Service
 /// Business logic layer for property search, filters, and suggestions.
 /// Converts raw DB rows into structured JSON responses with pagination metadata.
-
 use sqlx::{Pool, Postgres, Row};
-use serde_json::{json, Value};
-use crate::repository::property_search_repository::{
-    self, PropertySearchFilters,
-};
 
 // ─── Helper: row → JSON property object ──────────────────────────────────────
 
@@ -73,15 +70,18 @@ pub async fn search_properties(
     let total_pages = ((total as f64) / (limit as f64)).ceil() as i32;
     let total_pages = total_pages.max(1);
 
-    Ok(SearchResult { properties, total_count: total, current_page: page, total_pages, limit })
+    Ok(SearchResult {
+        properties,
+        total_count: total,
+        current_page: page,
+        total_pages,
+        limit,
+    })
 }
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
 
-pub async fn get_filters(
-    db: &Pool<Postgres>,
-    city: Option<&str>,
-) -> Result<Value, sqlx::Error> {
+pub async fn get_filters(db: &Pool<Postgres>, city: Option<&str>) -> Result<Value, sqlx::Error> {
     let range_row = property_search_repository::get_price_area_ranges(db, city).await?;
 
     let min_price: i64 = range_row.try_get("min_price").unwrap_or(0);
@@ -133,10 +133,7 @@ pub async fn get_filters(
 
 // ─── Suggestions ─────────────────────────────────────────────────────────────
 
-pub async fn get_suggestions(
-    db: &Pool<Postgres>,
-    q: &str,
-) -> Result<Value, sqlx::Error> {
+pub async fn get_suggestions(db: &Pool<Postgres>, q: &str) -> Result<Value, sqlx::Error> {
     if q.trim().len() < 2 {
         return Ok(json!({
             "city": [], "locality": [], "project": [], "builder": [], "landmark": []
@@ -155,12 +152,12 @@ pub async fn get_suggestions(
         let category: String = row.try_get("category").unwrap_or_default();
         let value: String = row.try_get("value").unwrap_or_default();
         match category.as_str() {
-            "city"     => cities.push(value),
+            "city" => cities.push(value),
             "locality" => localities.push(value),
-            "project"  => projects.push(value),
-            "builder"  => builders.push(value),
+            "project" => projects.push(value),
+            "builder" => builders.push(value),
             "landmark" => landmarks.push(value),
-            _          => {}
+            _ => {}
         }
     }
 

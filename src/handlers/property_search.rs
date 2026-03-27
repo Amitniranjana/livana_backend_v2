@@ -1,12 +1,11 @@
+use axum::Json;
 /// Property Search Handlers
 /// Covers Step 1, 2, and 3:
 ///   GET /api/v1/properties/search   – full search with filters & pagination
 ///   GET /api/v1/properties/filters  – dynamic filter options & ranges
 ///   GET /api/v1/search/suggestions  – autocomplete suggestions
-
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 

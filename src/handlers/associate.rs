@@ -1,9 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, State},
-
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -16,8 +15,8 @@ use crate::{
     },
     dtos::response::ApiResponse,
     utils::api_error::ApiError,
-    utils::util::hash_string,
     utils::auth_extractor::AuthenticationUser,
+    utils::util::hash_string,
 };
 
 /// 1. Register Associate (POST /api/v1/associates/register)
@@ -30,13 +29,19 @@ pub async fn register_associate(
     let now = chrono::Utc::now();
 
     // Check if user already exists
-    let existing = sqlx::query!("SELECT id FROM users WHERE email = $1 OR phone_no = $2", payload.email, payload.phone)
-        .fetch_optional(&app_state.db)
-        .await
-        .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
+    let existing = sqlx::query!(
+        "SELECT id FROM users WHERE email = $1 OR phone_no = $2",
+        payload.email,
+        payload.phone
+    )
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(e.to_string()))?;
 
     if existing.is_some() {
-        return Err(ApiError::Conflict("User with this email or phone number already exists".to_string()));
+        return Err(ApiError::Conflict(
+            "User with this email or phone number already exists".to_string(),
+        ));
     }
 
     // Insert user into the database
@@ -66,11 +71,14 @@ pub async fn register_associate(
         INSERT INTO user_profiles (user_id, gender)
         VALUES ($1, 'not_specified')
         ON CONFLICT (user_id) DO NOTHING
-        "#)
-        .bind(associate_id)
+        "#,
+    )
+    .bind(associate_id)
     .execute(&app_state.db)
     .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to create associate profile: {}", e)))?;
+    .map_err(|e| {
+        ApiError::InternalServerError(format!("Failed to create associate profile: {}", e))
+    })?;
 
     let response = ApiResponse {
         success: true,
@@ -100,11 +108,15 @@ pub async fn upload_kyc_documents(
 
     // RBAC: ASSOCIATE or ADMIN
     if user_role.0 != "ASSOCIATE" && user_role.0 != "ADMIN" {
-        return Err(ApiError::Forbidden("Only associates and admins can upload KYC documents".to_string()));
+        return Err(ApiError::Forbidden(
+            "Only associates and admins can upload KYC documents".to_string(),
+        ));
     }
 
     if user_role.0 == "ASSOCIATE" && auth.user_id != id.to_string() {
-         return Err(ApiError::Forbidden("You can only upload documents for your own account".to_string()));
+        return Err(ApiError::Forbidden(
+            "You can only upload documents for your own account".to_string(),
+        ));
     }
 
     // Save KYC documents logic
@@ -113,10 +125,11 @@ pub async fn upload_kyc_documents(
         r#"
         INSERT INTO kycs (user_id, document_url, document_type, verification_status, submitted_at)
         VALUES ($1, $2, 'aadhaar', 'pending', $3)
-        "#)
-        .bind(id.to_string())
-        .bind(&payload.aadhaar_url)
-        .bind(chrono::Utc::now().to_rfc3339())
+        "#,
+    )
+    .bind(id.to_string())
+    .bind(&payload.aadhaar_url)
+    .bind(chrono::Utc::now().to_rfc3339())
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to save Aadhaar: {}", e)))?;
@@ -125,10 +138,11 @@ pub async fn upload_kyc_documents(
         r#"
         INSERT INTO kycs (user_id, document_url, document_type, verification_status, submitted_at)
         VALUES ($1, $2, 'pan', 'pending', $3)
-        "#)
-        .bind(id.to_string())
-        .bind(&payload.pan_url)
-        .bind(chrono::Utc::now().to_rfc3339())
+        "#,
+    )
+    .bind(id.to_string())
+    .bind(&payload.pan_url)
+    .bind(chrono::Utc::now().to_rfc3339())
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to save PAN: {}", e)))?;
@@ -162,16 +176,25 @@ pub async fn get_associate_profile(
     auth: AuthenticationUser,
 ) -> Result<impl IntoResponse, ApiError> {
     let auth_user_id_uuid = Uuid::parse_str(&auth.user_id).unwrap_or_default();
-    let record: (String, String, String, String, String, Option<String>, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
+    let record: (
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    ) = sqlx::query_as(
         r#"
         SELECT id::text, first_name, email, phone_no, status, associate_type, created_at
         FROM users
         WHERE id = $1
-        "#)
-        .bind(auth_user_id_uuid)
-        .fetch_one(&app_state.db)
-        .await
-        .map_err(|_| ApiError::NotFound("Profile not found".to_string()))?;
+        "#,
+    )
+    .bind(auth_user_id_uuid)
+    .fetch_one(&app_state.db)
+    .await
+    .map_err(|_| ApiError::NotFound("Profile not found".to_string()))?;
 
     // Record has fields: 0=id, 1=first_name, 2=email, 3=phone_no, 4=status, 5=associate_type, 6=created_at
 
@@ -205,9 +228,10 @@ pub async fn get_associate_types(
     let types_result: Result<Vec<(Uuid, String)>, _> = sqlx::query_as(
         r#"
         SELECT id, name FROM associate_types
-        "#)
-        .fetch_all(&app_state.db)
-        .await;
+        "#,
+    )
+    .fetch_all(&app_state.db)
+    .await;
 
     let mut associate_types = vec![];
 

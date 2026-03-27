@@ -5,10 +5,10 @@
 //   6.2  PATCH /api/v1/notifications/{id}/read
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 
@@ -88,13 +88,11 @@ pub async fn mark_notification_read(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Verify that the notification exists AND belongs to the authenticated user
-    let owner: Option<Uuid> = sqlx::query_scalar(
-        "SELECT user_id FROM notifications WHERE id = $1"
-    )
-    .bind(notification_id)
-    .fetch_optional(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM notifications WHERE id = $1")
+        .bind(notification_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     match owner {
         None => return Err(ApiError::NotFound("Notification not found".to_string())),

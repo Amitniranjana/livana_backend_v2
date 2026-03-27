@@ -9,8 +9,8 @@ pub struct CreateUserRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateChannelRequest {
     pub name: String,
-    pub mode: String, // e.g., "RESTRICTED", "UNRESTRICTED"
-    pub privacy: String, // e.g., "PRIVATE", "PUBLIC"
+    pub mode: String,           // e.g., "RESTRICTED", "UNRESTRICTED"
+    pub privacy: String,        // e.g., "PRIVATE", "PUBLIC"
     pub user_arns: Vec<String>, // Initial members
 }
 
@@ -46,8 +46,8 @@ pub struct ChatAuthResponse {
     pub creds: Option<String>, // Placeholder if we return temporary creds
 }
 
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 // Database se raw row fetch karne ke liye
 #[derive(Debug, sqlx::FromRow)]
@@ -101,4 +101,3 @@ pub struct ChatExistsRow {
     pub chat_id: Uuid,
     pub is_deleted: bool,
 }
-

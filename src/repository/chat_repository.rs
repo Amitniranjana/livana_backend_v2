@@ -67,7 +67,10 @@ mod tests {
     fn test_invalid_uuid_parse_returns_error() {
         let bad_id = "not-a-uuid";
         let result = uuid::Uuid::parse_str(bad_id);
-        assert!(result.is_err(), "Expected Uuid::parse_str to fail on non-UUID input");
+        assert!(
+            result.is_err(),
+            "Expected Uuid::parse_str to fail on non-UUID input"
+        );
     }
 
     /// Validates that a well-formed UUID parses successfully.
@@ -75,6 +78,9 @@ mod tests {
     fn test_valid_uuid_parse_succeeds() {
         let good_id = "550e8400-e29b-41d4-a716-446655440000";
         let result = uuid::Uuid::parse_str(good_id);
-        assert!(result.is_ok(), "Expected Uuid::parse_str to succeed on a valid UUID");
+        assert!(
+            result.is_ok(),
+            "Expected Uuid::parse_str to succeed on a valid UUID"
+        );
     }
 }

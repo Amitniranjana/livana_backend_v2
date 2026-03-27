@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use sqlx::{Pool, Postgres};
-use crate::services::user_service::UserService;
-use crate::services::chat_service::ChatService;
 use crate::services::chat_db_service::ChatDbService;
+use crate::services::chat_service::ChatService;
+use crate::services::user_service::UserService;
+use sqlx::{Pool, Postgres};
 
 #[allow(dead_code)]
 /// AppState is the shared state passed into every Axum handler via `State<AppState>`.

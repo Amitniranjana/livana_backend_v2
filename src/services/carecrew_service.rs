@@ -1,12 +1,11 @@
+use crate::models::carecrew::{is_valid_status, is_valid_transition};
+use crate::repository::carecrew_repository as repo;
+use serde_json::{Value, json};
 /// CareCrew Service Layer
 /// Business logic for the CareCrew module — delegates to repository,
 /// maps raw rows to JSON, and enforces domain rules (booking transitions, validation).
-
 use sqlx::{Pool, Postgres, Row};
-use serde_json::{json, Value};
 use uuid::Uuid;
-use crate::repository::carecrew_repository as repo;
-use crate::models::carecrew::{is_valid_status, is_valid_transition};
 
 // ─── Row mappers ──────────────────────────────────────────────────────────────
 
@@ -72,7 +71,10 @@ pub async fn list_services(db: &Pool<Postgres>) -> Result<Value, sqlx::Error> {
     Ok(json!({ "services": services, "total": services.len() }))
 }
 
-pub async fn get_service_by_id(db: &Pool<Postgres>, id: Uuid) -> Result<Option<Value>, sqlx::Error> {
+pub async fn get_service_by_id(
+    db: &Pool<Postgres>,
+    id: Uuid,
+) -> Result<Option<Value>, sqlx::Error> {
     let row = repo::get_service_by_id(db, id).await?;
     Ok(row.as_ref().map(service_row_to_json))
 }
@@ -102,7 +104,12 @@ pub async fn search_providers(
     let total_pages = ((total as f64) / (limit as f64)).ceil() as i32;
     let total_pages = total_pages.max(1);
 
-    Ok(ProviderListResult { providers, total_count: total, current_page: page, total_pages })
+    Ok(ProviderListResult {
+        providers,
+        total_count: total,
+        current_page: page,
+        total_pages,
+    })
 }
 
 pub async fn get_featured_providers(db: &Pool<Postgres>, limit: i32) -> Result<Value, sqlx::Error> {
@@ -111,7 +118,10 @@ pub async fn get_featured_providers(db: &Pool<Postgres>, limit: i32) -> Result<V
     Ok(json!({ "providers": providers, "total": providers.len() }))
 }
 
-pub async fn get_provider_by_id(db: &Pool<Postgres>, id: Uuid) -> Result<Option<Value>, sqlx::Error> {
+pub async fn get_provider_by_id(
+    db: &Pool<Postgres>,
+    id: Uuid,
+) -> Result<Option<Value>, sqlx::Error> {
     let row = repo::get_provider_by_id(db, id).await?;
     match row {
         Some(ref r) => {
@@ -164,14 +174,16 @@ pub async fn create_booking(
     notes: Option<&str>,
 ) -> Result<Value, BookingCreateError> {
     // Validate provider exists
-    let p_exists = repo::provider_exists(db, provider_id).await
+    let p_exists = repo::provider_exists(db, provider_id)
+        .await
         .map_err(BookingCreateError::DbError)?;
     if !p_exists {
         return Err(BookingCreateError::ProviderNotFound);
     }
 
     // Validate service exists
-    let s_exists = repo::service_exists(db, service_id).await
+    let s_exists = repo::service_exists(db, service_id)
+        .await
         .map_err(BookingCreateError::DbError)?;
     if !s_exists {
         return Err(BookingCreateError::ServiceNotFound);
@@ -183,9 +195,17 @@ pub async fn create_booking(
     }
 
     let booking_id = Uuid::new_v4();
-    let row = repo::create_booking(db, booking_id, provider_id, service_id, user_id, scheduled_at, notes)
-        .await
-        .map_err(BookingCreateError::DbError)?;
+    let row = repo::create_booking(
+        db,
+        booking_id,
+        provider_id,
+        service_id,
+        user_id,
+        scheduled_at,
+        notes,
+    )
+    .await
+    .map_err(BookingCreateError::DbError)?;
 
     Ok(booking_row_to_json(&row))
 }
@@ -208,7 +228,8 @@ pub async fn update_booking_status(
     }
 
     // Fetch current booking
-    let existing = repo::get_booking_by_id(db, booking_id).await
+    let existing = repo::get_booking_by_id(db, booking_id)
+        .await
         .map_err(BookingUpdateError::DbError)?
         .ok_or(BookingUpdateError::BookingNotFound)?;
 
@@ -222,7 +243,8 @@ pub async fn update_booking_status(
         });
     }
 
-    let row = repo::update_booking_status(db, booking_id, new_status).await
+    let row = repo::update_booking_status(db, booking_id, new_status)
+        .await
         .map_err(BookingUpdateError::DbError)?;
 
     Ok(booking_row_to_json(&row))
@@ -243,5 +265,10 @@ pub async fn get_provider_bookings(
     let total_pages = ((total as f64) / (limit as f64)).ceil() as i32;
     let total_pages = total_pages.max(1);
 
-    Ok(ProviderListResult { providers: bookings, total_count: total, current_page: page, total_pages })
+    Ok(ProviderListResult {
+        providers: bookings,
+        total_count: total,
+        current_page: page,
+        total_pages,
+    })
 }

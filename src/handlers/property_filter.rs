@@ -4,10 +4,10 @@
 //   7.1  GET /api/v1/properties  — Paginated, filtered property listing
 
 use axum::{
+    Json,
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
 };
 use uuid::Uuid;
 

@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use uuid::Uuid;
+use crate::models::kyc::{KycDocType, KycStatus, KycSubmission};
+use crate::repository::kyc_repository::KycRepository;
+use crate::services::ocr::OcrService;
+use crate::services::storage::StorageService;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use sha2::{Digest, Sha256};
-use crate::models::kyc::{KycSubmission, KycDocType, KycStatus};
-use crate::repository::kyc_repository::KycRepository;
-use crate::services::storage::StorageService;
-use crate::services::ocr::OcrService;
-use anyhow::{Result, Context};
+use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct KycService {
@@ -80,7 +80,8 @@ impl KycService {
             let normalized_input = self.normalize_name(&input_name);
             let normalized_extracted = self.normalize_name(&extracted_name);
 
-            let is_match = normalized_extracted.contains(&normalized_input) || normalized_input == normalized_extracted; // Simple heuristic
+            let is_match = normalized_extracted.contains(&normalized_input)
+                || normalized_input == normalized_extracted; // Simple heuristic
 
             let status = if is_match {
                 KycStatus::Verified
@@ -112,7 +113,10 @@ impl KycService {
         };
 
         // Map repo errors to anyhow
-        self.repo.create(submission).await.map_err(|e| anyhow::anyhow!("DB Error: {}", e))
+        self.repo
+            .create(submission)
+            .await
+            .map_err(|e| anyhow::anyhow!("DB Error: {}", e))
     }
 
     #[allow(dead_code)]

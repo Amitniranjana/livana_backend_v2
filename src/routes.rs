@@ -1,26 +1,35 @@
-use axum::{Router, routing::{get, post, put, delete}};
 use crate::app_state::AppState;
 use crate::handlers::listing::{
-    get_properties, create_property, get_broker_properties, search_properties,
-    get_property_by_id, update_property, delete_property,
-    like_property, unlike_property, save_property, unsave_property,
-    get_saved_properties, report_property,
+    create_property, delete_property, get_broker_properties, get_properties, get_property_by_id,
+    get_saved_properties, like_property, report_property, save_property, search_properties,
+    unlike_property, unsave_property, update_property,
+};
+use axum::{
+    Router,
+    routing::{delete, get, post, put},
 };
 
 pub fn health_routes() -> Router<AppState> {
-    Router::new()
-        .route("/health", get(crate::handlers::health::get_health))
+    Router::new().route("/health", get(crate::handlers::health::get_health))
 }
 
 pub fn auth_routes() -> Router<AppState> {
-    use crate::handlers::auth::{signup, signin, signout, send_forgot_password_link, reset_password};
+    use crate::handlers::auth::{
+        reset_password, send_forgot_password_link, signin, signout, signup,
+    };
     Router::new()
         .route("/api/auth/signup", post(signup))
         .route("/api/auth/signin", post(signin))
         .route("/api/auth/signout", post(signout))
-        .route("/api/auth/send-forgot-password-link", post(send_forgot_password_link))
+        .route(
+            "/api/auth/send-forgot-password-link",
+            post(send_forgot_password_link),
+        )
         .route("/api/auth/reset-password", post(reset_password))
-        .route("/auth/google", post(crate::handlers::google_auth::google_signin))
+        .route(
+            "/auth/google",
+            post(crate::handlers::google_auth::google_signin),
+        )
 }
 
 pub fn user_routes() -> Router<AppState> {
@@ -30,7 +39,6 @@ pub fn user_routes() -> Router<AppState> {
         .route("/api/user/profile", put(update_profile))
         .route("/api/user/profile/upload-image", post(upload_profile_image))
 }
-
 
 pub fn listing_routes() -> Router<AppState> {
     Router::new()
@@ -57,9 +65,8 @@ pub fn listing_routes() -> Router<AppState> {
         .route("/api/properties/{id}/report", post(report_property))
 }
 
-
 pub fn broker_routes() -> Router<AppState> {
-    use crate::handlers::broker::{onboarding, get_profile};
+    use crate::handlers::broker::{get_profile, onboarding};
     Router::new()
         .route("/api/broker/onboarding", post(onboarding))
         .route("/api/broker/profile", get(get_profile))
@@ -67,7 +74,7 @@ pub fn broker_routes() -> Router<AppState> {
 
 pub fn associate_routes() -> Router<AppState> {
     use crate::handlers::associate::{
-        register_associate, upload_kyc_documents, get_associate_profile, get_associate_types,
+        get_associate_profile, get_associate_types, register_associate, upload_kyc_documents,
     };
     Router::new()
         .route("/api/v1/associates/register", post(register_associate))
@@ -77,7 +84,7 @@ pub fn associate_routes() -> Router<AppState> {
 }
 
 pub fn careers_routes() -> Router<AppState> {
-    use crate::handlers::careers::{post_job, apply_job, get_applicants};
+    use crate::handlers::careers::{apply_job, get_applicants, post_job};
     Router::new()
         .route("/api/v1/jobs", post(post_job))
         .route("/api/v1/jobs/{job_id}/apply", post(apply_job))
@@ -91,122 +98,125 @@ pub fn reviews_routes() -> Router<AppState> {
         .route("/api/v1/associates/{id}/reviews", get(get_reviews))
 }
 
-
 /// Property Search + Filters (Steps 1 & 2)
 pub fn property_search_routes() -> Router<AppState> {
-    use crate::handlers::property_search::{
-        search_properties_handler,
-        get_filters_handler,
-    };
+    use crate::handlers::property_search::{get_filters_handler, search_properties_handler};
     Router::new()
-        .route("/api/v1/properties/search",  get(search_properties_handler))
+        .route("/api/v1/properties/search", get(search_properties_handler))
         .route("/api/v1/properties/filters", get(get_filters_handler))
 }
 
 /// Autocomplete / Suggestions (Step 3)
 pub fn suggestions_routes() -> Router<AppState> {
     use crate::handlers::property_search::get_suggestions_handler;
-    Router::new()
-        .route("/api/v1/search/suggestions", get(get_suggestions_handler))
+    Router::new().route("/api/v1/search/suggestions", get(get_suggestions_handler))
 }
 
 /// CareCrew Module (Step 4)
 pub fn carecrew_routes() -> Router<AppState> {
     use crate::handlers::carecrew::{
-        list_services,
-        get_service,
-        search_providers,
-        get_featured_providers,
-        get_provider,
-        create_booking,
-        update_booking_status,
-        get_provider_bookings,
+        create_booking, get_featured_providers, get_provider, get_provider_bookings, get_service,
+        list_services, search_providers, update_booking_status,
     };
     Router::new()
         // Service endpoints (public)
-        .route("/api/v1/carecrew/services",                    get(list_services))
-        .route("/api/v1/carecrew/services/{id}",               get(get_service))
+        .route("/api/v1/carecrew/services", get(list_services))
+        .route("/api/v1/carecrew/services/{id}", get(get_service))
         // Provider endpoints (public)
-        .route("/api/v1/carecrew/providers",                   get(search_providers))
-        .route("/api/v1/carecrew/providers/featured",          get(get_featured_providers))
-        .route("/api/v1/carecrew/providers/{id}",              get(get_provider))
+        .route("/api/v1/carecrew/providers", get(search_providers))
+        .route(
+            "/api/v1/carecrew/providers/featured",
+            get(get_featured_providers),
+        )
+        .route("/api/v1/carecrew/providers/{id}", get(get_provider))
         // Booking endpoints (authenticated)
-        .route("/api/v1/carecrew/bookings",                    post(create_booking))
-        .route("/api/v1/carecrew/bookings/{id}/status",        put(update_booking_status))
-        .route("/api/v1/carecrew/providers/{id}/bookings",     get(get_provider_bookings))
+        .route("/api/v1/carecrew/bookings", post(create_booking))
+        .route(
+            "/api/v1/carecrew/bookings/{id}/status",
+            put(update_booking_status),
+        )
+        .route(
+            "/api/v1/carecrew/providers/{id}/bookings",
+            get(get_provider_bookings),
+        )
 }
 
 /// CareCrew Tickets (Support Module)
 pub fn carecrew_ticket_routes() -> Router<AppState> {
-    use axum::routing::patch;
     use crate::handlers::carecrew_tickets::{
-        create_ticket_handler,
-        list_tickets_handler,
-        get_ticket_handler,
+        add_comment_handler, create_ticket_handler, get_ticket_handler, list_tickets_handler,
         update_ticket_handler,
-        add_comment_handler,
     };
+    use axum::routing::patch;
     Router::new()
-        .route("/api/v1/carecrew/tickets",                     post(create_ticket_handler))
-        .route("/api/v1/carecrew/tickets",                     get(list_tickets_handler))
-        .route("/api/v1/carecrew/tickets/{ticketId}",          get(get_ticket_handler))
-        .route("/api/v1/carecrew/tickets/{ticketId}",          patch(update_ticket_handler))
-        .route("/api/v1/carecrew/tickets/{ticketId}/comments", post(add_comment_handler))
+        .route("/api/v1/carecrew/tickets", post(create_ticket_handler))
+        .route("/api/v1/carecrew/tickets", get(list_tickets_handler))
+        .route(
+            "/api/v1/carecrew/tickets/{ticketId}",
+            get(get_ticket_handler),
+        )
+        .route(
+            "/api/v1/carecrew/tickets/{ticketId}",
+            patch(update_ticket_handler),
+        )
+        .route(
+            "/api/v1/carecrew/tickets/{ticketId}/comments",
+            post(add_comment_handler),
+        )
 }
 
 /// Recent Chats (JWT-protected)
 pub fn recent_chats_routes() -> Router<AppState> {
     use crate::handlers::recent_chats::get_recent_chats;
-    Router::new()
-        .route("/api/v1/chats/recent", get(get_recent_chats))
+    Router::new().route("/api/v1/chats/recent", get(get_recent_chats))
 }
 
 /// Saved Properties (JWT-protected)
 pub fn saved_properties_routes() -> Router<AppState> {
+    use crate::handlers::saved_properties::{get_saved_properties, save_property, unsave_property};
     use axum::routing::delete;
-    use crate::handlers::saved_properties::{
-        save_property, unsave_property, get_saved_properties,
-    };
     Router::new()
         .route("/api/v1/properties/{id}/save", post(save_property))
         .route("/api/v1/properties/{id}/save", delete(unsave_property))
-        .route("/api/v1/users/me/saved-properties", get(get_saved_properties))
+        .route(
+            "/api/v1/users/me/saved-properties",
+            get(get_saved_properties),
+        )
 }
 
 /// Notifications (JWT-protected)
 pub fn notifications_routes() -> Router<AppState> {
+    use crate::handlers::notifications::{get_notifications, mark_notification_read};
     use axum::routing::patch;
-    use crate::handlers::notifications::{
-        get_notifications, mark_notification_read,
-    };
     Router::new()
         .route("/api/v1/notifications", get(get_notifications))
-        .route("/api/v1/notifications/{id}/read", patch(mark_notification_read))
+        .route(
+            "/api/v1/notifications/{id}/read",
+            patch(mark_notification_read),
+        )
 }
 
 /// Property Filter (JWT-protected)
 pub fn property_filter_routes() -> Router<AppState> {
     use crate::handlers::property_filter::filter_properties;
-    Router::new()
-        .route("/api/v1/properties", get(filter_properties))
+    Router::new().route("/api/v1/properties", get(filter_properties))
 }
 
 /// Community APIs (JWT-protected)
 pub fn community_routes() -> Router<AppState> {
-    use crate::handlers::community::{
-        create_community, join_community, create_community_post,
-    };
+    use crate::handlers::community::{create_community, create_community_post, join_community};
     Router::new()
         .route("/api/v1/communities", post(create_community))
         .route("/api/v1/communities/{id}/join", post(join_community))
-        .route("/api/v1/communities/{id}/posts", post(create_community_post))
+        .route(
+            "/api/v1/communities/{id}/posts",
+            post(create_community_post),
+        )
 }
 
 /// Moderation APIs (JWT-protected)
 pub fn moderation_routes() -> Router<AppState> {
-    use crate::handlers::moderation::{
-        block_user, report_entity, archive_chat,
-    };
+    use crate::handlers::moderation::{archive_chat, block_user, report_entity};
     Router::new()
         .route("/api/v1/users/{id}/block", post(block_user))
         .route("/api/v1/report", post(report_entity))
@@ -215,9 +225,7 @@ pub fn moderation_routes() -> Router<AppState> {
 
 /// Vibe APIs (JWT-protected)
 pub fn vibes_routes() -> Router<AppState> {
-    use crate::handlers::vibes::{
-        send_vibe, accept_vibe, reject_vibe, get_matches,
-    };
+    use crate::handlers::vibes::{accept_vibe, get_matches, reject_vibe, send_vibe};
     Router::new()
         .route("/api/v1/vibes", post(send_vibe))
         .route("/api/v1/vibes/matches", get(get_matches))
@@ -227,10 +235,8 @@ pub fn vibes_routes() -> Router<AppState> {
 
 /// Language APIs (JWT-protected)
 pub fn language_routes() -> Router<AppState> {
+    use crate::handlers::language::{get_languages, set_preferred_language};
     use axum::routing::patch;
-    use crate::handlers::language::{
-        get_languages, set_preferred_language,
-    };
     Router::new()
         .route("/api/v1/languages", get(get_languages))
         .route("/api/v1/users/me/language", patch(set_preferred_language))
@@ -238,13 +244,60 @@ pub fn language_routes() -> Router<AppState> {
 
 /// Expo Event APIs (JWT-protected)
 pub fn expo_routes() -> Router<AppState> {
-    use crate::handlers::expo::{create_expo, get_all_expos, get_expo_details, register_for_expo, get_expo_participants};
+    use crate::handlers::expo::{
+        create_expo, get_all_expos, get_expo_details, get_expo_participants, register_for_expo,
+    };
     Router::new()
         .route("/api/expo", post(create_expo))
         .route("/api/expo", get(get_all_expos))
         .route("/api/expo/{expo_id}", get(get_expo_details))
         .route("/api/expo/{expo_id}/register", post(register_for_expo))
-        .route("/api/expo/{expo_id}/participants", get(get_expo_participants))
+        .route(
+            "/api/expo/{expo_id}/participants",
+            get(get_expo_participants),
+        )
+}
+
+/// Service Provider Listing APIs
+pub fn service_listing_routes() -> Router<AppState> {
+    use crate::handlers::service_listing::{add_service, filter_providers, get_all_services};
+    Router::new()
+        .route("/api/services", post(add_service).get(get_all_services))
+        .route("/api/services/providers", get(filter_providers))
+}
+
+/// CareCrew Review APIs
+pub fn carecrew_review_routes() -> Router<AppState> {
+    use crate::handlers::carecrew_reviews::{
+        create_review, delete_review, edit_review, get_provider_reviews, reply_to_review,
+    };
+    Router::new()
+        .route("/api/reviews/carecrew", post(create_review))
+        .route(
+            "/api/reviews/carecrew/{id}",
+            get(get_provider_reviews).put(edit_review).delete(delete_review),
+        )
+        .route(
+            "/api/reviews/carecrew/{id}/reply",
+            post(reply_to_review),
+        )
+}
+
+/// Property Review APIs
+pub fn property_review_routes() -> Router<AppState> {
+    use crate::handlers::property_reviews::{
+        create_review, delete_review, edit_review, get_property_reviews, reply_to_review,
+    };
+    Router::new()
+        .route("/api/reviews/property", post(create_review))
+        .route(
+            "/api/reviews/property/{id}",
+            get(get_property_reviews).put(edit_review).delete(delete_review),
+        )
+        .route(
+            "/api/reviews/property/{id}/reply",
+            post(reply_to_review),
+        )
 }
 
 pub mod chat_routes;

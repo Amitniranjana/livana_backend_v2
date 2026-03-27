@@ -1,6 +1,5 @@
 /// CareCrew Models
 /// Rust structs for CareCrew services, providers, and bookings.
-
 use serde::{Deserialize, Serialize};
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -72,13 +71,16 @@ pub struct UpdateBookingStatusRequest {
 ///   completed → (terminal, no further transitions)
 ///   cancelled → (terminal, no further transitions)
 pub fn is_valid_status(s: &str) -> bool {
-    matches!(s, "pending" | "confirmed" | "in_progress" | "completed" | "cancelled")
+    matches!(
+        s,
+        "pending" | "confirmed" | "in_progress" | "completed" | "cancelled"
+    )
 }
 
 pub fn is_valid_transition(from: &str, to: &str) -> bool {
     match from {
-        "pending"     => matches!(to, "confirmed" | "cancelled"),
-        "confirmed"   => matches!(to, "in_progress" | "cancelled"),
+        "pending" => matches!(to, "confirmed" | "cancelled"),
+        "confirmed" => matches!(to, "in_progress" | "cancelled"),
         "in_progress" => matches!(to, "completed" | "cancelled"),
         _ => false, // completed and cancelled are terminal
     }
@@ -168,9 +170,9 @@ pub enum TicketPriority {
 impl fmt::Display for TicketPriority {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TicketPriority::Low    => write!(f, "LOW"),
+            TicketPriority::Low => write!(f, "LOW"),
             TicketPriority::Medium => write!(f, "MEDIUM"),
-            TicketPriority::High   => write!(f, "HIGH"),
+            TicketPriority::High => write!(f, "HIGH"),
         }
     }
 }
@@ -179,10 +181,10 @@ impl FromStr for TicketPriority {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "LOW"    => Ok(TicketPriority::Low),
+            "LOW" => Ok(TicketPriority::Low),
             "MEDIUM" => Ok(TicketPriority::Medium),
-            "HIGH"   => Ok(TicketPriority::High),
-            other    => Err(format!("Unknown priority: '{}'", other)),
+            "HIGH" => Ok(TicketPriority::High),
+            other => Err(format!("Unknown priority: '{}'", other)),
         }
     }
 }
@@ -217,10 +219,10 @@ pub enum TicketStatus {
 impl fmt::Display for TicketStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TicketStatus::Open       => write!(f, "OPEN"),
+            TicketStatus::Open => write!(f, "OPEN"),
             TicketStatus::InProgress => write!(f, "IN_PROGRESS"),
-            TicketStatus::Resolved   => write!(f, "RESOLVED"),
-            TicketStatus::Closed     => write!(f, "CLOSED"),
+            TicketStatus::Resolved => write!(f, "RESOLVED"),
+            TicketStatus::Closed => write!(f, "CLOSED"),
         }
     }
 }
@@ -229,11 +231,11 @@ impl FromStr for TicketStatus {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "OPEN"        => Ok(TicketStatus::Open),
+            "OPEN" => Ok(TicketStatus::Open),
             "IN_PROGRESS" => Ok(TicketStatus::InProgress),
-            "RESOLVED"    => Ok(TicketStatus::Resolved),
-            "CLOSED"      => Ok(TicketStatus::Closed),
-            other         => Err(format!("Unknown status: '{}'", other)),
+            "RESOLVED" => Ok(TicketStatus::Resolved),
+            "CLOSED" => Ok(TicketStatus::Closed),
+            other => Err(format!("Unknown status: '{}'", other)),
         }
     }
 }
@@ -252,10 +254,10 @@ impl TicketStatus {
     /// Validates whether a state transition from `self` → `to` is allowed.
     pub fn can_transition_to(&self, to: &TicketStatus) -> bool {
         match self {
-            TicketStatus::Open       => matches!(to, TicketStatus::InProgress),
+            TicketStatus::Open => matches!(to, TicketStatus::InProgress),
             TicketStatus::InProgress => matches!(to, TicketStatus::Resolved | TicketStatus::Open),
-            TicketStatus::Resolved   => matches!(to, TicketStatus::Closed | TicketStatus::InProgress),
-            TicketStatus::Closed     => false, // terminal
+            TicketStatus::Resolved => matches!(to, TicketStatus::Closed | TicketStatus::InProgress),
+            TicketStatus::Closed => false, // terminal
         }
     }
 }
@@ -265,16 +267,16 @@ impl TicketStatus {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CareCrewTicket {
-    pub id:          String,
-    pub user_id:     String,
+    pub id: String,
+    pub user_id: String,
     pub property_id: Option<String>,
     pub assignee_id: Option<String>,
-    pub issue_type:  String,
+    pub issue_type: String,
     pub description: String,
-    pub priority:    String, // "LOW" | "MEDIUM" | "HIGH"
-    pub status:      String, // "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED"
-    pub created_at:  String,
-    pub updated_at:  String,
+    pub priority: String, // "LOW" | "MEDIUM" | "HIGH"
+    pub status: String,   // "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED"
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 // ─── Ticket Comment Struct ────────────────────────────────────────────────────
@@ -282,11 +284,11 @@ pub struct CareCrewTicket {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CareCrewTicketComment {
-    pub id:           String,
-    pub ticket_id:    String,
+    pub id: String,
+    pub ticket_id: String,
     pub commenter_id: String,
-    pub comment:      String,
-    pub created_at:   String,
+    pub comment: String,
+    pub created_at: String,
 }
 
 // ─── Request DTOs ─────────────────────────────────────────────────────────────
@@ -295,16 +297,16 @@ pub struct CareCrewTicketComment {
 pub struct CreateTicketRequest {
     pub property_id: Option<String>,
     /// e.g. "service", "operational", "billing", "other"
-    pub issue_type:  String,
+    pub issue_type: String,
     pub description: String,
     /// "LOW" | "MEDIUM" | "HIGH" — defaults to "MEDIUM" if omitted
-    pub priority:    Option<String>,
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateTicketRequest {
     /// New status — must follow state machine transitions
-    pub status:      Option<String>,
+    pub status: Option<String>,
     /// UUID of the agent to assign
     pub assignee_id: Option<String>,
 }
@@ -320,13 +322,17 @@ pub struct AddTicketCommentRequest {
 /// Returns Err with a human-readable reason on failure.
 #[allow(dead_code)]
 pub fn validate_ticket_transition(from: &str, to: &str) -> Result<(), String> {
-    let from_status = from.parse::<TicketStatus>()
+    let from_status = from
+        .parse::<TicketStatus>()
         .map_err(|e| format!("Current status invalid: {}", e))?;
-    let to_status = to.parse::<TicketStatus>()
+    let to_status = to
+        .parse::<TicketStatus>()
         .map_err(|e| format!("Target status invalid: {}", e))?;
 
     if from_status.is_terminal() {
-        return Err(format!("Ticket is CLOSED — no further transitions are allowed"));
+        return Err(format!(
+            "Ticket is CLOSED — no further transitions are allowed"
+        ));
     }
     if !from_status.can_transition_to(&to_status) {
         return Err(format!(
@@ -342,10 +348,10 @@ pub fn validate_ticket_transition(from: &str, to: &str) -> Result<(), String> {
 #[allow(dead_code)]
 fn valid_next_states(status: &TicketStatus) -> &'static str {
     match status {
-        TicketStatus::Open       => "IN_PROGRESS",
+        TicketStatus::Open => "IN_PROGRESS",
         TicketStatus::InProgress => "RESOLVED, OPEN (re-open)",
-        TicketStatus::Resolved   => "CLOSED, IN_PROGRESS (re-open)",
-        TicketStatus::Closed     => "(none — terminal)",
+        TicketStatus::Resolved => "CLOSED, IN_PROGRESS (re-open)",
+        TicketStatus::Closed => "(none — terminal)",
     }
 }
 
@@ -359,15 +365,30 @@ mod ticket_tests {
 
     #[test]
     fn test_priority_from_str_valid() {
-        assert_eq!("LOW".parse::<TicketPriority>().unwrap(), TicketPriority::Low);
-        assert_eq!("MEDIUM".parse::<TicketPriority>().unwrap(), TicketPriority::Medium);
-        assert_eq!("HIGH".parse::<TicketPriority>().unwrap(), TicketPriority::High);
+        assert_eq!(
+            "LOW".parse::<TicketPriority>().unwrap(),
+            TicketPriority::Low
+        );
+        assert_eq!(
+            "MEDIUM".parse::<TicketPriority>().unwrap(),
+            TicketPriority::Medium
+        );
+        assert_eq!(
+            "HIGH".parse::<TicketPriority>().unwrap(),
+            TicketPriority::High
+        );
     }
 
     #[test]
     fn test_priority_from_str_case_insensitive() {
-        assert_eq!("low".parse::<TicketPriority>().unwrap(), TicketPriority::Low);
-        assert_eq!("High".parse::<TicketPriority>().unwrap(), TicketPriority::High);
+        assert_eq!(
+            "low".parse::<TicketPriority>().unwrap(),
+            TicketPriority::Low
+        );
+        assert_eq!(
+            "High".parse::<TicketPriority>().unwrap(),
+            TicketPriority::High
+        );
     }
 
     #[test]
@@ -378,9 +399,9 @@ mod ticket_tests {
 
     #[test]
     fn test_priority_display() {
-        assert_eq!(TicketPriority::Low.to_string(),    "LOW");
+        assert_eq!(TicketPriority::Low.to_string(), "LOW");
         assert_eq!(TicketPriority::Medium.to_string(), "MEDIUM");
-        assert_eq!(TicketPriority::High.to_string(),   "HIGH");
+        assert_eq!(TicketPriority::High.to_string(), "HIGH");
     }
 
     #[test]
@@ -394,10 +415,19 @@ mod ticket_tests {
 
     #[test]
     fn test_status_from_str_valid() {
-        assert_eq!("OPEN".parse::<TicketStatus>().unwrap(),        TicketStatus::Open);
-        assert_eq!("IN_PROGRESS".parse::<TicketStatus>().unwrap(), TicketStatus::InProgress);
-        assert_eq!("RESOLVED".parse::<TicketStatus>().unwrap(),    TicketStatus::Resolved);
-        assert_eq!("CLOSED".parse::<TicketStatus>().unwrap(),      TicketStatus::Closed);
+        assert_eq!("OPEN".parse::<TicketStatus>().unwrap(), TicketStatus::Open);
+        assert_eq!(
+            "IN_PROGRESS".parse::<TicketStatus>().unwrap(),
+            TicketStatus::InProgress
+        );
+        assert_eq!(
+            "RESOLVED".parse::<TicketStatus>().unwrap(),
+            TicketStatus::Resolved
+        );
+        assert_eq!(
+            "CLOSED".parse::<TicketStatus>().unwrap(),
+            TicketStatus::Closed
+        );
     }
 
     #[test]
@@ -409,10 +439,10 @@ mod ticket_tests {
 
     #[test]
     fn test_status_display() {
-        assert_eq!(TicketStatus::Open.to_string(),       "OPEN");
+        assert_eq!(TicketStatus::Open.to_string(), "OPEN");
         assert_eq!(TicketStatus::InProgress.to_string(), "IN_PROGRESS");
-        assert_eq!(TicketStatus::Resolved.to_string(),   "RESOLVED");
-        assert_eq!(TicketStatus::Closed.to_string(),     "CLOSED");
+        assert_eq!(TicketStatus::Resolved.to_string(), "RESOLVED");
+        assert_eq!(TicketStatus::Closed.to_string(), "CLOSED");
     }
 
     #[test]
@@ -500,7 +530,8 @@ mod ticket_tests {
 
     #[test]
     fn test_update_ticket_request_deserialization() {
-        let json = r#"{"status": "IN_PROGRESS", "assignee_id": "550e8400-e29b-41d4-a716-446655440000"}"#;
+        let json =
+            r#"{"status": "IN_PROGRESS", "assignee_id": "550e8400-e29b-41d4-a716-446655440000"}"#;
         let req: UpdateTicketRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.status.as_deref(), Some("IN_PROGRESS"));
         assert!(req.assignee_id.is_some());

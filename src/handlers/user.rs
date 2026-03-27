@@ -1,15 +1,15 @@
-use axum::{
-    http::StatusCode,
-    response::{Json, IntoResponse},
-    extract::State,
-};
 use crate::app_state::AppState;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Json},
+};
 
-use serde_json::json;
 use crate::dtos::request::UpdateProfileRequest;
-use crate::dtos::response::{ApiResponse};
+use crate::dtos::response::ApiResponse;
 use crate::utils::auth_extractor::AuthenticationUser;
 use axum_extra::extract::Multipart;
+use serde_json::json;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -29,7 +29,10 @@ pub async fn get_profile(
     State(app_state): State<AppState>,
     auth_user: AuthenticationUser,
 ) -> impl axum::response::IntoResponse {
-    let result = app_state.user_service.get_user_profile(&auth_user.user_id).await;
+    let result = app_state
+        .user_service
+        .get_user_profile(&auth_user.user_id)
+        .await;
 
     match result {
         Ok(user_response) => {
@@ -69,7 +72,10 @@ pub async fn update_profile(
     auth_user: AuthenticationUser,
     Json(payload): Json<UpdateProfileRequest>,
 ) -> impl axum::response::IntoResponse {
-    let result = app_state.user_service.update_user_profile(&auth_user.user_id, payload).await;
+    let result = app_state
+        .user_service
+        .update_user_profile(&auth_user.user_id, payload)
+        .await;
 
     match result {
         Ok(user_response) => {
@@ -115,25 +121,40 @@ pub async fn upload_profile_image(
 
         if name == "file" || name == "image" {
             let file_name = field.file_name().unwrap_or("image.jpg").to_string();
-            let content_type = field.content_type().unwrap_or("application/octet-stream").to_string();
+            let content_type = field
+                .content_type()
+                .unwrap_or("application/octet-stream")
+                .to_string();
 
             // Basic validation
             if !content_type.starts_with("image/") {
-                return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid file type"}))).into_response();
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"success": false, "message": "Invalid file type"})),
+                )
+                    .into_response();
             }
 
             let data = field.bytes().await.unwrap_or_default();
-            if data.len() > 5 * 1024 * 1024 { // 5MB limit
-                 return (StatusCode::PAYLOAD_TOO_LARGE, Json(json!({"success": false, "message": "File too large (max 5MB)"}))).into_response();
+            if data.len() > 5 * 1024 * 1024 {
+                // 5MB limit
+                return (
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    Json(json!({"success": false, "message": "File too large (max 5MB)"})),
+                )
+                    .into_response();
             }
 
             // Ensure uploads directory exists
             if let Err(e) = tokio::fs::create_dir_all("uploads").await {
-                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to create uploads dir: {}", e)}))).into_response();
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Failed to create uploads dir: {}", e)}))).into_response();
             }
 
             // Generate unique filename
-            let ext = Path::new(&file_name).extension().and_then(|s| s.to_str()).unwrap_or("jpg");
+            let ext = Path::new(&file_name)
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("jpg");
             let new_filename = format!("{}_{}.{}", auth_user.user_id, uuid::Uuid::new_v4(), ext);
             let filepath = format!("uploads/{}", new_filename);
 
@@ -154,8 +175,11 @@ pub async fn upload_profile_image(
     }
 
     if let Some(url) = image_url {
-        let result = app_state.user_service.update_profile_image(&auth_user.user_id, &url).await;
-         match result {
+        let result = app_state
+            .user_service
+            .update_profile_image(&auth_user.user_id, &url)
+            .await;
+        match result {
             Ok(_) => {
                  let response = json!({
                     "success": true,
@@ -171,6 +195,10 @@ pub async fn upload_profile_image(
             }
         }
     } else {
-        (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "No file uploaded"}))).into_response()
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"success": false, "message": "No file uploaded"})),
+        )
+            .into_response()
     }
 }

@@ -9,7 +9,8 @@ async fn main() {
         .load()
         .await;
     let s3_client = S3Client::new(&aws_config);
-    let bucket = std::env::var("KYC_BUCKET_NAME").unwrap_or_else(|_| "livana-kyc-documents".to_string());
+    let bucket =
+        std::env::var("KYC_BUCKET_NAME").unwrap_or_else(|_| "livana-kyc-documents".to_string());
 
     let res = s3_client
         .put_object()
