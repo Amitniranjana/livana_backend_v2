@@ -26,7 +26,9 @@ pub struct ProvidersFilterQuery {
     pub sort_by: Option<String>, // "rating" | "price" | "experience"
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    #[allow(dead_code)]
     pub latitude: Option<f64>,
+    #[allow(dead_code)]
     pub longitude: Option<f64>,
 }
 

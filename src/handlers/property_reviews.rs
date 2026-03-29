@@ -150,8 +150,6 @@ pub async fn get_property_reviews(
     let limit = params.limit.unwrap_or(10).min(100).max(1);
     let offset = params.offset.unwrap_or(0).max(0);
 
-
-
     // Total count
     let total_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM property_reviews WHERE property_id = $1")

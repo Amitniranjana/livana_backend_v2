@@ -83,6 +83,13 @@ pub fn associate_routes() -> Router<AppState> {
         .route("/api/v1/associate-types", get(get_associate_types))
 }
 
+pub fn career_routes() -> Router<AppState> {
+    use crate::handlers::career::{get_career_detail, list_careers};
+    Router::new()
+        .route("/api/careers", get(list_careers))
+        .route("/api/careers/{job_id}", get(get_career_detail))
+}
+
 pub fn careers_routes() -> Router<AppState> {
     use crate::handlers::careers::{apply_job, get_applicants, post_job};
     Router::new()
@@ -275,12 +282,11 @@ pub fn carecrew_review_routes() -> Router<AppState> {
         .route("/api/reviews/carecrew", post(create_review))
         .route(
             "/api/reviews/carecrew/{id}",
-            get(get_provider_reviews).put(edit_review).delete(delete_review),
+            get(get_provider_reviews)
+                .put(edit_review)
+                .delete(delete_review),
         )
-        .route(
-            "/api/reviews/carecrew/{id}/reply",
-            post(reply_to_review),
-        )
+        .route("/api/reviews/carecrew/{id}/reply", post(reply_to_review))
 }
 
 /// Property Review APIs
@@ -292,12 +298,11 @@ pub fn property_review_routes() -> Router<AppState> {
         .route("/api/reviews/property", post(create_review))
         .route(
             "/api/reviews/property/{id}",
-            get(get_property_reviews).put(edit_review).delete(delete_review),
+            get(get_property_reviews)
+                .put(edit_review)
+                .delete(delete_review),
         )
-        .route(
-            "/api/reviews/property/{id}/reply",
-            post(reply_to_review),
-        )
+        .route("/api/reviews/property/{id}/reply", post(reply_to_review))
 }
 
 pub mod chat_routes;

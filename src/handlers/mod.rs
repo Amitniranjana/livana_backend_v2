@@ -1,5 +1,6 @@
 pub mod associate;
 pub mod auth;
+pub mod career;
 pub mod careers;
 pub mod reviews;
 pub mod user;

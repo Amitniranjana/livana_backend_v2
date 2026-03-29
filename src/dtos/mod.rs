@@ -1,5 +1,6 @@
 pub mod associate;
 pub mod carecrew_review;
+pub mod career;
 pub mod careers;
 pub mod community;
 pub mod expo;

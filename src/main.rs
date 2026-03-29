@@ -22,8 +22,8 @@ use crate::{
     repository::user_repository::UserRepository,
     routes::{
         associate_routes, auth_routes, broker_routes, carecrew_review_routes, carecrew_routes,
-        carecrew_ticket_routes, careers_routes, community_routes, expo_routes, health_routes,
-        language_routes, listing_routes, moderation_routes, notifications_routes,
+        carecrew_ticket_routes, career_routes, careers_routes, community_routes, expo_routes,
+        health_routes, language_routes, listing_routes, moderation_routes, notifications_routes,
         property_filter_routes, property_review_routes, property_search_routes,
         recent_chats_routes, reviews_routes, saved_properties_routes, service_listing_routes,
         suggestions_routes, user_routes, vibes_routes,
@@ -133,6 +133,7 @@ async fn main() {
         // ── Associate Onboarding ─────────────────────────
         .merge(associate_routes())
         // ── Careers and Reviews ─────────────────────────
+        .merge(career_routes())
         .merge(careers_routes())
         .merge(reviews_routes())
         // ── Saved Properties & Notifications (JWT-protected) ────
