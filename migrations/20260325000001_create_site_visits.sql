@@ -1,5 +1,4 @@
--- Site visit bookings table
-CREATE TABLE site_visits (
+CREATE TABLE IF NOT EXISTS site_visits (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     property_id         UUID NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
     user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

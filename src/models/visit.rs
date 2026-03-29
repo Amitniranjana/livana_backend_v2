@@ -27,6 +27,7 @@ pub struct SiteVisitRow {
     pub property_id: Uuid,
     pub property_title: Option<String>,
     pub property_location: Option<String>,
+    #[allow(dead_code)]
     pub user_id: Uuid,
     pub provider_id: Uuid,
     pub provider_name: Option<String>,
