@@ -54,7 +54,7 @@ pub async fn send_vibe(
 
     // Verify the property exists
     let property_exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM properties WHERE id = $1")
+        sqlx::query_scalar("SELECT id FROM listings WHERE id = $1")
             .bind(payload.property_id)
             .fetch_optional(&app_state.db)
             .await
