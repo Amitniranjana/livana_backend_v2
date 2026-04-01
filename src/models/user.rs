@@ -79,4 +79,6 @@ pub struct User {
     /// Profile picture URL from Google. NULL for email/password users.
     pub profile_picture: Option<String>,
     pub associate_type: Option<String>,
+    #[serde(default)]
+    pub is_phone_verified: bool,
 }

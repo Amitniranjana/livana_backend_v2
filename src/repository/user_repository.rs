@@ -239,4 +239,158 @@ impl UserRepository {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Associate flow methods
+    // -------------------------------------------------------------------------
+
+    /// Find a user by phone number (for phone-based login).
+    pub async fn find_by_phone(&self, phone: &str) -> Result<Option<User>, String> {
+        let result = sqlx::query_as::<_, User>("SELECT * FROM users WHERE phone_no = $1")
+            .bind(phone)
+            .fetch_optional(&self.pool)
+            .await;
+
+        match result {
+            Ok(user) => Ok(user),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Mark a user's phone as verified.
+    pub async fn set_phone_verified(&self, user_id: &str) -> Result<(), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        let result = sqlx::query(
+            "UPDATE users SET is_phone_verified = TRUE, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(uuid)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Update the associate_type for a user.
+    pub async fn update_associate_type(
+        &self,
+        user_id: &str,
+        associate_type: &str,
+    ) -> Result<(), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        let result = sqlx::query(
+            "UPDATE users SET associate_type = $2, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(uuid)
+        .bind(associate_type)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Store an OTP for a phone number. Invalidates any existing unused OTPs first.
+    pub async fn store_otp(
+        &self,
+        phone_no: &str,
+        otp_code: &str,
+        expires_minutes: i64,
+    ) -> Result<(), String> {
+        // Invalidate existing OTPs for this phone
+        let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE phone_no = $1 AND used = FALSE")
+            .bind(phone_no)
+            .execute(&self.pool)
+            .await;
+
+        let id = uuid::Uuid::new_v4();
+        let expires_at = chrono::Utc::now() + chrono::Duration::minutes(expires_minutes);
+
+        let result = sqlx::query(
+            "INSERT INTO otp_records (id, phone_no, otp_code, expires_at) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(phone_no)
+        .bind(otp_code)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Verify an OTP. Returns:
+    /// - Ok(true) if valid and consumed
+    /// - Ok(false) if wrong code
+    /// - Err("OTP has expired") if expired
+    /// - Err(...) on DB error
+    pub async fn verify_otp(&self, phone_no: &str, otp_code: &str) -> Result<bool, String> {
+        // Find the latest unused OTP for this phone
+        #[derive(sqlx::FromRow)]
+        struct OtpRow {
+            id: uuid::Uuid,
+            otp_code: String,
+            expires_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let result = sqlx::query_as::<_, OtpRow>(
+            r#"SELECT id, otp_code, expires_at
+               FROM otp_records
+               WHERE phone_no = $1 AND used = FALSE
+               ORDER BY created_at DESC
+               LIMIT 1"#,
+        )
+        .bind(phone_no)
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(Some(row)) => {
+                // Check expiry
+                if chrono::Utc::now() > row.expires_at {
+                    // Mark as used so it can't be retried
+                    let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE id = $1")
+                        .bind(row.id)
+                        .execute(&self.pool)
+                        .await;
+                    return Err("OTP has expired".to_string());
+                }
+                // Check code
+                if row.otp_code == otp_code {
+                    // Consume it
+                    let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE id = $1")
+                        .bind(row.id)
+                        .execute(&self.pool)
+                        .await;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Ok(None) => Err("No OTP found for this phone number".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Invalidate all unused OTPs for a phone number.
+    pub async fn invalidate_otps(&self, phone_no: &str) -> Result<(), String> {
+        let result =
+            sqlx::query("UPDATE otp_records SET used = TRUE WHERE phone_no = $1 AND used = FALSE")
+                .bind(phone_no)
+                .execute(&self.pool)
+                .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
+

@@ -15,6 +15,7 @@ pub struct SignupUserData {
     pub phone_no: String,
     pub user_role: String,
     pub verified: bool,
+    pub is_phone_verified: bool,
     pub status: String,
     pub associate_type: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
