@@ -50,6 +50,7 @@ impl UserService {
             google_id: None,
             profile_picture: None,
             associate_type: None,
+            is_phone_verified: false,
         };
 
         match self.user_repository.create(user.clone()).await {
@@ -172,5 +173,50 @@ impl UserService {
         self.user_repository
             .update_chime_user_arn(user_id, arn)
             .await
+    }
+
+    // -------------------------------------------------------------------------
+    // Associate flow methods
+    // -------------------------------------------------------------------------
+
+    pub async fn find_by_phone(&self, phone: &str) -> Result<Option<User>, String> {
+        self.user_repository.find_by_phone(phone).await
+    }
+
+    pub async fn set_phone_verified(&self, user_id: &str) -> Result<(), String> {
+        self.user_repository.set_phone_verified(user_id).await
+    }
+
+    pub async fn update_associate_type(
+        &self,
+        user_id: &str,
+        associate_type: &str,
+    ) -> Result<(), String> {
+        self.user_repository
+            .update_associate_type(user_id, associate_type)
+            .await
+    }
+
+    pub async fn store_otp(
+        &self,
+        phone_no: &str,
+        otp_code: &str,
+        expires_minutes: i64,
+    ) -> Result<(), String> {
+        self.user_repository
+            .store_otp(phone_no, otp_code, expires_minutes)
+            .await
+    }
+
+    pub async fn verify_and_consume_otp(
+        &self,
+        phone_no: &str,
+        otp_code: &str,
+    ) -> Result<bool, String> {
+        self.user_repository.verify_otp(phone_no, otp_code).await
+    }
+
+    pub async fn invalidate_otps(&self, phone_no: &str) -> Result<(), String> {
+        self.user_repository.invalidate_otps(phone_no).await
     }
 }
