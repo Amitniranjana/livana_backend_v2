@@ -93,7 +93,9 @@ pub fn career_routes() -> Router<AppState> {
     use crate::handlers::career::{get_career_detail, list_careers};
     Router::new()
         .route("/api/careers", get(list_careers))
+        .route("/api/careers/jobs", get(list_careers)) // ALIAS
         .route("/api/careers/{job_id}", get(get_career_detail))
+        .route("/api/careers/jobs/{job_id}", get(get_career_detail)) // ALIAS
 }
 
 pub fn careers_routes() -> Router<AppState> {
