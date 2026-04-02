@@ -65,15 +65,18 @@ pub async fn register_associate(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to register associate: {}", e)))?;
 
-    // Optionally create profile with kbc
+    let gender = payload.gender.unwrap_or_else(|| "not_specified".to_string());
+
+    // Optionally create profile with gender
     sqlx::query(
         r#"
         INSERT INTO user_profiles (user_id, gender)
-        VALUES ($1, 'not_specified')
+        VALUES ($1, $2)
         ON CONFLICT (user_id) DO NOTHING
         "#,
     )
     .bind(associate_id)
+    .bind(gender)
     .execute(&app_state.db)
     .await
     .map_err(|e| {
