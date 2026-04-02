@@ -233,11 +233,11 @@ pub async fn signin(
         return (StatusCode::UNAUTHORIZED, Json(response));
     }
 
-    // Check if user is active
-    if user.status != "active" {
+    // Check if user is active (allow PENDING_KYC for associates)
+    if user.status != "active" && user.status != "PENDING_KYC" {
         let response = json!({
             "success": false,
-            "message": "Account is not active",
+            "message": format!("Account is not active (Status: {})", user.status),
             "data": null
         });
         return (StatusCode::UNAUTHORIZED, Json(response));
