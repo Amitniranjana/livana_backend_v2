@@ -8,7 +8,8 @@ pub struct RegisterAssociateDto {
     pub email: String,
     pub phone: String,
     pub password: String,
-    pub associate_type: String,
+    pub associate_type: Option<String>,
+    pub gender: Option<String>,
 }
 
 #[allow(dead_code)]
