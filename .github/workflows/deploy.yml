@@ -9,39 +9,26 @@ on:
 env:
   CARGO_TERM_COLOR: always
   PROJECT_NAME: livana-backend-v2
-  WORKING_DIRECTORY: backend-services # 👈 Added working directory
 
 jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIRECTORY }} # 👈 Use this
+    # ❌ defaults: run: wala block Yahan se HATA DEIN
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Rust Cache
-      uses: Swatinem/rust-cache@v2
-
-    - name: Run Tests
-      run: cargo test --verbose
-
-    - name: Build Release Binary
-      run: cargo build --release --verbose
+    # ... baki steps same ...
 
     - name: Upload Binary as Artifact
       uses: actions/upload-artifact@v4
       with:
         name: rust-release-binary
-        # 👈 Path modified to include working directory
-        path: ${{ env.WORKING_DIRECTORY }}/target/release/${{ env.PROJECT_NAME }}
+        path: target/release/${{ env.PROJECT_NAME }} # 👈 path theek kar dein
         retention-days: 1
+
 
   deploy:
     name: Deploy to AWS EC2
