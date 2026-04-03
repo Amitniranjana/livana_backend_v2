@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   PROJECT_NAME: livana-backend-v2
+  SQLX_OFFLINE: true
 
 jobs:
   build-and-test:
