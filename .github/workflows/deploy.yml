@@ -2,18 +2,22 @@ name: Rust CI/CD to AWS EC2
 
 on:
   push:
-    branches: [ "main" ] # Jab bhi main branch par push hoga, yeh chalega
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
-  PROJECT_NAME: livana-backend-v2 # ⚠️ DHYAN DEIN: Yahan apne project ka actual naam likhein
+  PROJECT_NAME: livana-backend-v2
+  WORKING_DIRECTORY: backend-services # 👈 Added working directory
 
 jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIRECTORY }} # 👈 Use this
 
     steps:
     - name: Checkout Code
@@ -35,7 +39,8 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: rust-release-binary
-        path: target/release/${{ env.PROJECT_NAME }}
+        # 👈 Path modified to include working directory
+        path: ${{ env.WORKING_DIRECTORY }}/target/release/${{ env.PROJECT_NAME }}
         retention-days: 1
 
   deploy:
@@ -71,4 +76,5 @@ jobs:
           cd /home/${{ secrets.AWS_USERNAME }}/app_deploy
           chmod +x ${{ env.PROJECT_NAME }}
           sudo mv ${{ env.PROJECT_NAME }} /usr/local/bin/${{ env.PROJECT_NAME }}
+          # ⚠️ Ensure your systemd service file is already created on EC2
           sudo systemctl restart ${{ env.PROJECT_NAME }}.service
