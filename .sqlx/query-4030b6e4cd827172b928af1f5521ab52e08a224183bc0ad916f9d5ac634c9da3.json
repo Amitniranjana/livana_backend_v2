@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM broker_profiles WHERE user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "agency_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "license_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "rera_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "operating_cities",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 5,
+        "name": "deal_types",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "years_of_experience",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "kyc_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4030b6e4cd827172b928af1f5521ab52e08a224183bc0ad916f9d5ac634c9da3"
+}

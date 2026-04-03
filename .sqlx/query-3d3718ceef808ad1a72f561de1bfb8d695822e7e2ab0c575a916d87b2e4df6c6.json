@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, title, location, employment_type, experience, created_at\n        FROM careers\n        WHERE is_active = TRUE\n        ORDER BY created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "location",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "employment_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "experience",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3d3718ceef808ad1a72f561de1bfb8d695822e7e2ab0c575a916d87b2e4df6c6"
+}
