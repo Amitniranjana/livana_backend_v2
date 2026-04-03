@@ -14,21 +14,30 @@ jobs:
   build-and-test:
     name: Build and Test
     runs-on: ubuntu-latest
-    # ❌ defaults: run: wala block Yahan se HATA DEIN
 
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    # ... baki steps same ...
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run Tests
+      run: cargo test --verbose
+
+    - name: Build Release Binary
+      run: cargo build --release --verbose
 
     - name: Upload Binary as Artifact
       uses: actions/upload-artifact@v4
       with:
         name: rust-release-binary
-        path: target/release/${{ env.PROJECT_NAME }} # 👈 path theek kar dein
+        path: target/release/${{ env.PROJECT_NAME }}
+        if-no-files-found: error
         retention-days: 1
-
 
   deploy:
     name: Deploy to AWS EC2
@@ -63,5 +72,4 @@ jobs:
           cd /home/${{ secrets.AWS_USERNAME }}/app_deploy
           chmod +x ${{ env.PROJECT_NAME }}
           sudo mv ${{ env.PROJECT_NAME }} /usr/local/bin/${{ env.PROJECT_NAME }}
-          # ⚠️ Ensure your systemd service file is already created on EC2
           sudo systemctl restart ${{ env.PROJECT_NAME }}.service
