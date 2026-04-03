@@ -1,0 +1,74 @@
+name: Rust CI/CD to AWS EC2
+
+on:
+  push:
+    branches: [ "main" ] # Jab bhi main branch par push hoga, yeh chalega
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  PROJECT_NAME: livana-backend-v2 # ⚠️ DHYAN DEIN: Yahan apne project ka actual naam likhein
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run Tests
+      run: cargo test --verbose
+
+    - name: Build Release Binary
+      run: cargo build --release --verbose
+
+    - name: Upload Binary as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rust-release-binary
+        path: target/release/${{ env.PROJECT_NAME }}
+        retention-days: 1
+
+  deploy:
+    name: Deploy to AWS EC2
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Download Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: rust-release-binary
+        path: .
+
+    - name: Copy Binary to AWS EC2 via SCP
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USERNAME }}
+        key: ${{ secrets.AWS_SSH_KEY }}
+        source: ${{ env.PROJECT_NAME }}
+        target: "/home/${{ secrets.AWS_USERNAME }}/app_deploy"
+
+    - name: Execute and Restart Service on EC2
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USERNAME }}
+        key: ${{ secrets.AWS_SSH_KEY }}
+        script: |
+          mkdir -p /home/${{ secrets.AWS_USERNAME }}/app_deploy
+          cd /home/${{ secrets.AWS_USERNAME }}/app_deploy
+          chmod +x ${{ env.PROJECT_NAME }}
+          sudo mv ${{ env.PROJECT_NAME }} /usr/local/bin/${{ env.PROJECT_NAME }}
+          sudo systemctl restart ${{ env.PROJECT_NAME }}.service
