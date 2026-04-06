@@ -129,8 +129,9 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
     let owner_phone: Option<String> = row.try_get("phone_no").ok().flatten();
     let owner_profile_image: Option<String> = row.try_get("profile_image").ok().flatten();
 
-    // is_saved: check saved_by_caller column injected by the query
+    // is_saved and is_liked from query
     let is_saved: bool = row.try_get::<bool, _>("is_saved").unwrap_or(false);
+    let is_liked: bool = row.try_get::<bool, _>("is_liked").unwrap_or(false);
 
     json!({
         "id": row.try_get::<Uuid, _>("id").map(|u| u.to_string()).unwrap_or_default(),
@@ -143,6 +144,8 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "area_sqft": row.try_get::<Option<i32>, _>("area_sqft").ok().flatten(),
         "bedrooms": row.try_get::<Option<i32>, _>("bedrooms").ok().flatten(),
         "bathrooms": row.try_get::<Option<i32>, _>("bathrooms").ok().flatten(),
+        "no_of_toilets": row.try_get::<Option<i32>, _>("no_of_toilets").ok().flatten().unwrap_or(0),
+        "no_of_balconies": row.try_get::<Option<i32>, _>("no_of_balconies").ok().flatten().unwrap_or(0),
         "furnishing": row.try_get::<Option<String>, _>("furnishing").ok().flatten(),
         "floor": row.try_get::<Option<i32>, _>("floor").ok().flatten(),
         "total_floors": row.try_get::<Option<i32>, _>("total_floors").ok().flatten(),
@@ -159,6 +162,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "is_featured": row.try_get::<Option<bool>, _>("is_featured").ok().flatten().unwrap_or(false),
         "is_verified": row.try_get::<Option<bool>, _>("is_verified").ok().flatten().unwrap_or(false),
         "is_saved": is_saved,
+        "is_liked": is_liked,
         "views_count": row.try_get::<Option<i32>, _>("views_count").ok().flatten().unwrap_or(0),
         "likes_count": row.try_get::<Option<i32>, _>("likes_count").ok().flatten().unwrap_or(0),
         "status": row.try_get::<Option<String>, _>("status").ok().flatten(),
@@ -183,18 +187,23 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
     format!(
         r#"
         SELECT
-            p.id, p.title, p.description, p.property_type, p.price, p.deposit,
-            p.location, p.area_sqft, p.bedrooms, p.bathrooms, p.furnishing,
-            p.floor, p.total_floors, p.age_years, p.facing, p.parking, p.parking_count,
-            p.images, p.video_url, p.amenities, p.nearby_places, p.latitude, p.longitude,
-            p.is_featured, p.is_verified, p.views_count, p.likes_count,
-            p.status, p.user_type, p.user_id, p.created_at, p.updated_at,
+            p.id, p.title, p.description, p.property_type, p.price,
+            p.city AS location, p.locality, p.area_sqft, p.bhk AS bedrooms, p.bathrooms,
+            p.no_of_toilets, p.no_of_balconies, p.furnishing,
+            p.images, p.primary_image, p.amenities,
+            p.lat AS latitude, p.lng AS longitude,
+            p.is_featured, p.is_verified,
+            p.status, p.user_id, p.created_at, p.updated_at,
             u.first_name, u.last_name, u.phone_no, u.profile_image,
             EXISTS(
-                SELECT 1 FROM saved_listings sl2
-                WHERE sl2.listing_id = p.id AND sl2.user_id = ${is_saved_bind_pos}
-            ) AS is_saved
-        FROM listings p
+                SELECT 1 FROM saved_properties sl2
+                WHERE sl2.property_id = p.id AND sl2.user_id = ${is_saved_bind_pos}
+            ) AS is_saved,
+            EXISTS(
+                SELECT 1 FROM property_likes pl
+                WHERE pl.property_id = p.id AND pl.user_id = ${is_saved_bind_pos}
+            ) AS is_liked
+        FROM properties p
         LEFT JOIN users u ON p.user_id = u.id
         "#,
         is_saved_bind_pos = is_saved_bind_pos
@@ -207,6 +216,7 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
 
 pub async fn get_properties(
     State(app_state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<ListPropertiesParams>,
 ) -> impl axum::response::IntoResponse {
     let limit = params.limit.unwrap_or(20).min(100);
@@ -219,7 +229,19 @@ pub async fn get_properties(
         _ => "p.created_at DESC",
     };
 
-    let caller = Uuid::nil(); // public endpoint, no auth
+    // Determine caller for is_saved and is_liked (optional auth)
+    let caller = {
+        let bearer = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.strip_prefix("Bearer ").map(|s| s.to_string()));
+        if let Some(b) = bearer {
+            let dk = DecodingKey::from_secret(app_state.jwt_secret.as_bytes());
+            extract_user_id_from_jwt(&b, &dk).unwrap_or(Uuid::nil())
+        } else {
+            Uuid::nil()
+        }
+    };
 
     // is_saved bind is $1 (caller), then property_type optional, then limit/offset
     let mut conditions = vec!["p.status = 'active'".to_string()];
@@ -395,20 +417,18 @@ pub async fn create_property(
 
     let result = sqlx::query(
         r#"
-        INSERT INTO listings (
-            id, title, description, property_type, price, deposit,
-            location, area_sqft, bedrooms, bathrooms, furnishing,
-            floor, total_floors, age_years, facing, parking, parking_count,
-            images, video_url, amenities, nearby_places, latitude, longitude,
-            is_featured, is_verified, views_count, likes_count,
-            status, user_id, created_at, updated_at, user_type
+        INSERT INTO properties (
+            id, title, description, property_type, price,
+            city, area_sqft, bhk, bathrooms, no_of_toilets, no_of_balconies, furnishing,
+            images, amenities, lat, lng,
+            is_featured, is_verified,
+            status, user_id, created_at, updated_at
         ) VALUES (
-            $1, $2, $3, $4, $5, $6,
-            $7, $8, $9, $10, $11,
-            $12, $13, $14, $15, $16, $17,
-            $18, $19, $20, $21, $22, $23,
-            false, false, 0, 0,
-            'active', $24, $25, $25, $26
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10, $11, $12,
+            $13, $14, $15, $16,
+            false, false,
+            'active', $17, $18, $18
         )
         RETURNING id
         "#,
@@ -418,27 +438,19 @@ pub async fn create_property(
     .bind(&payload.description)
     .bind(&payload.property_type)
     .bind(payload.price)
-    .bind(payload.deposit)
-    .bind(&payload.location)
+    .bind(&payload.location)   // city
     .bind(payload.area_sqft)
-    .bind(payload.bedrooms)
+    .bind(payload.bedrooms)    // bhk
     .bind(payload.bathrooms)
+    .bind(payload.no_of_toilets.unwrap_or(0))
+    .bind(payload.no_of_balconies.unwrap_or(0))
     .bind(&payload.furnishing)
-    .bind(payload.floor)
-    .bind(payload.total_floors)
-    .bind(payload.age_years)
-    .bind(&payload.facing)
-    .bind(payload.parking.unwrap_or(false))
-    .bind(payload.parking_count)
     .bind(images_json)
-    .bind(&payload.video_url)
     .bind(amenities_json)
-    .bind(nearby_json)
-    .bind(payload.latitude)
-    .bind(payload.longitude)
+    .bind(payload.latitude)    // lat
+    .bind(payload.longitude)   // lng
     .bind(user_id)
     .bind(now)
-    .bind(&payload.user_type)
     .fetch_one(&app_state.db)
     .await;
 
@@ -485,7 +497,7 @@ pub async fn update_property(
 
     // Ownership check
     let owner: Option<Uuid> = match sqlx::query_scalar(
-        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'",
+        "SELECT user_id FROM properties WHERE id = $1 AND status != 'deleted'",
     )
     .bind(property_id)
     .fetch_optional(&app_state.db)
@@ -520,7 +532,7 @@ pub async fn update_property(
 
     let updated_at = Utc::now();
     let mut qb: sqlx::QueryBuilder<sqlx::Postgres> =
-        sqlx::QueryBuilder::new("UPDATE listings SET updated_at = ");
+        sqlx::QueryBuilder::new("UPDATE properties SET updated_at = ");
     qb.push_bind(updated_at);
 
     if let Some(v) = &payload.title {
@@ -539,12 +551,8 @@ pub async fn update_property(
         qb.push(", price = ");
         qb.push_bind(v);
     }
-    if let Some(v) = payload.deposit {
-        qb.push(", deposit = ");
-        qb.push_bind(v);
-    }
     if let Some(v) = &payload.location {
-        qb.push(", location = ");
+        qb.push(", city = ");           // location maps to city
         qb.push_bind(v);
     }
     if let Some(v) = payload.area_sqft {
@@ -552,59 +560,35 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = payload.bedrooms {
-        qb.push(", bedrooms = ");
+        qb.push(", bhk = ");           // bedrooms maps to bhk
         qb.push_bind(v);
     }
     if let Some(v) = payload.bathrooms {
         qb.push(", bathrooms = ");
         qb.push_bind(v);
     }
+    if let Some(v) = payload.no_of_toilets {
+        qb.push(", no_of_toilets = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.no_of_balconies {
+        qb.push(", no_of_balconies = ");
+        qb.push_bind(v);
+    }
     if let Some(v) = &payload.furnishing {
         qb.push(", furnishing = ");
         qb.push_bind(v);
     }
-    if let Some(v) = payload.floor {
-        qb.push(", floor = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = payload.total_floors {
-        qb.push(", total_floors = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = payload.age_years {
-        qb.push(", age_years = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = &payload.facing {
-        qb.push(", facing = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = payload.parking {
-        qb.push(", parking = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = payload.parking_count {
-        qb.push(", parking_count = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = &payload.video_url {
-        qb.push(", video_url = ");
-        qb.push_bind(v);
-    }
     if let Some(v) = payload.latitude {
-        qb.push(", latitude = ");
+        qb.push(", lat = ");           // latitude maps to lat
         qb.push_bind(v);
     }
     if let Some(v) = payload.longitude {
-        qb.push(", longitude = ");
+        qb.push(", lng = ");           // longitude maps to lng
         qb.push_bind(v);
     }
     if let Some(v) = &payload.status {
         qb.push(", status = ");
-        qb.push_bind(v);
-    }
-    if let Some(v) = &payload.user_type {
-        qb.push(", user_type = ");
         qb.push_bind(v);
     }
     if let Some(v) = &payload.images {
@@ -616,10 +600,6 @@ pub async fn update_property(
         let j = serde_json::to_value(v).unwrap_or(json!([]));
         qb.push(", amenities = ");
         qb.push_bind(j);
-    }
-    if let Some(v) = &payload.nearby_places {
-        qb.push(", nearby_places = ");
-        qb.push_bind(v.clone());
     }
 
     qb.push(" WHERE id = ");
@@ -714,7 +694,7 @@ pub async fn delete_property(
         _ => {}
     }
 
-    let _ = sqlx::query("UPDATE listings SET status = 'deleted', updated_at = $1 WHERE id = $2")
+    let _ = sqlx::query("UPDATE properties SET status = 'deleted', updated_at = $1 WHERE id = $2")
         .bind(Utc::now())
         .bind(property_id)
         .execute(&app_state.db)
@@ -771,7 +751,7 @@ pub async fn get_broker_properties(
     };
 
     let total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM listings WHERE user_id = $1 AND status = $2")
+        sqlx::query_scalar("SELECT COUNT(*) FROM properties WHERE user_id = $1 AND status = $2")
             .bind(user_id)
             .bind(status_filter)
             .fetch_one(&app_state.db)
@@ -937,7 +917,7 @@ pub async fn like_property(
     };
 
     let already: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM listing_likes WHERE listing_id = $1 AND user_id = $2")
+        sqlx::query_scalar("SELECT id FROM property_likes WHERE property_id = $1 AND user_id = $2")
             .bind(property_id)
             .bind(user_id)
             .fetch_optional(&app_state.db)
@@ -946,7 +926,7 @@ pub async fn like_property(
 
     if already.is_none() {
         let _ = sqlx::query(
-            "INSERT INTO listing_likes (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
+            "INSERT INTO property_likes (id, property_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
         )
         .bind(Uuid::new_v4())
         .bind(property_id)
@@ -1002,7 +982,7 @@ pub async fn unlike_property(
         }
     };
 
-    let result = sqlx::query("DELETE FROM listing_likes WHERE listing_id = $1 AND user_id = $2")
+    let result = sqlx::query("DELETE FROM property_likes WHERE property_id = $1 AND user_id = $2")
         .bind(property_id)
         .bind(user_id)
         .execute(&app_state.db)
@@ -1061,7 +1041,7 @@ pub async fn save_property(
     };
 
     let already: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM saved_listings WHERE listing_id = $1 AND user_id = $2")
+        sqlx::query_scalar("SELECT id FROM saved_properties WHERE property_id = $1 AND user_id = $2")
             .bind(property_id)
             .bind(user_id)
             .fetch_optional(&app_state.db)
@@ -1070,7 +1050,7 @@ pub async fn save_property(
 
     if already.is_none() {
         let _ = sqlx::query(
-            "INSERT INTO saved_listings (id, listing_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
+            "INSERT INTO saved_properties (id, property_id, user_id, created_at) VALUES ($1,$2,$3,$4)",
         )
         .bind(Uuid::new_v4())
         .bind(property_id)
@@ -1111,7 +1091,7 @@ pub async fn unsave_property(
         }
     };
 
-    let _ = sqlx::query("DELETE FROM saved_listings WHERE listing_id = $1 AND user_id = $2")
+    let _ = sqlx::query("DELETE FROM saved_properties WHERE property_id = $1 AND user_id = $2")
         .bind(property_id)
         .bind(user_id)
         .execute(&app_state.db)

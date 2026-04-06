@@ -141,6 +141,10 @@ pub struct CreatePropertyRequest {
     pub bedrooms: Option<i32>,
     #[schema(example = 2)]
     pub bathrooms: Option<i32>,
+    #[schema(example = 2)]
+    pub no_of_toilets: Option<i32>,
+    #[schema(example = 1)]
+    pub no_of_balconies: Option<i32>,
     /// "unfurnished" | "semi-furnished" | "fully-furnished"
     #[schema(example = "semi-furnished")]
     pub furnishing: Option<String>,
@@ -187,6 +191,8 @@ pub struct UpdatePropertyRequest {
     pub area_sqft: Option<i32>,
     pub bedrooms: Option<i32>,
     pub bathrooms: Option<i32>,
+    pub no_of_toilets: Option<i32>,
+    pub no_of_balconies: Option<i32>,
     pub furnishing: Option<String>,
     pub floor: Option<i32>,
     pub total_floors: Option<i32>,

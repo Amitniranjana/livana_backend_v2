@@ -91,13 +91,15 @@ pub async fn add_service(
     .map_err(|e| ApiError::InternalServerError(format!("Failed to add service: {}", e)))?;
 
     // Auto-sync into carecrew_providers so that CareCrew Provider APIs work seamlessly
+    // IMPORTANT: we use the user's own ID as the carecrew_providers.id so that
+    // GET /api/v1/carecrew/providers/{user_id} resolves correctly.
     let _ = sqlx::query(
         r#"
         INSERT INTO carecrew_providers (
             id, name, bio, service_type, city, user_id, is_active, phone
         )
         SELECT 
-            gen_random_uuid(), 
+            $4,
             COALESCE(first_name, 'Provider'), 
             $1, 
             $2, 
@@ -107,6 +109,7 @@ pub async fn add_service(
             phone_no
         FROM users
         WHERE id = $4
+        ON CONFLICT (id) DO NOTHING
         "#
     )
     .bind(&body.description)
