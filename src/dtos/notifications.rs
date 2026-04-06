@@ -11,6 +11,12 @@ pub struct NotificationDto {
     #[serde(rename = "type")]
     pub notification_type: String,
     pub is_read: bool,
+    /// UUID of the related entity (vibe_id, visit_id, etc.)
+    pub related_entity_id: Option<Uuid>,
+    /// Type of the related entity: "VIBE", "SITE_VISIT", etc.
+    pub related_entity_type: Option<String>,
+    /// Accept/Reject status: null, "ACCEPTED", "REJECTED"
+    pub action_status: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 

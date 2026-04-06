@@ -392,5 +392,22 @@ impl UserRepository {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    /// Update a user's password hash in the database.
+    pub async fn update_password(&self, user_id: &str, new_password_hash: &str) -> Result<(), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        let result = sqlx::query(
+            "UPDATE users SET password = $2, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(uuid)
+        .bind(new_password_hash)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }
 

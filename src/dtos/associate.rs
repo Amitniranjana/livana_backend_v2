@@ -8,7 +8,9 @@ pub struct RegisterAssociateDto {
     pub email: String,
     pub phone: String,
     pub password: String,
+    #[serde(default)]
     pub associate_type: Option<String>,
+    #[serde(default)]
     pub gender: Option<String>,
 }
 

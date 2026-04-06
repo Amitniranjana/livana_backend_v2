@@ -17,4 +17,10 @@ pub struct RecentChat {
     pub last_message: String,
     /// UTC timestamp of the most recent message.
     pub last_message_time: DateTime<Utc>,
+    /// UUID of the other participant in this chat.
+    pub other_user_id: Uuid,
+    /// Display name of the other participant.
+    pub other_user_name: String,
+    /// Profile image URL of the other participant (nullable).
+    pub other_user_image: Option<String>,
 }

@@ -38,10 +38,15 @@ pub async fn get_notifications(
         String,
         String,
         bool,
+        Option<Uuid>,
+        Option<String>,
+        Option<String>,
         chrono::DateTime<chrono::Utc>,
     )> = sqlx::query_as(
         r#"
-        SELECT id, title, message, type, is_read, created_at
+        SELECT id, title, message, type, is_read,
+               related_entity_id, related_entity_type, action_status,
+               created_at
         FROM notifications
         WHERE user_id = $1
         ORDER BY created_at DESC
@@ -55,12 +60,15 @@ pub async fn get_notifications(
     let notifications: Vec<NotificationDto> = rows
         .into_iter()
         .map(
-            |(id, title, message, notification_type, is_read, created_at)| NotificationDto {
+            |(id, title, message, notification_type, is_read, related_entity_id, related_entity_type, action_status, created_at)| NotificationDto {
                 id,
                 title,
                 message,
                 notification_type,
                 is_read,
+                related_entity_id,
+                related_entity_type,
+                action_status,
                 created_at,
             },
         )
