@@ -1,0 +1,61 @@
+﻿cargo :     Checking livana-backend-v2 v0.1.0 (C:\Users\yam
+it\Downloads\Desktop\livanaFinalbackend\backend-services)
+At line:1 char:1
++ cargo check 2>&1 | Out-File -FilePath check_out.txt 
+-Encoding utf8; G ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking  
+   li...ckend-services):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+warning: unused variable: `nearby_json`
+   --> src\handlers\listing.rs:416:9
+    |
+416 |     let nearby_json = 
+payload.nearby_places.unwrap_or(json!({}));
+    |         ^^^^^^^^^^^ help: if this is intentional, 
+prefix it with an underscore: `_nearby_json`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: value assigned to `origin_sender_id` is never read
+   --> src\handlers\vibes.rs:158:13
+    |
+158 |     let mut origin_sender_id = None;
+    |             ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` on by default
+
+warning: value assigned to `origin_sender_id` is never read
+   --> src\handlers\vibes.rs:245:13
+    |
+245 |     let mut origin_sender_id = None;
+    |             ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: function `list_jobs` is never used
+  --> src\handlers\careers.rs:69:14
+   |
+69 | pub async fn list_jobs(
+   |              ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function `get_job_detail` is never used
+   --> src\handlers\careers.rs:205:14
+    |
+205 | pub async fn get_job_detail(
+    |              ^^^^^^^^^^^^^^
+
+warning: function `edit_job` is never used
+   --> src\handlers\careers.rs:276:14
+    |
+276 | pub async fn edit_job(
+    |              ^^^^^^^^
+
+warning: `livana-backend-v2` (bin "livana-backend-v2") 
+generated 6 warnings
+    Finished `dev` profile [unoptimized + debuginfo] 
+target(s) in 1m 02s

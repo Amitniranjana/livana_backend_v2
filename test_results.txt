@@ -1,0 +1,65 @@
+﻿
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Property Endpoint Tests
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
+  1. GET /api/properties  ΓÇö anonymous (is_saved + is_liked must be false)
+  Γ¥î  Response is 200
+       Expected 200, got 500
+  Γ¥î  Properties array exists
+       data.properties is not an array
+       (no properties to check, skipping)
+  Γ£à  is_saved = false for anonymous
+       (no properties to check, skipping)
+  Γ£à  is_liked = false for anonymous
+       (no properties to check, skipping)
+  Γ£à  no_of_toilets field present
+       (no properties to check, skipping)
+  Γ£à  no_of_balconies field present
+
+  2. GET /api/properties/2e911e22-50b8-435e-b46b-0120f2cfb127  ΓÇö single property
+  Γ¥î  Returns 200
+       Expected 200, got 500
+  Γ¥î  has is_saved field
+       Cannot read properties of undefined (reading 'is_saved')
+  Γ¥î  has is_liked field
+       Cannot read properties of undefined (reading 'is_liked')
+  Γ¥î  has no_of_toilets field
+       Cannot read properties of undefined (reading 'no_of_toilets')
+  Γ¥î  has no_of_balconies field
+       Cannot read properties of undefined (reading 'no_of_balconies')
+
+  3. POST /api/properties  ΓÇö create with toilets & balconies
+  Γ¥î  Creates property (201)
+       Expected 201, got 500 ΓÇö {"message":"Database error: error returned from database: column \"property_type\" of relation \"listings\" does not exist","success":false}
+  Γ¥î  Created property has correct toilets & balconies
+       No property created in previous step
+
+  4. POST /api/properties/2e911e22-50b8-435e-b46b-0120f2cfb127/like  ΓÇö Like a property
+  Γ£à  Like returns 200
+  Γ¥î  is_liked = true after liking
+       Cannot read properties of undefined (reading 'is_liked')
+  Γ¥î  is_liked = false for anonymous after like
+       Cannot read properties of undefined (reading 'is_liked')
+
+  5. DELETE /api/properties/2e911e22-50b8-435e-b46b-0120f2cfb127/like  ΓÇö Unlike
+  Γ£à  Unlike returns 200
+  Γ¥î  is_liked = false after unliking
+       Cannot read properties of undefined (reading 'is_liked')
+
+  6. POST /api/properties/2e911e22-50b8-435e-b46b-0120f2cfb127/save  ΓÇö Save a property
+  Γ£à  Save returns 200
+  Γ¥î  is_saved = true after saving
+       Cannot read properties of undefined (reading 'is_saved')
+  Γ¥î  is_saved = false for anonymous after save
+       Cannot read properties of undefined (reading 'is_saved')
+
+  7. DELETE /api/properties/2e911e22-50b8-435e-b46b-0120f2cfb127/save  ΓÇö Unsave
+  Γ£à  Unsave returns 200
+  Γ¥î  is_saved = false after unsaving
+       Cannot read properties of undefined (reading 'is_saved')
+
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+  Results: 8 passed  |  15 failed
+ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+
