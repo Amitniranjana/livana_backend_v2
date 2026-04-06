@@ -32,6 +32,7 @@ fn provider_row_to_json(row: &sqlx::postgres::PgRow) -> Value {
         "isFeatured":  row.try_get::<bool,_>("is_featured").unwrap_or(false),
         "avatarUrl":   row.try_get::<Option<String>,_>("avatar_url").unwrap_or_default(),
         "phone":       row.try_get::<Option<String>,_>("phone").unwrap_or_default(),
+        "isActive":    row.try_get::<bool,_>("is_active").unwrap_or(true),
     })
 }
 
@@ -141,6 +142,7 @@ pub async fn get_provider_by_id(
                 "hourly_rate":    null,
                 "experience":     null,
                 "is_verified":    base["isFeatured"],
+                "is_active":      base["isActive"],
                 "is_saved":       false,
                 "availability":   "available",
                 "bio":            r.try_get::<Option<String>,_>("bio").unwrap_or_default(),
