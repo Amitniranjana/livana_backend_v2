@@ -83,6 +83,43 @@ pub async fn send_vibe(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to send vibe: {}", e)))?;
 
+    // ── Trigger notification + chat (best-effort, don't fail the API) ──
+    {
+        use crate::utils::notification_chat_helper::{
+            create_chat_if_not_exists, create_notification, get_user_display_name,
+        };
+
+        let db = &app_state.db;
+        let sender_name = get_user_display_name(db, sender_id).await.unwrap_or_else(|_| "A user".to_string());
+
+        // Notify the target user
+        if let Err(e) = create_notification(
+            db,
+            payload.target_user_id,
+            "New Vibe! 💫",
+            &format!("{} showed interest in your property", sender_name),
+            "VIBE",
+            Some(result),
+            Some("VIBE"),
+        )
+        .await
+        {
+            println!("[Vibe] Failed to create notification: {}", e);
+        }
+
+        // Auto-create chat if not exists + insert initial message
+        if let Err(e) = create_chat_if_not_exists(
+            db,
+            sender_id,
+            payload.target_user_id,
+            &format!("👋 {} is interested in your property", sender_name),
+        )
+        .await
+        {
+            println!("[Vibe] Failed to create chat: {}", e);
+        }
+    }
+
     let response = ApiResponse {
         success: true,
         message: "Vibe sent successfully".to_string(),
@@ -141,6 +178,20 @@ pub async fn accept_vibe(
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Failed to accept vibe: {}", e)))?;
 
+    // Update action_status on the related notification (best-effort)
+    let _ = sqlx::query(
+        r#"
+        UPDATE notifications
+        SET action_status = 'ACCEPTED'
+        WHERE related_entity_id = $1
+          AND related_entity_type = 'VIBE'
+        "#,
+    )
+    .bind(vibe_id)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
+
     let response = ApiResponse {
         success: true,
         message: "Vibe accepted. It's a match!".to_string(),
@@ -192,6 +243,20 @@ pub async fn reject_vibe(
         .execute(&app_state.db)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Failed to reject vibe: {}", e)))?;
+
+    // Update action_status on the related notification (best-effort)
+    let _ = sqlx::query(
+        r#"
+        UPDATE notifications
+        SET action_status = 'REJECTED'
+        WHERE related_entity_id = $1
+          AND related_entity_type = 'VIBE'
+        "#,
+    )
+    .bind(vibe_id)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
 
     let response = ApiResponse {
         success: true,

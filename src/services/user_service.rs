@@ -79,9 +79,10 @@ impl UserService {
         Ok(None)
     }
 
-    pub async fn update_password(&self, _user_id: &str, _new_password: &str) -> Result<(), String> {
-        // TODO: Implement DB update. For now, return Ok to satisfy handlers.
-        Ok(())
+    pub async fn update_password(&self, user_id: &str, new_password_hash: &str) -> Result<(), String> {
+        self.user_repository
+            .update_password(user_id, new_password_hash)
+            .await
     }
 
     pub async fn delete_reset_code(&self, code: &str) -> Result<(), String> {

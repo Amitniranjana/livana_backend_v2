@@ -44,6 +44,26 @@ pub async fn register_associate(
         ));
     }
 
+    // Validate associate_type is provided and valid
+    let associate_type = match &payload.associate_type {
+        Some(at) if !at.is_empty() => {
+            let valid_types = ["broker", "carecrew", "agent", "owner"];
+            let lower = at.to_lowercase();
+            if !valid_types.contains(&lower.as_str()) {
+                return Err(ApiError::UnprocessableEntity(format!(
+                    "Invalid associate_type '{}'. Must be one of: broker, carecrew, agent, owner",
+                    at
+                )));
+            }
+            Some(lower)
+        }
+        _ => {
+            return Err(ApiError::UnprocessableEntity(
+                "Missing required field: associate_type. Must be one of: broker, carecrew, agent, owner".to_string(),
+            ));
+        }
+    };
+
     // Insert user into the database
     sqlx::query(
         r#"
@@ -58,7 +78,7 @@ pub async fn register_associate(
         .bind("ASSOCIATE")
         .bind(false)
         .bind("PENDING_KYC")
-        .bind(&payload.associate_type)
+        .bind(&associate_type)
         .bind(now)
         .bind(now)
     .execute(&app_state.db)

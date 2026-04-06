@@ -238,6 +238,8 @@ pub async fn get_provider(
         }
     };
 
+    println!("[CareCrew] Fetching provider ID: {}", provider_id);
+
     match carecrew_service::get_provider_by_id(&app_state.db, provider_id).await {
         Ok(Some(provider)) => (
             StatusCode::OK,

@@ -15,8 +15,8 @@ pub fn health_routes() -> Router<AppState> {
 
 pub fn auth_routes() -> Router<AppState> {
     use crate::handlers::auth::{
-        resend_otp, reset_password, send_forgot_password_link, send_otp, signin, signout, signup,
-        update_associate_type, verify_otp,
+        change_password, resend_otp, reset_password, send_forgot_password_link, send_otp, signin,
+        signout, signup, update_associate_type, verify_otp,
     };
     use axum::routing::patch;
     Router::new()
@@ -32,6 +32,7 @@ pub fn auth_routes() -> Router<AppState> {
             post(send_forgot_password_link),
         )
         .route("/api/auth/reset-password", post(reset_password))
+        .route("/api/auth/change-password", post(change_password))
         .route(
             "/auth/google",
             post(crate::handlers::google_auth::google_signin),

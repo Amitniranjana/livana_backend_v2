@@ -138,6 +138,9 @@ pub async fn get_featured_providers(
     .await
 }
 
+// NOTE: Using raw query() instead of query_as!() because the WHERE clause
+// uses OR condition (id OR user_id) which requires runtime flexibility.
+// Compile-time check not possible here. Manually verified column names.
 pub async fn get_provider_by_id(
     db: &Pool<Postgres>,
     id: Uuid,
@@ -145,7 +148,7 @@ pub async fn get_provider_by_id(
     sqlx::query(
         "SELECT id, name, bio, service_type, city, rating, review_count, is_featured, avatar_url, phone, user_id, created_at
          FROM carecrew_providers
-         WHERE id = $1 AND is_active = true"
+         WHERE (id = $1 OR user_id = $1) AND is_active = true"
     )
     .bind(id)
     .fetch_optional(db)

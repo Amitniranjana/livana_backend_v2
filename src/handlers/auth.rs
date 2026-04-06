@@ -2,8 +2,8 @@
 
 use crate::app_state::AppState;
 use crate::dtos::request::{
-    ForgotPasswordRequest, ResetPasswordRequest, SendOtpRequest, SigninRequest, SignupRequest,
-    UpdateAssociateTypeRequest, VerifyOtpRequest,
+    ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest, SendOtpRequest,
+    SigninRequest, SignupRequest, UpdateAssociateTypeRequest, VerifyOtpRequest,
 };
 use crate::dtos::response::{SignupResponseData, SignupUserData};
 use crate::utils::auth::{create_jwt, verify_password};
@@ -694,17 +694,29 @@ pub async fn send_forgot_password_link(
             "Warning: Failed to send password reset email to {}: {:?}",
             user.email, e
         );
-        // WE DO NOT RETURN ERROR IN DEV MODE TO ALLOW TESTING TO PROCEED
     } else {
-        println!("✓ Password reset OTP sent to {}", user.email);
+        println!("✓ Password reset OTP sent to email {}", user.email);
     }
 
-    // 5. Return response
+    // 5. Also send reset code via SMS to phone
+    if !user.phone_no.is_empty() {
+        if let Err(e) = send_sms_otp(&user.phone_no, &reset_code).await {
+            eprintln!(
+                "Warning: Failed to send password reset SMS to {}: {:?}",
+                user.phone_no, e
+            );
+        } else {
+            println!("✓ Password reset OTP sent to phone {}", user.phone_no);
+        }
+    }
+
+    // 6. Return response
     let response = json!({
         "success": true,
-        "message": "Reset code generated and sent to email",
+        "message": "Reset code generated and sent to email and phone",
         "data": {
             "email": user.email,
+            "phone_no": user.phone_no,
             "reset_code_sent": true
         }
     });
@@ -850,4 +862,84 @@ pub async fn test_otp_delivery(
             (StatusCode::OK, Json(response)).into_response()
         }
     }
+}
+
+/// Change password (JWT-protected)
+/// The logged-in user provides current_password + new_password.
+#[utoipa::path(
+    post,
+    path = "/api/auth/change-password",
+    request_body = ChangePasswordRequest,
+    responses(
+        (status = 200, description = "Password changed successfully"),
+        (status = 401, description = "Current password is incorrect"),
+        (status = 400, description = "Bad request")
+    ),
+    tag = "Authentication"
+)]
+pub async fn change_password(
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
+    ExtractJson(payload): ExtractJson<ChangePasswordRequest>,
+) -> impl IntoResponse {
+    // 1. Find user
+    let user = match app_state
+        .user_service
+        .user_repository
+        .find_by_id(&auth_user.user_id)
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let response = json!({
+                "success": false,
+                "message": "User not found",
+                "data": null
+            });
+            return (StatusCode::NOT_FOUND, Json(response));
+        }
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Failed to find user: {}", e),
+                "data": null
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        }
+    };
+
+    // 2. Verify current password
+    if !verify_password(&user.password, &payload.current_password) {
+        let response = json!({
+            "success": false,
+            "message": "Current password is incorrect",
+            "data": null
+        });
+        return (StatusCode::UNAUTHORIZED, Json(response));
+    }
+
+    // 3. Hash and update new password
+    let hashed_new = hash_string(&payload.new_password);
+    if let Err(e) = app_state
+        .user_service
+        .update_password(&auth_user.user_id, &hashed_new)
+        .await
+    {
+        let response = json!({
+            "success": false,
+            "message": format!("Failed to update password: {}", e),
+            "data": null
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
+
+    let response = json!({
+        "success": true,
+        "message": "Password changed successfully",
+        "data": {
+            "password_updated": true
+        }
+    });
+
+    (StatusCode::OK, Json(response))
 }

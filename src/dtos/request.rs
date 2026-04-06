@@ -85,6 +85,16 @@ pub struct ResetPasswordRequest {
     #[schema(example = "newpassword123")]
     pub new_password: String,
 }
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePasswordRequest {
+    #[schema(example = "oldpassword123")]
+    pub current_password: String,
+    #[schema(example = "newpassword123")]
+    pub new_password: String,
+}
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateProfileRequest {

@@ -201,6 +201,52 @@ pub async fn book_visit_handler(
         }
     };
 
+    // ── Trigger notification + chat (best-effort, don't fail the API) ──
+    {
+        use crate::utils::notification_chat_helper::{
+            create_chat_if_not_exists, create_notification, get_user_display_name,
+        };
+
+        let db = &state.db;
+        let user_name = get_user_display_name(db, user_id)
+            .await
+            .unwrap_or_else(|_| "A user".to_string());
+        let scheduled_str = body.scheduled_date_time.format("%d %b %Y, %I:%M %p").to_string();
+
+        // Notify the provider (builder / landlord / broker)
+        if let Err(e) = create_notification(
+            db,
+            body.provider_id,
+            "New Visit Booking! 📅",
+            &format!(
+                "{} booked a site visit on {}",
+                user_name, scheduled_str
+            ),
+            "BOOKING",
+            Some(visit_id),
+            Some("SITE_VISIT"),
+        )
+        .await
+        {
+            println!("[Visit] Failed to create notification: {}", e);
+        }
+
+        // Auto-create chat if not exists + insert initial message
+        if let Err(e) = create_chat_if_not_exists(
+            db,
+            user_id,
+            body.provider_id,
+            &format!(
+                "📅 {} booked a site visit for {}",
+                user_name, scheduled_str
+            ),
+        )
+        .await
+        {
+            println!("[Visit] Failed to create chat: {}", e);
+        }
+    }
+
     // Fetch the newly created visit
     let query = format!("{} WHERE sv.id = $1", VISIT_SELECT_SQL);
     let visit = sqlx::query_as::<_, SiteVisitRow>(&query)
@@ -453,14 +499,38 @@ pub async fn update_visit_status_handler(
     .await;
 
     match update_result {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "message": format!("Visit status updated to '{}'", body.status)
-            })),
-        )
-            .into_response(),
+        Ok(_) => {
+            // Update action_status on the related notification (best-effort)
+            let action_status = match body.status.as_str() {
+                "confirmed" => Some("ACCEPTED"),
+                "cancelled" => Some("REJECTED"),
+                _ => None,
+            };
+            if let Some(status_val) = action_status {
+                let _ = sqlx::query(
+                    r#"
+                    UPDATE notifications
+                    SET action_status = $1
+                    WHERE related_entity_id = $2
+                      AND related_entity_type = 'SITE_VISIT'
+                    "#,
+                )
+                .bind(status_val)
+                .bind(visit_id)
+                .execute(&state.db)
+                .await
+                .map_err(|e| println!("[Visit] Failed to update notification action_status: {}", e));
+            }
+
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": format!("Visit status updated to '{}'", body.status)
+                })),
+            )
+                .into_response()
+        }
         Err(e) => {
             println!("DB error updating visit status: {:?}", e);
             (
