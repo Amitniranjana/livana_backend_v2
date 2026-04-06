@@ -1,7 +1,8 @@
-# 🔧 Bug Fixes — API Documentation
+# Task: Fix Notifications + Chat Sync (Vibe & Book Visit APIs) #64
 
-> **Date:** 6 April 2026  
-> **Status:** ✅ All Issues Resolved  
+
+> **Date:** 6 April 2026
+> **Status:** ✅ All Issues Resolved
 > **Build:** Compiled & Tested (72 tests passed, 0 failed)
 
 ---
@@ -247,7 +248,7 @@ Authorization: Bearer <token>
 
 ### `POST /api/auth/reset-password`
 
-> **Auth:** Not Required (public)  
+> **Auth:** Not Required (public)
 > **Note:** This API now actually updates the password in DB (was broken before, now fixed)
 
 #### Request Body
@@ -294,7 +295,7 @@ Authorization: Bearer <token>
 
 ### `POST /api/auth/change-password`
 
-> **Auth:** Bearer Token Required  
+> **Auth:** Bearer Token Required
 > **New Endpoint ✨**
 
 #### Request Body

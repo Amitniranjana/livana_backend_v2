@@ -148,27 +148,30 @@ pub async fn accept_vibe(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Fetch the vibe and verify ownership
-    let vibe: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT target_user_id, status FROM vibes WHERE id = $1")
+    let vibe: Option<(Uuid, String, Uuid)> =
+        sqlx::query_as("SELECT target_user_id, status, sender_id FROM vibes WHERE id = $1")
             .bind(vibe_id)
             .fetch_optional(&app_state.db)
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
+    let mut origin_sender_id = None;
     match vibe {
         None => return Err(ApiError::NotFound("Vibe not found".to_string())),
-        Some((target_id, _)) if target_id != user_id => {
+        Some((target_id, _, _)) if target_id != user_id => {
             return Err(ApiError::Forbidden(
                 "Only the target user can accept this vibe".to_string(),
             ));
         }
-        Some((_, ref status)) if status != "pending" => {
+        Some((_, ref status, _)) if status != "pending" => {
             return Err(ApiError::BadRequest(format!(
                 "Vibe has already been {}",
                 status.to_lowercase()
             )));
         }
-        _ => {}
+        Some((_, _, s_id)) => {
+            origin_sender_id = Some(s_id);
+        }
     }
 
     // Update status to ACCEPTED
@@ -192,6 +195,24 @@ pub async fn accept_vibe(
     .await
     .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
 
+    if let Some(sender_id) = origin_sender_id {
+        use crate::utils::notification_chat_helper::{create_notification, get_user_display_name};
+        let target_name = get_user_display_name(&app_state.db, user_id).await.unwrap_or_else(|_| "A user".to_string());
+        
+        // Notify the original sender
+        if let Err(e) = create_notification(
+            &app_state.db,
+            sender_id,
+            "Vibe Accepted! 🎉",
+            &format!("{} accepted your vibe!", target_name),
+            "VIBE_STATUS",
+            Some(vibe_id),
+            Some("VIBE"),
+        ).await {
+            println!("[Vibe] Failed to notify sender about accepted vibe: {}", e);
+        }
+    }
+
     let response = ApiResponse {
         success: true,
         message: "Vibe accepted. It's a match!".to_string(),
@@ -214,27 +235,30 @@ pub async fn reject_vibe(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Fetch the vibe and verify ownership
-    let vibe: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT target_user_id, status FROM vibes WHERE id = $1")
+    let vibe: Option<(Uuid, String, Uuid)> =
+        sqlx::query_as("SELECT target_user_id, status, sender_id FROM vibes WHERE id = $1")
             .bind(vibe_id)
             .fetch_optional(&app_state.db)
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
+    let mut origin_sender_id = None;
     match vibe {
         None => return Err(ApiError::NotFound("Vibe not found".to_string())),
-        Some((target_id, _)) if target_id != user_id => {
+        Some((target_id, _, _)) if target_id != user_id => {
             return Err(ApiError::Forbidden(
                 "Only the target user can reject this vibe".to_string(),
             ));
         }
-        Some((_, ref status)) if status != "pending" => {
+        Some((_, ref status, _)) if status != "pending" => {
             return Err(ApiError::BadRequest(format!(
                 "Vibe has already been {}",
                 status.to_lowercase()
             )));
         }
-        _ => {}
+        Some((_, _, s_id)) => {
+            origin_sender_id = Some(s_id);
+        }
     }
 
     // Update status to REJECTED
@@ -257,6 +281,24 @@ pub async fn reject_vibe(
     .execute(&app_state.db)
     .await
     .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
+
+    if let Some(sender_id) = origin_sender_id {
+        use crate::utils::notification_chat_helper::{create_notification, get_user_display_name};
+        let target_name = get_user_display_name(&app_state.db, user_id).await.unwrap_or_else(|_| "A user".to_string());
+        
+        // Notify the original sender
+        if let Err(e) = create_notification(
+            &app_state.db,
+            sender_id,
+            "Vibe Update",
+            &format!("{} passed on your vibe", target_name),
+            "VIBE_STATUS",
+            Some(vibe_id),
+            Some("VIBE"),
+        ).await {
+            println!("[Vibe] Failed to notify sender about rejected vibe: {}", e);
+        }
+    }
 
     let response = ApiResponse {
         success: true,

@@ -146,9 +146,9 @@ pub async fn get_provider_by_id(
     id: Uuid,
 ) -> Result<Option<sqlx::postgres::PgRow>, sqlx::Error> {
     sqlx::query(
-        "SELECT id, name, bio, service_type, city, rating, review_count, is_featured, avatar_url, phone, user_id, created_at
+        "SELECT id, name, bio, service_type, city, rating, review_count, is_featured, avatar_url, phone, user_id, is_active, created_at
          FROM carecrew_providers
-         WHERE (id = $1 OR user_id = $1) AND is_active = true"
+         WHERE id = $1 OR user_id = $1"
     )
     .bind(id)
     .fetch_optional(db)

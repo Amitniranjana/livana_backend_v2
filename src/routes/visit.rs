@@ -445,17 +445,17 @@ pub async fn update_visit_status_handler(
     }
 
     // Check visit exists and belongs to this provider
-    let visit_check = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS (SELECT 1 FROM site_visits WHERE id = $1 AND provider_id = $2)",
+    let visit_check = sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM site_visits WHERE id = $1 AND provider_id = $2",
     )
     .bind(visit_id)
     .bind(provider_id)
-    .fetch_one(&state.db)
+    .fetch_optional(&state.db)
     .await;
 
-    match visit_check {
-        Ok(true) => {}
-        Ok(false) => {
+    let original_user_id = match visit_check {
+        Ok(Some(uid)) => uid,
+        Ok(None) => {
             return (
                 StatusCode::FORBIDDEN,
                 Json(json!({
@@ -478,7 +478,7 @@ pub async fn update_visit_status_handler(
             )
                 .into_response();
         }
-    }
+    };
 
     // Update the status
     let now = Utc::now();
@@ -520,6 +520,35 @@ pub async fn update_visit_status_handler(
                 .execute(&state.db)
                 .await
                 .map_err(|e| println!("[Visit] Failed to update notification action_status: {}", e));
+            }
+
+            // Notify the user about the status update
+            {
+                use crate::utils::notification_chat_helper::create_notification;
+                let title = match body.status.as_str() {
+                    "confirmed" => "Visit Confirmed! ✅",
+                    "cancelled" => "Visit Cancelled ❌",
+                    "completed" => "Visit Completed 🏁",
+                    _ => "Visit Status Update",
+                };
+
+                let msg = if body.status.as_str() == "cancelled" {
+                    format!("Your site visit was cancelled. Reason: {}", body.cancellation_reason.as_deref().unwrap_or("Not provided"))
+                } else {
+                    format!("Your site visit status was updated to '{}'", body.status)
+                };
+
+                if let Err(e) = create_notification(
+                    &state.db,
+                    original_user_id,
+                    title,
+                    &msg,
+                    "VISIT_STATUS_UPDATE",
+                    Some(visit_id),
+                    Some("SITE_VISIT"),
+                ).await {
+                    println!("[Visit] Failed to create notification for status update: {}", e);
+                }
             }
 
             (
