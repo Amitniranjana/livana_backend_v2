@@ -52,7 +52,39 @@ pub async fn create_channel(
         )
         .await
     {
-        Ok(channel) => (StatusCode::CREATED, Json(channel)).into_response(),
+        Ok(channel) => {
+            // ── SYNC TO POSTGRESQL ──
+            if let Some(chat_id_str) = channel.channel_arn.split('/').last() {
+                if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
+                    // Insert into chats
+                    let _ = sqlx::query("INSERT INTO chats (id, name, created_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
+                        .bind(chat_uuid)
+                        .bind(&payload.name)
+                        .execute(&app_state.db)
+                        .await;
+
+                    // Insert participants
+                    for arn in &payload.user_arns {
+                        // Locate user by chime_user_arn
+                        let user_id_opt: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE chime_user_arn = $1")
+                            .bind(arn)
+                            .fetch_optional(&app_state.db)
+                            .await
+                            .unwrap_or(None);
+
+                        if let Some(uid) = user_id_opt {
+                            let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
+                                .bind(chat_uuid)
+                                .bind(uid)
+                                .execute(&app_state.db)
+                                .await;
+                        }
+                    }
+                }
+            }
+            
+            (StatusCode::CREATED, Json(channel)).into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
@@ -154,7 +186,45 @@ pub async fn send_message(
         .send_message(&payload.channel_arn, &payload.content, &sender_arn)
         .await
     {
-        Ok(msg_id) => (StatusCode::OK, Json(json!({"message_id": msg_id}))).into_response(),
+        Ok(msg_id) => {
+            // ── SYNC TO POSTGRESQL ──
+            if let Some(chat_id_str) = payload.channel_arn.split('/').last() {
+                if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
+                    if let Ok(sender_uuid) = uuid::Uuid::parse_str(&auth_user.user_id) {
+                        let local_msg_id = uuid::Uuid::new_v4();
+
+                        // Auto-hydrate the chats table if it doesn't exist
+                        let _ = sqlx::query(
+                            "INSERT INTO chats (id, name, created_at) VALUES ($1, 'AWS Chime Chat', NOW()) ON CONFLICT DO NOTHING"
+                        )
+                        .bind(chat_uuid)
+                        .execute(&app_state.db)
+                        .await;
+
+                        let _ = sqlx::query(
+                            "INSERT INTO messages (id, chat_id, sender_id, content, created_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT DO NOTHING"
+                        )
+                        .bind(local_msg_id)
+                        .bind(chat_uuid)
+                        .bind(sender_uuid)
+                        .bind(&payload.content)
+                        .execute(&app_state.db)
+                        .await;
+                        
+                        // Also make sure sender is part of this chat in participants just in case
+                        let _ = sqlx::query(
+                            "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
+                        )
+                        .bind(chat_uuid)
+                        .bind(sender_uuid)
+                        .execute(&app_state.db)
+                        .await;
+                    }
+                }
+            }
+
+            (StatusCode::OK, Json(json!({"message_id": msg_id}))).into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
