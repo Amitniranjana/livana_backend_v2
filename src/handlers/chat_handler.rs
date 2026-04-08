@@ -8,6 +8,8 @@ use axum::{
     response::IntoResponse,
 };
 use serde_json::json;
+use std::collections::HashSet;
+use crate::utils::auth_extractor::AuthenticationUser;
 
 /// Create User
 pub async fn create_user(
@@ -31,66 +33,122 @@ pub async fn create_user(
     }
 }
 
+/// Helper to lazily create or fetch a Chime ARN for a user
+async fn hydrate_chime_arn(app_state: &AppState, user_id_str: &str) -> Result<(uuid::Uuid, String), String> {
+    let user = app_state
+        .user_service
+        .user_repository
+        .find_by_id(user_id_str)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("User not found: {}", user_id_str))?;
+
+    let arn = if let Some(arn) = user.chime_user_arn {
+        arn
+    } else {
+        let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
+        let user_name = format!("{} {}", user.first_name, user.last_name);
+        
+        let chat_user = app_state
+            .chat_service
+            .create_app_instance_user(&app_instance_arn, &user.id.to_string(), &user_name)
+            .await
+            .map_err(|e| format!("Failed to create chime user: {}", e))?;
+            
+        let _ = app_state
+            .user_service
+            .update_chime_arn(&user.id.to_string(), &chat_user.app_instance_user_arn)
+            .await;
+            
+        chat_user.app_instance_user_arn
+    };
+
+    Ok((user.id, arn))
+}
+
 /// Create Channel
 pub async fn create_channel(
     State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
     Json(payload): Json<CreateChannelRequest>,
 ) -> impl IntoResponse {
     let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
-    // For demo, we assume the creator is passed in user_arns[0] or handled via auth middleware context.
-    // Here using a simpler approach: the first user in list is the creator
-    let cleaner_arn = payload.user_arns.first().cloned().unwrap_or_default();
+    
+    // 1. Get creator ARN
+    let (creator_uuid, creator_arn) = match hydrate_chime_arn(&app_state, &auth_user.user_id).await {
+        Ok(res) => res,
+        Err(e) => {
+            return (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response();
+        }
+    };
 
-    match app_state
+    // 2. Gather all expected participants (deduplicated)
+    let mut participant_ids_to_hydrate = payload.participant_ids.clone();
+    participant_ids_to_hydrate.push(auth_user.user_id.clone());
+    
+    let mut unique_ids = HashSet::new();
+    let mut final_participants: Vec<(uuid::Uuid, String)> = Vec::new();
+    
+    for pid in participant_ids_to_hydrate {
+        if unique_ids.insert(pid.clone()) {
+            match hydrate_chime_arn(&app_state, &pid).await {
+                Ok(res) => final_participants.push(res),
+                Err(e) => {
+                    return (StatusCode::BAD_REQUEST, Json(json!({"error": format!("Failed for participant {}: {}", pid, e)}))).into_response();
+                }
+            }
+        }
+    }
+
+    // 3. Create the Channel
+    let channel = match app_state
         .chat_service
         .create_channel(
             &app_instance_arn,
             &payload.name,
             &payload.mode,
             &payload.privacy,
-            &cleaner_arn,
+            &creator_arn,
         )
         .await
     {
-        Ok(channel) => {
-            // ── SYNC TO POSTGRESQL ──
-            if let Some(chat_id_str) = channel.channel_arn.split('/').last() {
-                if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
-                    // Insert into chats
-                    let _ = sqlx::query("INSERT INTO chats (id, name, created_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
-                        .bind(chat_uuid)
-                        .bind(&payload.name)
-                        .execute(&app_state.db)
-                        .await;
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": e.to_string()})),
+            ).into_response();
+        }
+    };
 
-                    // Insert participants
-                    for arn in &payload.user_arns {
-                        // Locate user by chime_user_arn
-                        let user_id_opt: Option<uuid::Uuid> = sqlx::query_scalar("SELECT id FROM users WHERE chime_user_arn = $1")
-                            .bind(arn)
-                            .fetch_optional(&app_state.db)
-                            .await
-                            .unwrap_or(None);
+    // 4. Add Members to Chime Channel AND sync to PostgreSQL
+    if let Some(chat_id_str) = channel.channel_arn.split('/').last() {
+        if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
+            // Insert into chats
+            let _ = sqlx::query("INSERT INTO chats (id, name, created_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
+                .bind(chat_uuid)
+                .bind(&payload.name)
+                .execute(&app_state.db)
+                .await;
 
-                        if let Some(uid) = user_id_opt {
-                            let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
-                                .bind(chat_uuid)
-                                .bind(uid)
-                                .execute(&app_state.db)
-                                .await;
-                        }
-                    }
+            // Process Members
+            for (uid, arn) in final_participants {
+                // If the user isn't the creator, add them via add_channel_flow
+                if arn != creator_arn {
+                    let _ = app_state.chat_service.add_channel_flow(&channel.channel_arn, &arn, &creator_arn).await;
                 }
+
+                // Insert into Postgres
+                let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING")
+                    .bind(chat_uuid)
+                    .bind(uid)
+                    .execute(&app_state.db)
+                    .await;
             }
-            
-            (StatusCode::CREATED, Json(channel)).into_response()
-        },
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": e.to_string()})),
-        )
-            .into_response(),
+        }
     }
+
+    (StatusCode::CREATED, Json(channel)).into_response()
 }
 
 /// Add Member
