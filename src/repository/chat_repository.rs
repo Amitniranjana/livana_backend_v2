@@ -30,6 +30,7 @@ impl ChatRepository {
             SELECT
                 c.id           AS chat_id,
                 m.content      AS last_message,
+                COALESCE(m.message_type, 'text') AS message_type,
                 m.created_at   AS last_message_time,
                 COALESCE(other_user.id, $1) AS other_user_id,
                 COALESCE(NULLIF(TRIM(COALESCE(other_user.first_name, '') || ' ' || COALESCE(other_user.last_name, '')), ''), 'Unknown User') AS other_user_name,

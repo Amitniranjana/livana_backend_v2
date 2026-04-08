@@ -7,9 +7,15 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
+use axum_extra::extract::Multipart;
+use serde::Serialize;
 use serde_json::json;
 use std::collections::HashSet;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 use crate::utils::auth_extractor::AuthenticationUser;
+use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 /// Create User
 pub async fn create_user(
@@ -337,6 +343,320 @@ pub async fn get_auth_creds(State(app_state): State<AppState>) -> impl IntoRespo
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"error": e.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Message row returned by GET /api/v1/chats/{chat_id}/messages
+// ─────────────────────────────────────────────────────────────────────────────
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct MessageRow {
+    pub id: Uuid,
+    pub chat_id: Uuid,
+    pub sender_id: Uuid,
+    pub content: String,
+    pub message_type: String,
+    pub created_at: DateTime<Utc>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+/// POST /api/v1/chats/upload
+///
+/// Upload an image or document and immediately create a message entry.
+///
+/// Multipart fields:
+///   - `file`    — the file bytes (required)
+///   - `chat_id` — UUID of the target chat (required)
+///
+/// Response:
+/// ```json
+/// { "success": true, "file_url": "/uploads/chat/...", "file_type": "image", "message_id": "..." }
+/// ```
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn upload_chat_media(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    let sender_uuid = match Uuid::parse_str(&auth.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid token"})),
+            )
+                .into_response();
+        }
+    };
+
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_name_orig: Option<String> = None;
+    let mut content_type_str: Option<String> = None;
+    let mut chat_id_opt: Option<Uuid> = None;
+
+    // ── Parse multipart fields ──
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let field_name = field.name().unwrap_or("").to_string();
+
+        match field_name.as_str() {
+            "file" => {
+                file_name_orig = Some(field.file_name().unwrap_or("upload").to_string());
+                content_type_str = Some(
+                    field
+                        .content_type()
+                        .unwrap_or("application/octet-stream")
+                        .to_string(),
+                );
+                match field.bytes().await {
+                    Ok(b) => file_bytes = Some(b.to_vec()),
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"success": false, "message": format!("Failed to read file: {}", e)})),
+                        )
+                            .into_response();
+                    }
+                }
+            }
+            "chat_id" => {
+                if let Ok(Some(text)) = field.text().await.map(Some) {
+                    match Uuid::parse_str(text.trim()) {
+                        Ok(uid) => chat_id_opt = Some(uid),
+                        Err(_) => {
+                            return (
+                                StatusCode::BAD_REQUEST,
+                                Json(json!({"success": false, "message": "Invalid chat_id UUID"})),
+                            )
+                                .into_response();
+                        }
+                    }
+                }
+            }
+            _ => {} // ignore unknown fields
+        }
+    }
+
+    // ── Validate required fields ──
+    let data = match file_bytes {
+        Some(b) => b,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "No file field in request"})),
+            )
+                .into_response();
+        }
+    };
+
+    let chat_uuid = match chat_id_opt {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Missing chat_id field"})),
+            )
+                .into_response();
+        }
+    };
+
+    let ct = content_type_str.as_deref().unwrap_or("application/octet-stream");
+    let orig_name = file_name_orig.as_deref().unwrap_or("upload");
+
+    // ── Determine message_type from MIME ──
+    let message_type = if ct.starts_with("image/") {
+        "image"
+    } else if ct == "application/pdf"
+        || ct == "application/msword"
+        || ct.starts_with("application/vnd.openxmlformats")
+        || ct == "text/plain"
+        || ct == "application/vnd.ms-excel"
+        || ct.starts_with("application/vnd.ms-powerpoint")
+    {
+        "document"
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": format!("Unsupported file type: {}. Allowed: images and documents (pdf, docx, txt, etc.)", ct)
+            })),
+        )
+            .into_response();
+    };
+
+    // ── File size check (5 MB) ──
+    if data.len() > 5 * 1024 * 1024 {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(json!({"success": false, "message": "File too large (max 5MB)"})),
+        )
+            .into_response();
+    }
+
+    // ── Build file path ──
+    let ext = std::path::Path::new(orig_name)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("bin");
+    let new_filename = format!("{}_{}.{}", sender_uuid, Uuid::new_v4(), ext);
+    let dir = "uploads/chat";
+    let filepath = format!("{}/{}", dir, new_filename);
+
+    if let Err(e) = tokio::fs::create_dir_all(dir).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "message": format!("Storage error: {}", e)})),
+        )
+            .into_response();
+    }
+
+    let mut f = match File::create(&filepath).await {
+        Ok(f) => f,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": format!("Failed to create file: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(e) = f.write_all(&data).await {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "message": format!("Failed to write file: {}", e)})),
+        )
+            .into_response();
+    }
+
+    let file_url = format!("/uploads/chat/{}", new_filename);
+
+    // ── Ensure chat row exists ──
+    let _ = sqlx::query(
+        "INSERT INTO chats (id, name, created_at) VALUES ($1, 'AWS Chime Chat', NOW()) ON CONFLICT DO NOTHING"
+    )
+    .bind(chat_uuid)
+    .execute(&app_state.db)
+    .await;
+
+    // ── Ensure sender is a chat participant ──
+    let _ = sqlx::query(
+        "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
+    )
+    .bind(chat_uuid)
+    .bind(sender_uuid)
+    .execute(&app_state.db)
+    .await;
+
+    // ── Insert message row ──
+    let message_id = Uuid::new_v4();
+    match sqlx::query(
+        "INSERT INTO messages (id, chat_id, sender_id, content, message_type, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())"
+    )
+    .bind(message_id)
+    .bind(chat_uuid)
+    .bind(sender_uuid)
+    .bind(&file_url)
+    .bind(message_type)
+    .execute(&app_state.db)
+    .await
+    {
+        Ok(_) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "success": true,
+                "message": "Media uploaded and message created",
+                "file_url": file_url,
+                "file_type": message_type,
+                "message_id": message_id
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "message": format!("Failed to save message: {}", e)})),
+        )
+            .into_response(),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+/// GET /api/v1/chats/{chat_id}/messages
+///
+/// Fetch all messages for a chat (text + media), oldest first.
+/// The caller must be a participant of the chat.
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn get_chat_messages(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(chat_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let user_uuid = match Uuid::parse_str(&auth.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid token"})),
+            )
+                .into_response();
+        }
+    };
+
+    // ── Verify user is a participant ──
+    let is_participant: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2)",
+    )
+    .bind(chat_id)
+    .bind(user_uuid)
+    .fetch_one(&app_state.db)
+    .await
+    .unwrap_or(false);
+
+    if !is_participant {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false,
+                "message": "You are not a participant of this chat"
+            })),
+        )
+            .into_response();
+    }
+
+    // ── Fetch messages ──
+    let messages = sqlx::query_as::<_, MessageRow>(
+        r#"
+        SELECT id, chat_id, sender_id, content,
+               COALESCE(message_type, 'text') AS message_type,
+               created_at
+        FROM messages
+        WHERE chat_id = $1
+        ORDER BY created_at ASC
+        "#,
+    )
+    .bind(chat_id)
+    .fetch_all(&app_state.db)
+    .await;
+
+    match messages {
+        Ok(rows) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Messages fetched successfully",
+                "data": rows
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "message": format!("Failed to fetch messages: {}", e)
+            })),
         )
             .into_response(),
     }

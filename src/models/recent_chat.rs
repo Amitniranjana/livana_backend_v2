@@ -15,6 +15,8 @@ pub struct RecentChat {
     pub chat_id: Uuid,
     /// Content of the most recent message in this thread.
     pub last_message: String,
+    /// Type of the most recent message: "text" | "image" | "document"
+    pub message_type: String,
     /// UTC timestamp of the most recent message.
     pub last_message_time: DateTime<Utc>,
     /// UUID of the other participant in this chat.
