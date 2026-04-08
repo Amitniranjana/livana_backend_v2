@@ -285,14 +285,16 @@ pub async fn send_message(
                         let local_msg_id = uuid::Uuid::new_v4();
 
                         // Auto-hydrate the chats table if it doesn't exist
-                        let _ = sqlx::query(
+                        if let Err(e) = sqlx::query(
                             "INSERT INTO chats (id, name, created_at) VALUES ($1, 'AWS Chime Chat', NOW()) ON CONFLICT DO NOTHING"
                         )
                         .bind(chat_uuid)
                         .execute(&app_state.db)
-                        .await;
+                        .await {
+                            eprintln!("Failed to hydrate chat in db: {}", e);
+                        }
 
-                        let _ = sqlx::query(
+                        if let Err(e) = sqlx::query(
                             "INSERT INTO messages (id, chat_id, sender_id, content, created_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT DO NOTHING"
                         )
                         .bind(local_msg_id)
@@ -300,16 +302,20 @@ pub async fn send_message(
                         .bind(sender_uuid)
                         .bind(&payload.content)
                         .execute(&app_state.db)
-                        .await;
+                        .await {
+                            eprintln!("Failed to insert message to db: {}", e);
+                        }
                         
                         // Also make sure sender is part of this chat in participants just in case
-                        let _ = sqlx::query(
+                        if let Err(e) = sqlx::query(
                             "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
                         )
                         .bind(chat_uuid)
                         .bind(sender_uuid)
                         .execute(&app_state.db)
-                        .await;
+                        .await {
+                            eprintln!("Failed to insert sender to chat_participants: {}", e);
+                        }
                     }
                 }
             }

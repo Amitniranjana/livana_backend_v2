@@ -31,14 +31,14 @@ impl ChatRepository {
                 c.id           AS chat_id,
                 m.content      AS last_message,
                 m.created_at   AS last_message_time,
-                other_user.id  AS other_user_id,
-                TRIM(COALESCE(other_user.first_name, '') || ' ' || COALESCE(other_user.last_name, '')) AS other_user_name,
+                COALESCE(other_user.id, $1) AS other_user_id,
+                COALESCE(NULLIF(TRIM(COALESCE(other_user.first_name, '') || ' ' || COALESCE(other_user.last_name, '')), ''), 'Unknown User') AS other_user_name,
                 other_user.profile_picture AS other_user_image
             FROM chats c
             JOIN messages m ON m.chat_id = c.id
-            JOIN chat_participants cp_other
+            LEFT JOIN chat_participants cp_other
                 ON cp_other.chat_id = c.id AND cp_other.user_id != $1
-            JOIN users other_user
+            LEFT JOIN users other_user
                 ON other_user.id = cp_other.user_id
             WHERE c.id IN (
                 SELECT chat_id
