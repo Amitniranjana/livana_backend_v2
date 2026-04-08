@@ -32,7 +32,7 @@ pub async fn post_job(
 
     sqlx::query(
         r#"
-        INSERT INTO jobs (id, associate_id, title, description, location, salary_range, status, created_at, company_name, job_type, notice_period)
+        INSERT INTO jobs (id, created_by, title, description, location, salary, status, created_at, company_name, job_type, notice_period)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
     )
@@ -78,7 +78,7 @@ pub async fn list_jobs(
     // Build filtered count query
     let mut count_sql = String::from("SELECT COUNT(*) FROM jobs WHERE 1=1");
     let mut query_sql = String::from(
-        r#"SELECT id, title, company_name, location, salary_range, job_type, status, created_at
+        r#"SELECT id, title, company_name, location, salary, job_type, status, created_at
            FROM jobs WHERE 1=1"#,
     );
 
@@ -168,13 +168,13 @@ pub async fn list_jobs(
     let jobs: Vec<JobListDto> = rows
         .into_iter()
         .map(
-            |(id, title, company_name, location, salary_range, job_type, status, created_at)| {
+            |(id, title, company_name, location, salary, job_type, status, created_at)| {
                 JobListDto {
                     id,
                     title,
                     company_name,
                     location,
-                    salary_range,
+                    salary_range: salary,
                     job_type,
                     status,
                     created_at,
@@ -222,8 +222,8 @@ pub async fn get_job_detail(
         chrono::DateTime<chrono::Utc>,
     )> = sqlx::query_as(
         r#"
-        SELECT id, title, description, company_name, location, salary_range,
-               job_type, notice_period, status, associate_id, created_at
+        SELECT id, title, description, company_name, location, salary,
+               job_type, notice_period, status, created_by, created_at
         FROM jobs
         WHERE id = $1
         "#,
@@ -240,11 +240,11 @@ pub async fn get_job_detail(
             description,
             company_name,
             location,
-            salary_range,
+            salary,
             job_type,
             notice_period,
             status,
-            associate_id,
+            created_by,
             created_at,
         )) => {
             let detail = JobDetailDto {
@@ -253,11 +253,11 @@ pub async fn get_job_detail(
                 description,
                 company_name,
                 location,
-                salary_range,
+                salary_range: salary,
                 job_type,
                 notice_period,
                 status,
-                created_by: associate_id,
+                created_by,
                 created_at,
             };
 
@@ -287,7 +287,7 @@ pub async fn edit_job(
 
     // 1. Fetch the job and verify ownership
     let job_owner: Option<(Uuid,)> =
-        sqlx::query_as("SELECT associate_id FROM jobs WHERE id = $1")
+        sqlx::query_as("SELECT created_by FROM jobs WHERE id = $1")
             .bind(job_id)
             .fetch_optional(&app_state.db)
             .await
@@ -326,7 +326,7 @@ pub async fn edit_job(
             title         = COALESCE($2, title),
             description   = COALESCE($3, description),
             location      = COALESCE($4, location),
-            salary_range  = COALESCE($5, salary_range),
+            salary        = COALESCE($5, salary),
             company_name  = COALESCE($6, company_name),
             job_type      = COALESCE($7, job_type),
             notice_period = COALESCE($8, notice_period),
@@ -363,8 +363,8 @@ pub async fn edit_job(
         chrono::DateTime<chrono::Utc>,
     ) = sqlx::query_as(
         r#"
-        SELECT id, title, description, company_name, location, salary_range,
-               job_type, notice_period, status, associate_id, created_at
+        SELECT id, title, description, company_name, location, salary,
+               job_type, notice_period, status, created_by, created_at
         FROM jobs WHERE id = $1
         "#,
     )
@@ -379,7 +379,7 @@ pub async fn edit_job(
         description: updated.2,
         company_name: updated.3,
         location: updated.4,
-        salary_range: updated.5,
+        salary_range: updated.5, // mapped from `salary` column
         job_type: updated.6,
         notice_period: updated.7,
         status: updated.8,
@@ -468,7 +468,7 @@ pub async fn get_applicants(
     }
 
     // 2. Security Check: Ensure the ASSOCIATE requesting this is the actual owner/creator of the job_id
-    let job_owner: Option<(Uuid,)> = sqlx::query_as("SELECT associate_id FROM jobs WHERE id = $1")
+    let job_owner: Option<(Uuid,)> = sqlx::query_as("SELECT created_by FROM jobs WHERE id = $1")
         .bind(job_id)
         .fetch_optional(&app_state.db)
         .await
