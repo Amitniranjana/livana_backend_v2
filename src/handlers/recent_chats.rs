@@ -18,13 +18,8 @@ use crate::utils::auth_extractor::AuthenticationUser;
 
 /// GET /api/v1/chats/recent
 ///
-/// FRONTEND INTEGRATION: Recent Chats
-/// The recent chats list has been updated to support media. You will now see a `message_type` field. 
-/// If `message_type` is "image", you should hide the raw /uploads/... URL and display a UI label like "📸 Photo". 
-/// If it is "document", display "📄 Document".
-///
 /// Requires: `Authorization: Bearer <jwt>` header.
-/// Returns a JSON array of `{ chat_id, last_message, message_type, last_message_time, other_user... }`.
+/// Returns a JSON array of `{ chat_id, last_message, last_message_time }`.
 pub async fn get_recent_chats(
     auth: AuthenticationUser, // JWT validation happens here automatically
     State(state): State<AppState>,

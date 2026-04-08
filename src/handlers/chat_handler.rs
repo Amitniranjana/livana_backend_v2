@@ -54,18 +54,18 @@ async fn hydrate_chime_arn(app_state: &AppState, user_id_str: &str) -> Result<(u
     } else {
         let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
         let user_name = format!("{} {}", user.first_name, user.last_name);
-        
+
         let chat_user = app_state
             .chat_service
             .create_app_instance_user(&app_instance_arn, &user.id.to_string(), &user_name)
             .await
             .map_err(|e| format!("Failed to create chime user: {}", e))?;
-            
+
         let _ = app_state
             .user_service
             .update_chime_arn(&user.id.to_string(), &chat_user.app_instance_user_arn)
             .await;
-            
+
         chat_user.app_instance_user_arn
     };
 
@@ -79,7 +79,7 @@ pub async fn create_channel(
     Json(payload): Json<CreateChannelRequest>,
 ) -> impl IntoResponse {
     let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
-    
+
     // 1. Get creator ARN
     let (_creator_uuid, creator_arn) = match hydrate_chime_arn(&app_state, &auth_user.user_id).await {
         Ok(res) => res,
@@ -91,10 +91,10 @@ pub async fn create_channel(
     // 2. Gather all expected participants (deduplicated)
     let mut participant_ids_to_hydrate = payload.participant_ids.clone();
     participant_ids_to_hydrate.push(auth_user.user_id.clone());
-    
+
     let mut unique_ids = HashSet::new();
     let mut final_participants: Vec<(uuid::Uuid, String)> = Vec::new();
-    
+
     for pid in participant_ids_to_hydrate {
         if unique_ids.insert(pid.clone()) {
             match hydrate_chime_arn(&app_state, &pid).await {
@@ -311,7 +311,7 @@ pub async fn send_message(
                         .await {
                             eprintln!("Failed to insert message to db: {}", e);
                         }
-                        
+
                         // Also make sure sender is part of this chat in participants just in case
                         if let Err(e) = sqlx::query(
                             "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
@@ -364,17 +364,7 @@ pub struct MessageRow {
 // ─────────────────────────────────────────────────────────────────────────────
 /// POST /api/v1/chats/upload
 ///
-/// FRONTEND INTEGRATION: Uploading Media
-/// Instead of sending text via AWS Chime, when a user selects an image or document, 
-/// use this new endpoint to upload it. 
-/// Important: You do NOT need to call the text-message /chat/messages endpoint after uploading. 
-/// This upload endpoint automatically creates the message in the database for you. 
-/// Just render the returned file_url directly in the UI as a sent message.
-///
-/// Constraints:
-/// - Max Size: 5MB per file (Returns 413 Payload Too Large if exceeded)
-/// - Formats: image/*, application/pdf, ms-word, openxmlformats, text/plain
-/// - The file_url returned is a relative path. Prepend the base backend URL when rendering.
+/// Upload an image or document and immediately create a message entry.
 ///
 /// Multipart fields:
 ///   - `file`    — the file bytes (required)
@@ -382,13 +372,7 @@ pub struct MessageRow {
 ///
 /// Response:
 /// ```json
-/// { 
-///   "success": true, 
-///   "message": "Media uploaded and message created",
-///   "file_url": "/uploads/chat/user-id_uuid.jpg", 
-///   "file_type": "image", // or "document"
-///   "message_id": "3a2339d8-8581-42ea-b0f3-9ba42c1ffb60" 
-/// }
+/// { "success": true, "file_url": "/uploads/chat/...", "file_type": "image", "message_id": "..." }
 /// ```
 // ─────────────────────────────────────────────────────────────────────────────
 pub async fn upload_chat_media(
@@ -396,6 +380,7 @@ pub async fn upload_chat_media(
     auth: AuthenticationUser,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    // [Fix]: First, securely parse the standard sender's UUID from the JWT token.
     let sender_uuid = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
@@ -480,7 +465,9 @@ pub async fn upload_chat_media(
     let ct = content_type_str.as_deref().unwrap_or("application/octet-stream");
     let orig_name = file_name_orig.as_deref().unwrap_or("upload");
 
-    // ── Determine message_type from MIME ──
+    // [Fix]: Categorize the file type. AWS Chime only supports text natively,
+    // so we store media as direct URLs. We categorize into 'image' or 'document'
+    // to allow the frontend to render the appropriate UI widget.
     let message_type = if ct.starts_with("image/") {
         "image"
     } else if ct == "application/pdf"
@@ -566,7 +553,9 @@ pub async fn upload_chat_media(
     .execute(&app_state.db)
     .await;
 
-    // ── Insert message row ──
+    // [Fix]: Instead of sending the media over AWS Chime (which drops complex media),
+    // we bypass Chime entirely and directly save the uploaded file message to our PostgreSQL database.
+    // This perfectly preserves the file_url and message_type.
     let message_id = Uuid::new_v4();
     match sqlx::query(
         "INSERT INTO messages (id, chat_id, sender_id, content, message_type, created_at)
@@ -602,28 +591,8 @@ pub async fn upload_chat_media(
 // ─────────────────────────────────────────────────────────────────────────────
 /// GET /api/v1/chats/{chat_id}/messages
 ///
-/// FRONTEND INTEGRATION: Fetching Full Chat History
-/// Because AWS Chime is only tracking text messages, you need to pull the full history 
-/// (which includes images/documents) from our database to render the chat view correctly.
+/// Fetch all messages for a chat (text + media), oldest first.
 /// The caller must be a participant of the chat.
-///
-/// Response (200 OK):
-/// ```json
-/// {
-///   "success": true,
-///   "message": "Messages fetched successfully",
-///   "data": [
-///     {
-///       "id": "uuid",
-///       "chat_id": "uuid",
-///       "sender_id": "uuid",
-///       "content": "Hello! Or /uploads/chat/image.jpg",
-///       "message_type": "text", // "text", "image", or "document"
-///       "created_at": "2026-04-08T15:19:59.751Z"
-///     }
-///   ]
-/// }
-/// ```
 // ─────────────────────────────────────────────────────────────────────────────
 pub async fn get_chat_messages(
     State(app_state): State<AppState>,
@@ -662,7 +631,10 @@ pub async fn get_chat_messages(
             .into_response();
     }
 
-    // ── Fetch messages ──
+    // [Fix]: Since media messages bypass AWS Chime, we query our own local PostgreSQL 
+    // `messages` table to construct the full chat history. This retrieves standard text 
+    // messages (synced earlier) as well as direct image/document uploads.
+    // We default legacy messages to 'text'.
     let messages = sqlx::query_as::<_, MessageRow>(
         r#"
         SELECT id, chat_id, sender_id, content,
