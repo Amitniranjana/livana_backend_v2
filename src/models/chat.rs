@@ -11,7 +11,7 @@ pub struct CreateChannelRequest {
     pub name: String,
     pub mode: String,           // e.g., "RESTRICTED", "UNRESTRICTED"
     pub privacy: String,        // e.g., "PRIVATE", "PUBLIC"
-    pub user_arns: Vec<String>, // Initial members
+    pub participant_ids: Vec<String>, // Initial members (User UUIDs)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

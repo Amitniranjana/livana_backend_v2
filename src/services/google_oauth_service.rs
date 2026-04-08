@@ -74,7 +74,8 @@ pub async fn verify_google_id_token(
 
     // Security: always verify the audience matches our client ID.
     // This prevents tokens issued for other apps from being accepted.
-    if token_info.aud != expected_client_id {
+    let valid_audiences: Vec<&str> = expected_client_id.split(',').map(|s| s.trim()).collect();
+    if !valid_audiences.contains(&token_info.aud.as_str()) {
         return Err(format!(
             "Token audience mismatch: expected '{}', got '{}'",
             expected_client_id, token_info.aud
@@ -126,7 +127,8 @@ pub mod tests {
         };
 
         let expected_client_id = "correct-client-id.apps.googleusercontent.com";
-        let mismatch = token_info.aud != expected_client_id;
+        let valid_audiences: Vec<&str> = expected_client_id.split(',').map(|s| s.trim()).collect();
+        let mismatch = !valid_audiences.contains(&token_info.aud.as_str());
         assert!(
             mismatch,
             "Should detect aud mismatch when client ID doesn't match"

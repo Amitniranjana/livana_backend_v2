@@ -6,3 +6,4 @@ pub mod listing;
 pub mod recent_chat;
 pub mod user;
 pub mod visit;
+pub mod job;

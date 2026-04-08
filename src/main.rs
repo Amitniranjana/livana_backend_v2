@@ -49,10 +49,13 @@ async fn main() {
 
     // Google OAuth — needed to verify `aud` in tokeninfo responses.
     // Set GOOGLE_CLIENT_ID in your .env file.
-    let google_client_id = env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| {
-        log::warn!("GOOGLE_CLIENT_ID not set — Google Sign-In will reject all tokens");
-        "".to_string()
-    });
+    let google_client_id = env::var("GOOGLE_CLIENT_ID")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| {
+            log::warn!("GOOGLE_CLIENT_ID not set or empty — falling back to hardcoded default");
+            "680761079668-qhb7rq6d0ufehtkbb70h1bdv2rpcesq2.apps.googleusercontent.com".to_string()
+        });
 
     // ————————————— Build Postgres pool —————————————
     let db_url = format!(
