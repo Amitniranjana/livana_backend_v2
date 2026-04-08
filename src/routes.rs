@@ -232,11 +232,14 @@ pub fn community_routes() -> Router<AppState> {
 
 /// Moderation APIs (JWT-protected)
 pub fn moderation_routes() -> Router<AppState> {
-    use crate::handlers::moderation::{archive_chat, block_user, report_entity};
+    use crate::handlers::moderation::{archive_chat, block_user, report_entity, unarchive_chat, unblock_user};
+    use axum::routing::delete;
     Router::new()
-        .route("/api/v1/users/{id}/block", post(block_user))
+        .route("/api/v1/users/{id}/block", post(block_user).delete(unblock_user))
+        .route("/api/v1/users/{id}/unblock", post(unblock_user))
         .route("/api/v1/report", post(report_entity))
-        .route("/api/v1/chats/{id}/archive", post(archive_chat))
+        .route("/api/v1/chats/{id}/archive", post(archive_chat).delete(unarchive_chat))
+        .route("/api/v1/chats/{id}/unarchive", post(unarchive_chat))
 }
 
 /// Vibe APIs (JWT-protected)

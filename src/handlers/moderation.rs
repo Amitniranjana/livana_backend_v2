@@ -138,8 +138,9 @@ pub async fn archive_chat(
     // Verify the user is a participant of this chat
     let is_participant: Option<Uuid> = sqlx::query_scalar(
         r#"
-        SELECT id FROM chats
-        WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)
+        SELECT cp.chat_id FROM chat_participants cp
+        JOIN chats c ON c.id = cp.chat_id
+        WHERE cp.chat_id = $1 AND cp.user_id = $2
         "#,
     )
     .bind(chat_id)
@@ -172,6 +173,67 @@ pub async fn archive_chat(
     let response = ApiResponse {
         success: true,
         message: "Chat archived successfully".to_string(),
+        data: serde_json::json!({}),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// 9.4  POST/DELETE /api/v1/users/{id}/unblock — Unblock a user
+// ---------------------------------------------------------------------------
+
+pub async fn unblock_user(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(blocked_user_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let blocker_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    // Delete from blocked_users
+    sqlx::query(
+        "DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2"
+    )
+    .bind(blocker_id)
+    .bind(blocked_user_id)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to unblock user: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "User unblocked successfully".to_string(),
+        data: serde_json::json!({}),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// 9.5  POST/DELETE /api/v1/chats/{id}/unarchive — Unarchive a chat
+// ---------------------------------------------------------------------------
+
+pub async fn unarchive_chat(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(chat_id): Path<Uuid>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    sqlx::query(
+        "DELETE FROM archived_chats WHERE user_id = $1 AND chat_id = $2"
+    )
+    .bind(user_id)
+    .bind(chat_id)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to unarchive chat: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Chat unarchived successfully".to_string(),
         data: serde_json::json!({}),
     };
 

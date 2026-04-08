@@ -237,6 +237,40 @@ pub async fn send_message(
         }
     };
 
+    // 2.5 Block check
+    if let Some(chat_id_str) = payload.channel_arn.split('/').last() {
+        if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
+            if let Ok(sender_uuid) = uuid::Uuid::parse_str(&auth_user.user_id) {
+                let is_blocked: Option<bool> = sqlx::query_scalar(
+                    r#"
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM chat_participants cp
+                        JOIN blocked_users b ON (b.blocker_id = $1 AND b.blocked_id = cp.user_id)
+                                             OR (b.blocker_id = cp.user_id AND b.blocked_id = $1)
+                        WHERE cp.chat_id = $2 AND cp.user_id != $1
+                    )
+                    "#
+                )
+                .bind(sender_uuid)
+                .bind(chat_uuid)
+                .fetch_optional(&app_state.db)
+                .await
+                .unwrap_or(None);
+
+                if is_blocked == Some(true) {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(json!({
+                            "success": false,
+                            "error": "Cannot send message. A block exists between you and a participant in this chat."
+                        })),
+                    ).into_response();
+                }
+            }
+        }
+    }
+
     // 3. Send Message as USER
     match app_state
         .chat_service
