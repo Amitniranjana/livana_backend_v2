@@ -364,7 +364,17 @@ pub struct MessageRow {
 // ─────────────────────────────────────────────────────────────────────────────
 /// POST /api/v1/chats/upload
 ///
-/// Upload an image or document and immediately create a message entry.
+/// FRONTEND INTEGRATION: Uploading Media
+/// Instead of sending text via AWS Chime, when a user selects an image or document, 
+/// use this new endpoint to upload it. 
+/// Important: You do NOT need to call the text-message /chat/messages endpoint after uploading. 
+/// This upload endpoint automatically creates the message in the database for you. 
+/// Just render the returned file_url directly in the UI as a sent message.
+///
+/// Constraints:
+/// - Max Size: 5MB per file (Returns 413 Payload Too Large if exceeded)
+/// - Formats: image/*, application/pdf, ms-word, openxmlformats, text/plain
+/// - The file_url returned is a relative path. Prepend the base backend URL when rendering.
 ///
 /// Multipart fields:
 ///   - `file`    — the file bytes (required)
@@ -372,7 +382,13 @@ pub struct MessageRow {
 ///
 /// Response:
 /// ```json
-/// { "success": true, "file_url": "/uploads/chat/...", "file_type": "image", "message_id": "..." }
+/// { 
+///   "success": true, 
+///   "message": "Media uploaded and message created",
+///   "file_url": "/uploads/chat/user-id_uuid.jpg", 
+///   "file_type": "image", // or "document"
+///   "message_id": "3a2339d8-8581-42ea-b0f3-9ba42c1ffb60" 
+/// }
 /// ```
 // ─────────────────────────────────────────────────────────────────────────────
 pub async fn upload_chat_media(
@@ -586,8 +602,28 @@ pub async fn upload_chat_media(
 // ─────────────────────────────────────────────────────────────────────────────
 /// GET /api/v1/chats/{chat_id}/messages
 ///
-/// Fetch all messages for a chat (text + media), oldest first.
+/// FRONTEND INTEGRATION: Fetching Full Chat History
+/// Because AWS Chime is only tracking text messages, you need to pull the full history 
+/// (which includes images/documents) from our database to render the chat view correctly.
 /// The caller must be a participant of the chat.
+///
+/// Response (200 OK):
+/// ```json
+/// {
+///   "success": true,
+///   "message": "Messages fetched successfully",
+///   "data": [
+///     {
+///       "id": "uuid",
+///       "chat_id": "uuid",
+///       "sender_id": "uuid",
+///       "content": "Hello! Or /uploads/chat/image.jpg",
+///       "message_type": "text", // "text", "image", or "document"
+///       "created_at": "2026-04-08T15:19:59.751Z"
+///     }
+///   ]
+/// }
+/// ```
 // ─────────────────────────────────────────────────────────────────────────────
 pub async fn get_chat_messages(
     State(app_state): State<AppState>,
