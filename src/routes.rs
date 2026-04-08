@@ -233,7 +233,6 @@ pub fn community_routes() -> Router<AppState> {
 /// Moderation APIs (JWT-protected)
 pub fn moderation_routes() -> Router<AppState> {
     use crate::handlers::moderation::{archive_chat, block_user, report_entity, unarchive_chat, unblock_user};
-    use axum::routing::delete;
     Router::new()
         .route("/api/v1/users/{id}/block", post(block_user).delete(unblock_user))
         .route("/api/v1/users/{id}/unblock", post(unblock_user))

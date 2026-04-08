@@ -45,7 +45,7 @@ async fn main() {
     let database_port = env::var("DATABASE_PORT").expect("DATABASE_PORT must be set");
     // default back to 8080 if you forgot HTTP_PORT
     let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
-    let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "supersecret".into());
+    let jwt_secret = env::var("JWT_SECRET_KEY").unwrap_or_else(|_| "supersecret".into());
 
     // Google OAuth — needed to verify `aud` in tokeninfo responses.
     // Set GOOGLE_CLIENT_ID in your .env file.

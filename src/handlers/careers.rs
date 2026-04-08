@@ -66,6 +66,7 @@ pub async fn post_job(
 
 /// 1.2 Get All Jobs (GET /api/v1/jobs)
 /// Supports pagination (?page=1&limit=10) and filters (?location=Ahmedabad&job_type=full-time)
+#[allow(dead_code)]
 pub async fn list_jobs(
     State(app_state): State<AppState>,
     Query(q): Query<JobListQuery>,
@@ -202,6 +203,7 @@ pub async fn list_jobs(
 }
 
 /// 1.3 Get Job Description (GET /api/v1/jobs/{job_id})
+#[allow(dead_code)]
 pub async fn get_job_detail(
     State(app_state): State<AppState>,
     Path(job_id): Path<Uuid>,
@@ -273,6 +275,7 @@ pub async fn get_job_detail(
 
 /// 1.4 Edit Job Listing (PUT /api/v1/jobs/{job_id})
 /// Only the creator or admin can edit
+#[allow(dead_code)]
 pub async fn edit_job(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,

@@ -413,7 +413,7 @@ pub async fn create_property(
     let images_json = serde_json::to_value(payload.images.unwrap_or_default()).unwrap_or(json!([]));
     let amenities_json =
         serde_json::to_value(payload.amenities.unwrap_or_default()).unwrap_or(json!([]));
-    let nearby_json = payload.nearby_places.unwrap_or(json!({}));
+    let _nearby_json = payload.nearby_places.unwrap_or(json!({}));
 
     let result = sqlx::query(
         r#"
