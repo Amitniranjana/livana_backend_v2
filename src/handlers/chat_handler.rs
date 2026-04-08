@@ -75,7 +75,7 @@ pub async fn create_channel(
     let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
     
     // 1. Get creator ARN
-    let (creator_uuid, creator_arn) = match hydrate_chime_arn(&app_state, &auth_user.user_id).await {
+    let (_creator_uuid, creator_arn) = match hydrate_chime_arn(&app_state, &auth_user.user_id).await {
         Ok(res) => res,
         Err(e) => {
             return (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response();
@@ -174,8 +174,7 @@ pub async fn add_member(
     }
 }
 
-// Import AuthenticationUser
-use crate::utils::auth_extractor::AuthenticationUser;
+// Import AuthenticationUser is now at the top
 
 /// Send Message
 pub async fn send_message(

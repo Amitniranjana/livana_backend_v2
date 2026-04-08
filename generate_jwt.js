@@ -14,7 +14,7 @@ const header = {
 };
 
 const payload = {
-    sub: '00000000-0000-0000-0000-000000000001',
+    sub: '9b19975a-b760-47ed-b74b-24afcfd78d85',
     exp: Math.floor(Date.now() / 1000) + (60 * 60) // 1 hour expiration
 };
 
