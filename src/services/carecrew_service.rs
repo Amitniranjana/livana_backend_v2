@@ -169,29 +169,40 @@ pub enum BookingCreateError {
 
 pub async fn create_booking(
     db: &Pool<Postgres>,
-    provider_id: Uuid,
-    service_id: Uuid,
+    mut provider_id: Uuid,
+    mut service_id: Uuid,
     user_id: Uuid,
     scheduled_at: &str,
     notes: Option<&str>,
 ) -> Result<Value, BookingCreateError> {
-    // Validate provider exists
-    let p_exists = repo::provider_exists(db, provider_id)
+    // 1. Fetch provider fully to resolve correct primary key (in case it was user_id)
+    let p_row_opt = repo::get_provider_by_id(db, provider_id)
         .await
         .map_err(BookingCreateError::DbError)?;
-    if !p_exists {
-        return Err(BookingCreateError::ProviderNotFound);
+    
+    let p_row = match p_row_opt {
+        Some(row) => row,
+        None => return Err(BookingCreateError::ProviderNotFound),
+    };
+    
+    // Override provider_id with the actual provider's PK
+    provider_id = p_row.try_get::<Uuid, _>("id").unwrap_or(provider_id);
+    let service_type: String = p_row.try_get::<String, _>("service_type").unwrap_or_default();
+
+    // 2. Resolve the matching service by name (to fix Flutter 404 Service Not Found issues)
+    if let Ok(Some(resolved_service_id)) = repo::resolve_service_by_name(db, &service_type).await {
+        service_id = resolved_service_id;
+    } else {
+        // Fallback to checking if the original service_id exists
+        let s_exists = repo::service_exists(db, service_id)
+            .await
+            .map_err(BookingCreateError::DbError)?;
+        if !s_exists {
+            return Err(BookingCreateError::ServiceNotFound);
+        }
     }
 
-    // Validate service exists
-    let s_exists = repo::service_exists(db, service_id)
-        .await
-        .map_err(BookingCreateError::DbError)?;
-    if !s_exists {
-        return Err(BookingCreateError::ServiceNotFound);
-    }
-
-    // Validate the datetime format
+    // 3. Validate the datetime format
     if chrono::DateTime::parse_from_rfc3339(scheduled_at).is_err() {
         return Err(BookingCreateError::InvalidScheduledAt);
     }
