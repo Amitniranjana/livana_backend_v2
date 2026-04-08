@@ -276,3 +276,14 @@ pub async fn service_exists(db: &Pool<Postgres>, service_id: Uuid) -> Result<boo
     .await?;
     Ok(row.get::<i64, _>("total") > 0)
 }
+
+/// Resolves a service ID by its name (service_type) to auto-correct mismatched UUIDs
+pub async fn resolve_service_by_name(db: &Pool<Postgres>, service_name: &str) -> Result<Option<Uuid>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT id FROM carecrew_services WHERE name ILIKE $1 AND is_active = true LIMIT 1"
+    )
+    .bind(service_name)
+    .fetch_optional(db)
+    .await?;
+    Ok(row.map(|r| r.get::<Uuid, _>("id")))
+}
