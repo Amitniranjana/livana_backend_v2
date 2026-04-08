@@ -58,7 +58,7 @@ const VISIT_SELECT_SQL: &str = r#"
         sv.cancellation_reason,
         sv.created_at
     FROM site_visits sv
-    JOIN listings p ON p.id = sv.property_id
+    JOIN properties p ON p.id = sv.property_id
     JOIN users u      ON u.id = sv.provider_id
 "#;
 
@@ -88,7 +88,7 @@ pub async fn book_visit_handler(
 
     // Check property exists
     let property_exists =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM listings WHERE id = $1)")
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM properties WHERE id = $1)")
             .bind(body.property_id)
             .fetch_one(&state.db)
             .await;
