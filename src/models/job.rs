@@ -4,6 +4,7 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+#[allow(dead_code)]
 pub struct Job {
     pub id: Uuid,
     pub created_by: Uuid,
