@@ -88,7 +88,7 @@ pub async fn signup(
     };
 
     // 2. Generate JWT token
-    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 24) {
+    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
         Ok(token) => token,
         Err(e) => {
             let response = json!({
@@ -244,7 +244,7 @@ pub async fn signin(
     }
 
     // 3. Generate JWT token
-    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 24) {
+    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
         Ok(token) => token,
         Err(e) => {
             let response = json!({
@@ -440,7 +440,7 @@ pub async fn verify_otp(
     }
 
     // 4. Generate JWT token
-    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 24) {
+    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
         Ok(token) => token,
         Err(e) => {
             let response = json!({

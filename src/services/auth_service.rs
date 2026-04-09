@@ -42,7 +42,7 @@ impl AuthService {
         );
 
         let created = UserRepo::create(pool, &user).await?;
-        let token = create_jwt(&created.id.to_string(), jwt_secret, 24)?;
+        let token = create_jwt(&created.id.to_string(), jwt_secret, 360)?;
         Ok((created, token))
     }
 
@@ -54,7 +54,7 @@ impl AuthService {
             anyhow::bail!("Invalid credentials");
         }
 
-        let token = create_jwt(&user.id.to_string(), jwt_secret, 24)?;
+        let token = create_jwt(&user.id.to_string(), jwt_secret, 360)?;
         Ok((user, token))
     }
 }
