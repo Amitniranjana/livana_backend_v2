@@ -312,7 +312,7 @@ pub async fn count_bookings_for_provider(
     Ok(row.get::<i64, _>("total"))
 }
 
-/// Checks if provider exists and is active.
+#[allow(dead_code)]
 pub async fn provider_exists(db: &Pool<Postgres>, provider_id: Uuid) -> Result<bool, sqlx::Error> {
     let row = sqlx::query(
         "SELECT COUNT(*) as total FROM carecrew_providers WHERE id = $1 AND is_active = true",
