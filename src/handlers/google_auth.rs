@@ -96,9 +96,9 @@ pub async fn google_signin(
         }
     };
 
-    // ── Step 3: Issue a short-lived JWT (1 hour) ──────────────────────────
-    // Security: short expiry limits blast radius if a token is leaked.
-    let token = match create_jwt(&user.id.to_string(), &state.jwt_secret, 1) {
+    // ── Step 3: Issue a JWT (15 days) ────────────────────────────────────
+    // Security: standard expiry for long-lived sessions.
+    let token = match create_jwt(&user.id.to_string(), &state.jwt_secret, 360) {
         Ok(t) => t,
         Err(e) => {
             return (
