@@ -55,18 +55,23 @@ async fn hydrate_chime_arn(app_state: &AppState, user_id_str: &str) -> Result<(u
         let app_instance_arn = std::env::var("CHIME_APP_INSTANCE_ARN").unwrap_or_default();
         let user_name = format!("{} {}", user.first_name, user.last_name);
 
-        let chat_user = app_state
+        match app_state
             .chat_service
             .create_app_instance_user(&app_instance_arn, &user.id.to_string(), &user_name)
             .await
-            .map_err(|e| format!("Failed to create chime user: {}", e))?;
-
-        let _ = app_state
-            .user_service
-            .update_chime_arn(&user.id.to_string(), &chat_user.app_instance_user_arn)
-            .await;
-
-        chat_user.app_instance_user_arn
+        {
+            Ok(chat_user) => {
+                let _ = app_state
+                    .user_service
+                    .update_chime_arn(&user.id.to_string(), &chat_user.app_instance_user_arn)
+                    .await;
+                chat_user.app_instance_user_arn
+            }
+            Err(e) => {
+                eprintln!("[Chat] Failed to create chime user: {}. Using local ARN.", e);
+                format!("local_user_arn/{}", user.id)
+            }
+        }
     };
 
     Ok((user.id, arn))
@@ -120,10 +125,14 @@ pub async fn create_channel(
     {
         Ok(c) => c,
         Err(e) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": e.to_string()})),
-            ).into_response();
+            eprintln!("[Chat] Chime channel creation failed: {}. Falling back to local PostgreSQL chat.", e);
+            let local_uuid = uuid::Uuid::new_v4();
+            crate::models::chat::ChatChannel {
+                channel_arn: format!("local_channel_arn/{}", local_uuid),
+                name: payload.name.clone(),
+                mode: payload.mode.clone(),
+                privacy: payload.privacy.clone(),
+            }
         }
     };
 
@@ -140,7 +149,7 @@ pub async fn create_channel(
             // Process Members
             for (uid, arn) in final_participants {
                 // If the user isn't the creator, add them via add_channel_flow
-                if arn != creator_arn {
+                if arn != creator_arn && !arn.starts_with("local_user_arn") && !channel.channel_arn.starts_with("local_channel_arn") {
                     let _ = app_state.chat_service.add_channel_flow(&channel.channel_arn, &arn, &creator_arn).await;
                 }
 
@@ -234,11 +243,8 @@ pub async fn send_message(
                 chat_user.app_instance_user_arn
             }
             Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({"error": format!("Failed to create chime user: {}", e)})),
-                )
-                    .into_response();
+                eprintln!("[Chat] Failed to create chime user in send_message: {}. Using local ARN.", e);
+                format!("local_user_arn/{}", user.id)
             }
         }
     };
@@ -609,8 +615,35 @@ pub async fn upload_chat_media(
 pub async fn get_chat_messages(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Path(chat_id): Path<Uuid>,
+    Path(chat_id_str): Path<String>,
 ) -> impl IntoResponse {
+    // [Fix]: Support local chat identifiers sent by Flutter when Chime is down. 
+    // These are handled gracefully as empty sessions.
+    let chat_id = match Uuid::parse_str(&chat_id_str) {
+        Ok(uid) => uid,
+        Err(_) => {
+            if chat_id_str.starts_with("local_chat_") || chat_id_str.starts_with("local_channel_arn") {
+                return (
+                    StatusCode::OK,
+                    Json(json!({
+                        "success": true,
+                        "message": "Local chat session (ephemeral)",
+                        "data": []
+                    })),
+                )
+                    .into_response();
+            }
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "message": format!("Invalid chat ID format: '{}'. Expected UUID or local string.", chat_id_str)
+                })),
+            )
+                .into_response();
+        }
+    };
+
     let user_uuid = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
@@ -643,8 +676,8 @@ pub async fn get_chat_messages(
             .into_response();
     }
 
-    // [Fix]: Since media messages bypass AWS Chime, we query our own local PostgreSQL 
-    // `messages` table to construct the full chat history. This retrieves standard text 
+    // [Fix]: Since media messages bypass AWS Chime, we query our own local PostgreSQL
+    // `messages` table to construct the full chat history. This retrieves standard text
     // messages (synced earlier) as well as direct image/document uploads.
     // We default legacy messages to 'text'.
     let messages = sqlx::query_as::<_, MessageRow>(
@@ -779,4 +812,20 @@ pub async fn get_chat_messages_by_channel(
         )
             .into_response(),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+/// GET /api/v1/chats/{arn_part}/{app_instance_id}/channel/{channel_id}/messages
+///
+/// Flutter sends the FULL AWS Chime ARN unencoded directly in the path (which contains slashes).
+/// We map an Axum route strictly matching those segments to extract the final `channel_id`
+/// and route it transparently to the main message fetcher.
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn get_chat_messages_arn_path(
+    state: State<AppState>,
+    auth: AuthenticationUser,
+    Path((_arn_prefix, _app_id, channel_id)): Path<(String, String, String)>,
+) -> impl IntoResponse {
+    // Just forward the extracted channel_id string to our main local logic
+    get_chat_messages(state, auth, Path(channel_id)).await
 }
