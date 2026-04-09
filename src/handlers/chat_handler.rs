@@ -609,25 +609,8 @@ pub async fn upload_chat_media(
 pub async fn get_chat_messages(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Path(raw_chat_id): Path<String>,
+    Path(chat_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    // Support both raw UUID and full Chime ARN (extract UUID from last segment)
-    let chat_id = match Uuid::parse_str(&raw_chat_id) {
-        Ok(id) => id,
-        Err(_) => {
-            // Try extracting UUID from the last segment of a Chime ARN
-            match raw_chat_id.split('/').last().and_then(|s| Uuid::parse_str(s).ok()) {
-                Some(id) => id,
-                None => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(json!({"success": false, "message": "Invalid chat_id format"})),
-                    )
-                        .into_response();
-                }
-            }
-        }
-    };
     let user_uuid = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
@@ -699,26 +682,35 @@ pub async fn get_chat_messages(
     }
 }
 
-/// Wildcard handler for GET /api/v1/chats/{*chat_path}
-/// Catches full Chime ARN paths like:
-///   /api/v1/chats/arn:aws:chime:.../channel/<uuid>/messages
-pub async fn get_chat_messages_wildcard(
+/// GET /api/v1/chats/channel/messages?channel_arn=arn:aws:chime:...
+///
+/// Accepts the full Chime channel ARN as a query parameter and extracts
+/// the UUID from the last path segment to fetch messages.
+#[derive(serde::Deserialize)]
+pub struct ChannelArnQuery {
+    pub channel_arn: String,
+}
+
+pub async fn get_chat_messages_by_channel(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Path(chat_path): Path<String>,
+    axum::extract::Query(query): axum::extract::Query<ChannelArnQuery>,
 ) -> impl IntoResponse {
-    // Strip trailing "/messages" if present
-    let path = chat_path.trim_end_matches("/messages").trim_end_matches('/');
-
-    // Extract UUID from the last segment of the path
-    let chat_id = match path.split('/').last().and_then(|s| Uuid::parse_str(s).ok()) {
+    // Extract UUID from the last segment of the Chime ARN
+    let chat_id = match query.channel_arn.split('/').last().and_then(|s| Uuid::parse_str(s).ok()) {
         Some(id) => id,
         None => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"success": false, "message": "Could not extract a valid chat UUID from the path"})),
-            )
-                .into_response();
+            // Maybe it's already a plain UUID
+            match Uuid::parse_str(&query.channel_arn) {
+                Ok(id) => id,
+                Err(_) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"success": false, "message": "Could not extract a valid chat UUID from channel_arn"})),
+                    )
+                        .into_response();
+                }
+            }
         }
     };
 
@@ -788,4 +780,3 @@ pub async fn get_chat_messages_wildcard(
             .into_response(),
     }
 }
-
