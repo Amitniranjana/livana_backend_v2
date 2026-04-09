@@ -189,15 +189,16 @@ pub async fn create_booking(
     provider_id = p_row.try_get::<Uuid, _>("id").unwrap_or(provider_id);
     let service_type: String = p_row.try_get::<String, _>("service_type").unwrap_or_default();
 
-    // 2. Resolve the matching service by name (to fix Flutter 404 Service Not Found issues)
-    if let Ok(Some(resolved_service_id)) = repo::resolve_service_by_name(db, &service_type).await {
-        service_id = resolved_service_id;
-    } else {
-        // Fallback to checking if the original service_id exists
-        let s_exists = repo::service_exists(db, service_id)
-            .await
-            .map_err(BookingCreateError::DbError)?;
-        if !s_exists {
+    // 2. Check if the exact service_id exists first (this will lazily sync from the services table if needed)
+    let s_exists = repo::service_exists(db, service_id)
+        .await
+        .map_err(BookingCreateError::DbError)?;
+
+    if !s_exists {
+        // Fallback: Resolve the matching service by name (to fix Flutter 404 Service Not Found issues for stale/bad uuids)
+        if let Ok(Some(resolved_service_id)) = repo::resolve_service_by_name(db, &service_type).await {
+            service_id = resolved_service_id;
+        } else {
             return Err(BookingCreateError::ServiceNotFound);
         }
     }
