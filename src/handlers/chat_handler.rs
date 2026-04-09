@@ -609,8 +609,25 @@ pub async fn upload_chat_media(
 pub async fn get_chat_messages(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
-    Path(chat_id): Path<Uuid>,
+    Path(raw_chat_id): Path<String>,
 ) -> impl IntoResponse {
+    // Support both raw UUID and full Chime ARN (extract UUID from last segment)
+    let chat_id = match Uuid::parse_str(&raw_chat_id) {
+        Ok(id) => id,
+        Err(_) => {
+            // Try extracting UUID from the last segment of a Chime ARN
+            match raw_chat_id.split('/').last().and_then(|s| Uuid::parse_str(s).ok()) {
+                Some(id) => id,
+                None => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({"success": false, "message": "Invalid chat_id format"})),
+                    )
+                        .into_response();
+                }
+            }
+        }
+    };
     let user_uuid = match Uuid::parse_str(&auth.user_id) {
         Ok(id) => id,
         Err(_) => {
@@ -681,3 +698,94 @@ pub async fn get_chat_messages(
             .into_response(),
     }
 }
+
+/// Wildcard handler for GET /api/v1/chats/{*chat_path}
+/// Catches full Chime ARN paths like:
+///   /api/v1/chats/arn:aws:chime:.../channel/<uuid>/messages
+pub async fn get_chat_messages_wildcard(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(chat_path): Path<String>,
+) -> impl IntoResponse {
+    // Strip trailing "/messages" if present
+    let path = chat_path.trim_end_matches("/messages").trim_end_matches('/');
+
+    // Extract UUID from the last segment of the path
+    let chat_id = match path.split('/').last().and_then(|s| Uuid::parse_str(s).ok()) {
+        Some(id) => id,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Could not extract a valid chat UUID from the path"})),
+            )
+                .into_response();
+        }
+    };
+
+    let user_uuid = match Uuid::parse_str(&auth.user_id) {
+        Ok(id) => id,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid token"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Verify user is a participant
+    let is_participant: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2)",
+    )
+    .bind(chat_id)
+    .bind(user_uuid)
+    .fetch_one(&app_state.db)
+    .await
+    .unwrap_or(false);
+
+    if !is_participant {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false,
+                "message": "You are not a participant of this chat"
+            })),
+        )
+            .into_response();
+    }
+
+    let messages = sqlx::query_as::<_, MessageRow>(
+        r#"
+        SELECT id, chat_id, sender_id, content,
+               COALESCE(message_type, 'text') AS message_type,
+               created_at
+        FROM messages
+        WHERE chat_id = $1
+        ORDER BY created_at ASC
+        "#,
+    )
+    .bind(chat_id)
+    .fetch_all(&app_state.db)
+    .await;
+
+    match messages {
+        Ok(rows) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Messages fetched successfully",
+                "data": rows
+            })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({
+                "success": false,
+                "message": format!("Failed to fetch messages: {}", e)
+            })),
+        )
+            .into_response(),
+    }
+}
+

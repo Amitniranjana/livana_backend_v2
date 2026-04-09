@@ -1,7 +1,7 @@
 use crate::app_state::AppState;
 use crate::handlers::chat_handler::{
-    add_member, create_channel, create_user, get_auth_creds, get_chat_messages, send_message,
-    upload_chat_media,
+    add_member, create_channel, create_user, get_auth_creds, get_chat_messages,
+    get_chat_messages_wildcard, send_message, upload_chat_media,
 };
 use axum::{
     Router,
@@ -18,4 +18,5 @@ pub fn chat_routes() -> Router<AppState> {
         // ── Media upload & message history ──
         .route("/api/v1/chats/upload", post(upload_chat_media))
         .route("/api/v1/chats/{chat_id}/messages", get(get_chat_messages))
+        .route("/api/v1/chats/{*chat_path}", get(get_chat_messages_wildcard))
 }
