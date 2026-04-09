@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCarecrewReviewRequest {
-    pub booking_id: Uuid,
-    pub provider_id: Uuid,
+    pub booking_id: String,
+    pub provider_id: String,
     pub rating: f64,
     pub comment: Option<String>,
 }
