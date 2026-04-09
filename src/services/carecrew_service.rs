@@ -174,6 +174,10 @@ pub async fn create_booking(
     user_id: Uuid,
     scheduled_at: &str,
     notes: Option<&str>,
+    address: Option<&str>,
+    problem_description: Option<&str>,
+    contact_number: Option<&str>,
+    estimated_cost: Option<f64>,
 ) -> Result<Value, BookingCreateError> {
     // 1. Fetch provider fully to resolve correct primary key (in case it was user_id)
     let p_row_opt = repo::get_provider_by_id(db, provider_id)
@@ -217,6 +221,10 @@ pub async fn create_booking(
         user_id,
         scheduled_at,
         notes,
+        address,
+        problem_description,
+        contact_number,
+        estimated_cost,
     )
     .await
     .map_err(BookingCreateError::DbError)?;
@@ -235,6 +243,8 @@ pub async fn update_booking_status(
     db: &Pool<Postgres>,
     booking_id: Uuid,
     new_status: &str,
+    notes: Option<&str>,
+    estimated_cost: Option<f64>,
 ) -> Result<Value, BookingUpdateError> {
     // Validate new status value
     if !is_valid_status(new_status) {
@@ -257,7 +267,7 @@ pub async fn update_booking_status(
         });
     }
 
-    let row = repo::update_booking_status(db, booking_id, new_status)
+    let row = repo::update_booking_status(db, booking_id, new_status, notes, estimated_cost)
         .await
         .map_err(BookingUpdateError::DbError)?;
 
@@ -285,4 +295,55 @@ pub async fn get_provider_bookings(
         current_page: page,
         total_pages,
     })
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// New Endpoint Implementations
+// ──────────────────────────────────────────────────────────────────────────────
+
+pub async fn get_user_bookings(
+    db: &Pool<Postgres>,
+    user_id: Uuid,
+    status: Option<&str>,
+    page: i32,
+    limit: i32,
+) -> Result<Value, sqlx::Error> {
+    let (bookings, total_count) = repo::get_user_bookings(db, user_id, status, page, limit).await?;
+    
+    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i32;
+    let total_pages = total_pages.max(1);
+
+    Ok(json!({
+        "bookings": bookings,
+        "total_count": total_count,
+        "current_page": page,
+        "total_pages": total_pages,
+    }))
+}
+
+pub async fn get_provider_bookings_v2(
+    db: &Pool<Postgres>,
+    provider_id: Uuid,
+    status: Option<&str>,
+    page: i32,
+    limit: i32,
+) -> Result<Value, sqlx::Error> {
+    let (bookings, total_count) = repo::get_provider_bookings_v2(db, provider_id, status, page, limit).await?;
+    
+    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i32;
+    let total_pages = total_pages.max(1);
+
+    Ok(json!({
+        "bookings": bookings,
+        "total_count": total_count,
+        "current_page": page,
+        "total_pages": total_pages,
+    }))
+}
+
+pub async fn get_booking_details(
+    db: &Pool<Postgres>,
+    booking_id: Uuid,
+) -> Result<Option<crate::models::carecrew::BookingDetailsResponse>, sqlx::Error> {
+    repo::get_booking_details(db, booking_id).await
 }

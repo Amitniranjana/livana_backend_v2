@@ -164,6 +164,18 @@ pub fn carecrew_routes() -> Router<AppState> {
         )
 }
 
+/// Global Bookings Endpoints (Endpoints 33, 34, 35, 36)
+pub fn bookings_routes() -> Router<AppState> {
+    use crate::handlers::carecrew::{
+        get_booking_details, get_provider_bookings_v2, get_user_bookings, update_booking_status,
+    };
+    Router::new()
+        .route("/api/bookings", get(get_user_bookings))
+        .route("/api/bookings/provider", get(get_provider_bookings_v2))
+        .route("/api/bookings/{id}", get(get_booking_details))
+        .route("/api/bookings/{id}/status", put(update_booking_status))
+}
+
 /// CareCrew Tickets (Support Module)
 pub fn carecrew_ticket_routes() -> Router<AppState> {
     use crate::handlers::carecrew_tickets::{

@@ -56,13 +56,84 @@ pub struct CreateBookingRequest {
     /// ISO 8601 string e.g. "2026-03-01T10:00:00Z"
     pub scheduled_at: String,
     pub notes: Option<String>,
+    pub address: Option<String>,
+    pub problem_description: Option<String>,
+    pub contact_number: Option<String>,
+    pub estimated_cost: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateBookingStatusRequest {
     /// Allowed values: pending | confirmed | in_progress | completed | cancelled
     pub status: String,
+    pub notes: Option<String>,
+    pub estimated_cost: Option<f64>,
 }
+
+// ─── Response DTOs (API Endpoints 33, 34, 35, 36) ─────────────────────────────
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct UserBookingResponse {
+    pub booking_id: Uuid,
+    pub booking_number: String,
+    pub provider_id: Uuid,
+    pub provider_name: String,
+    pub provider_image: Option<String>,
+    pub service_type: String,
+    pub scheduled_date_time: String,
+    pub status: String,
+    pub address: Option<String>,
+    pub estimated_cost: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct ProviderBookingResponse {
+    pub booking_id: Uuid,
+    pub booking_number: String,
+    pub customer_name: String,
+    pub customer_phone: Option<String>,
+    pub customer_image: Option<String>,
+    pub service_type: String,
+    pub scheduled_date_time: String,
+    pub status: String,
+    pub address: Option<String>,
+    pub problem_description: Option<String>,
+    pub estimated_cost: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct TrackingStatusDto {
+    pub status: String,
+    pub timestamp: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BookingDetailsResponse {
+    pub booking_id: Uuid,
+    pub booking_number: String,
+    pub provider_id: Uuid,
+    pub provider_name: String,
+    pub provider_phone: Option<String>,
+    pub provider_image: Option<String>,
+    pub provider_rating: f64,
+    pub service_type: String,
+    pub scheduled_date_time: String,
+    pub status: String,
+    pub address: Option<String>,
+    pub problem_description: Option<String>,
+    pub contact_number: Option<String>,
+    pub estimated_cost: Option<f64>,
+    pub final_cost: Option<f64>,
+    pub payment_status: String,
+    pub tracking_status: Vec<TrackingStatusDto>,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+}
+
+use uuid::Uuid;
 
 /// Valid booking status transitions:
 ///   pending → confirmed | cancelled

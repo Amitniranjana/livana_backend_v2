@@ -51,10 +51,20 @@ pub async fn create_review(
 
     validate_rating(body.rating)?;
 
+    let booking_id = match Uuid::parse_str(&body.booking_id) {
+        Ok(u) => u,
+        Err(_) => return Err(ApiError::BadRequest("Invalid booking_id format".to_string())),
+    };
+
+    let provider_id = match Uuid::parse_str(&body.provider_id) {
+        Ok(u) => u,
+        Err(_) => return Err(ApiError::BadRequest("Invalid provider_id format".to_string())),
+    };
+
     // 1. Check booking exists and is completed
     let booking_row: Option<(String,)> =
         sqlx::query_as("SELECT status FROM carecrew_bookings WHERE id = $1 AND user_id = $2")
-            .bind(body.booking_id)
+            .bind(booking_id)
             .bind(reviewer_id)
             .fetch_optional(&app_state.db)
             .await
@@ -71,7 +81,7 @@ pub async fn create_review(
     // 2. Check for duplicate review
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM carecrew_reviews WHERE booking_id = $1)")
-            .bind(body.booking_id)
+            .bind(booking_id)
             .fetch_one(&app_state.db)
             .await
             .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
@@ -91,8 +101,8 @@ pub async fn create_review(
         "#,
     )
     .bind(review_id)
-    .bind(body.booking_id)
-    .bind(body.provider_id)
+    .bind(booking_id)
+    .bind(provider_id)
     .bind(reviewer_id)
     .bind(body.rating)
     .bind(&body.comment)
@@ -106,8 +116,8 @@ pub async fn create_review(
         message: "Review submitted successfully".to_string(),
         data: CreateReviewData {
             review_id,
-            booking_id: body.booking_id,
-            provider_id: body.provider_id,
+            booking_id,
+            provider_id,
             reviewer_id,
             rating: body.rating,
             comment: body.comment,
