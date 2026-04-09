@@ -311,6 +311,10 @@ pub async fn create_booking(
         user_id,
         &payload.scheduled_at,
         payload.notes.as_deref(),
+        payload.address.as_deref(),
+        payload.problem_description.as_deref(),
+        payload.contact_number.as_deref(),
+        payload.estimated_cost,
     )
     .await
     {
@@ -381,7 +385,13 @@ pub async fn update_booking_status(
         }
     };
 
-    match carecrew_service::update_booking_status(&app_state.db, booking_id, &payload.status).await
+    match carecrew_service::update_booking_status(
+        &app_state.db, 
+        booking_id, 
+        &payload.status,
+        payload.notes.as_deref(),
+        payload.estimated_cost,
+    ).await
     {
         Ok(booking) => (
             StatusCode::OK,
@@ -600,5 +610,141 @@ mod tests {
     fn test_scheduled_at_iso8601_invalid() {
         let invalid = "01-03-2026 10:00";
         assert!(chrono::DateTime::parse_from_rfc3339(invalid).is_err());
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Endpoints 33, 34, 35 Implementation
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct BookingsQuery {
+    pub status: Option<String>,
+    pub limit: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+/// GET /api/bookings
+pub async fn get_user_bookings(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<BookingsQuery>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let limit = q.limit.unwrap_or(10).clamp(1, 50);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let page = (offset / limit) + 1;
+
+    match carecrew_service::get_user_bookings(&app_state.db, user_id, q.status.as_deref(), page, limit).await {
+        Ok(data) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Bookings retrieved successfully",
+                "data": data
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_user_bookings DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+/// GET /api/bookings/{booking_id}
+pub async fn get_booking_details(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    let _user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let booking_id = match Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid booking ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
+    };
+
+    match carecrew_service::get_booking_details(&app_state.db, booking_id).await {
+        Ok(Some(booking)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Booking details retrieved successfully",
+                "data": booking
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Booking not found", "error_code": "NOT_FOUND"
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_booking_details DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+/// GET /api/bookings/provider
+pub async fn get_provider_bookings_v2(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<BookingsQuery>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let limit = q.limit.unwrap_or(10).clamp(1, 50);
+    let offset = q.offset.unwrap_or(0).max(0);
+    let page = (offset / limit) + 1;
+
+    // Determine provider_id. Currently, a provider's user_id maps to provider_id in our logic (due to get_provider_by_id OR clause).
+    // Let's use the authenticated user's ID as the provider ID. If they want this to be separate, they would query by their provider_id.
+    // In LivanaEco, `user_id` of the logged-in provider is the identifier we have.
+    match carecrew_service::get_provider_bookings_v2(&app_state.db, user_id, q.status.as_deref(), page, limit).await {
+        Ok(data) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Provider bookings retrieved successfully",
+                "data": data
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_provider_bookings_v2 DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
+        }
     }
 }

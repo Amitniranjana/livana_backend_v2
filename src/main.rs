@@ -21,7 +21,7 @@ use crate::{
     repository::chat_repository::ChatRepository,
     repository::user_repository::UserRepository,
     routes::{
-        associate_routes, auth_routes, broker_routes, carecrew_review_routes, carecrew_routes,
+        associate_routes, auth_routes, bookings_routes, broker_routes, carecrew_review_routes, carecrew_routes,
         carecrew_ticket_routes, career_routes, careers_routes, community_routes, expo_routes,
         health_routes, language_routes, listing_routes, moderation_routes, notifications_routes,
         property_filter_routes, property_review_routes, property_search_routes,
@@ -129,6 +129,7 @@ async fn main() {
         .merge(suggestions_routes())
         // ── CareCrew Module (Step 4) ────────────────────────────
         .merge(carecrew_routes())
+        .merge(bookings_routes())
         // ── CareCrew Tickets (Support Module) ───────────────────
         .merge(carecrew_ticket_routes())
         // ── Recent Chats (JWT-protected) ─────────────────────────
