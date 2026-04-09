@@ -268,13 +268,42 @@ pub async fn provider_exists(db: &Pool<Postgres>, provider_id: Uuid) -> Result<b
 
 /// Checks if service exists and is active.
 pub async fn service_exists(db: &Pool<Postgres>, service_id: Uuid) -> Result<bool, sqlx::Error> {
+    // 1. Check if it exists in carecrew_services
     let row = sqlx::query(
         "SELECT COUNT(*) as total FROM carecrew_services WHERE id = $1 AND is_active = true",
     )
     .bind(service_id)
     .fetch_one(db)
     .await?;
-    Ok(row.get::<i64, _>("total") > 0)
+    
+    if row.get::<i64, _>("total") > 0 {
+        return Ok(true);
+    }
+    
+    // 2. Fallback: check if it exists in 'services'
+    let service_row_opt = sqlx::query(
+        "SELECT id, service_name, category, description FROM services WHERE id = $1 LIMIT 1"
+    )
+    .bind(service_id)
+    .fetch_optional(db)
+    .await?;
+
+    if let Some(s_row) = service_row_opt {
+        // Lazily sync this service to carecrew_services so FK constraints pass
+        let _ = sqlx::query(
+            "INSERT INTO carecrew_services (id, name, category, description, is_active) VALUES ($1, $2, $3, $4, true) ON CONFLICT DO NOTHING"
+        )
+        .bind(s_row.get::<Uuid, _>("id"))
+        .bind(s_row.get::<String, _>("service_name"))
+        .bind(s_row.get::<String, _>("category"))
+        .bind(s_row.get::<String, _>("description"))
+        .execute(db)
+        .await;
+
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 /// Resolves a service ID by its name (service_type) to auto-correct mismatched UUIDs
