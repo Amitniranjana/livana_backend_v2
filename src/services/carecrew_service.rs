@@ -127,6 +127,24 @@ pub async fn get_provider_by_id(
     match row {
         Some(ref r) => {
             let base = provider_row_to_json(r);
+            let provider_id = r.try_get::<Uuid, _>("id").unwrap_or(id);
+            
+            // Fetch hourly rate and experience from the services table
+            let svc_row = sqlx::query(
+                "SELECT price::FLOAT8 as price, experience::TEXT as experience FROM services WHERE provider_id = $1 LIMIT 1"
+            )
+            .bind(provider_id)
+            .fetch_optional(db)
+            .await?;
+
+            let mut hourly_rate: Option<f64> = None;
+            let mut experience: Option<String> = None;
+
+            if let Some(sr) = svc_row {
+                hourly_rate = sr.try_get::<f64, _>("price").ok();
+                experience = sr.try_get::<String, _>("experience").ok();
+            }
+
             // Enrich with additional fields the Flutter app expects
             let enriched = json!({
                 "id":             base["id"],
@@ -139,8 +157,8 @@ pub async fn get_provider_by_id(
                 "email":          null,
                 "profile_image":  base["avatarUrl"],
                 "specialties":    [],
-                "hourly_rate":    null,
-                "experience":     null,
+                "hourly_rate":    hourly_rate,
+                "experience":     experience,
                 "is_verified":    base["isFeatured"],
                 "is_active":      base["isActive"],
                 "is_saved":       false,
