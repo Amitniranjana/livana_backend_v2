@@ -277,62 +277,74 @@ pub async fn send_message(
         }
     }
 
-    // 3. Send Message as USER
-    match app_state
+    // 3. Send Message — try Chime first, fall back to Postgres-only if Chime fails
+    let chime_result = app_state
         .chat_service
         .send_message(&payload.channel_arn, &payload.content, &sender_arn)
-        .await
-    {
-        Ok(msg_id) => {
-            // ── SYNC TO POSTGRESQL ──
-            if let Some(chat_id_str) = payload.channel_arn.split('/').last() {
-                if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
-                    if let Ok(sender_uuid) = uuid::Uuid::parse_str(&auth_user.user_id) {
-                        let local_msg_id = uuid::Uuid::new_v4();
+        .await;
 
-                        // Auto-hydrate the chats table if it doesn't exist
-                        if let Err(e) = sqlx::query(
-                            "INSERT INTO chats (id, name, created_at) VALUES ($1, 'AWS Chime Chat', NOW()) ON CONFLICT DO NOTHING"
-                        )
-                        .bind(chat_uuid)
-                        .execute(&app_state.db)
-                        .await {
-                            eprintln!("Failed to hydrate chat in db: {}", e);
-                        }
+    if let Err(ref e) = chime_result {
+        eprintln!("[Chat] Chime send_message failed (will fallback to DB): {}", e);
+    }
 
-                        if let Err(e) = sqlx::query(
-                            "INSERT INTO messages (id, chat_id, sender_id, content, created_at) VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT DO NOTHING"
-                        )
-                        .bind(local_msg_id)
-                        .bind(chat_uuid)
-                        .bind(sender_uuid)
-                        .bind(&payload.content)
-                        .execute(&app_state.db)
-                        .await {
-                            eprintln!("Failed to insert message to db: {}", e);
-                        }
+    // 4. Always persist to PostgreSQL regardless of Chime outcome
+    let mut db_message_id: Option<String> = None;
 
-                        // Also make sure sender is part of this chat in participants just in case
-                        if let Err(e) = sqlx::query(
-                            "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
-                        )
-                        .bind(chat_uuid)
-                        .bind(sender_uuid)
-                        .execute(&app_state.db)
-                        .await {
-                            eprintln!("Failed to insert sender to chat_participants: {}", e);
-                        }
-                    }
+    if let Some(chat_id_str) = payload.channel_arn.split('/').last() {
+        if let Ok(chat_uuid) = uuid::Uuid::parse_str(chat_id_str) {
+            if let Ok(sender_uuid) = uuid::Uuid::parse_str(&auth_user.user_id) {
+                let local_msg_id = uuid::Uuid::new_v4();
+
+                // Auto-hydrate the chats table if it doesn't exist
+                if let Err(e) = sqlx::query(
+                    "INSERT INTO chats (id, name, created_at) VALUES ($1, 'AWS Chime Chat', NOW()) ON CONFLICT DO NOTHING"
+                )
+                .bind(chat_uuid)
+                .execute(&app_state.db)
+                .await {
+                    eprintln!("Failed to hydrate chat in db: {}", e);
+                }
+
+                match sqlx::query(
+                    "INSERT INTO messages (id, chat_id, sender_id, content, message_type, created_at) VALUES ($1, $2, $3, $4, 'text', NOW())"
+                )
+                .bind(local_msg_id)
+                .bind(chat_uuid)
+                .bind(sender_uuid)
+                .bind(&payload.content)
+                .execute(&app_state.db)
+                .await {
+                    Ok(_) => { db_message_id = Some(local_msg_id.to_string()); }
+                    Err(e) => { eprintln!("Failed to insert message to db: {}", e); }
+                }
+
+                // Also make sure sender is part of this chat in participants just in case
+                if let Err(e) = sqlx::query(
+                    "INSERT INTO chat_participants (chat_id, user_id, joined_at) VALUES ($1, $2, NOW()) ON CONFLICT DO NOTHING"
+                )
+                .bind(chat_uuid)
+                .bind(sender_uuid)
+                .execute(&app_state.db)
+                .await {
+                    eprintln!("Failed to insert sender to chat_participants: {}", e);
                 }
             }
+        }
+    }
 
+    // Return success if either Chime or DB succeeded
+    match (chime_result, db_message_id) {
+        (Ok(msg_id), _) => {
             (StatusCode::OK, Json(json!({"message_id": msg_id}))).into_response()
-        },
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": e.to_string()})),
-        )
-            .into_response(),
+        }
+        (Err(_), Some(local_id)) => {
+            // Chime failed but DB save succeeded — still report success to client
+            (StatusCode::OK, Json(json!({"message_id": local_id, "source": "local"}))).into_response()
+        }
+        (Err(e), None) => {
+            // Both Chime and DB failed — this is a real error
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))).into_response()
+        }
     }
 }
 
