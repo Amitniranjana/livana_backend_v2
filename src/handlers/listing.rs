@@ -193,8 +193,9 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
             p.images, p.primary_image, p.amenities,
             p.lat AS latitude, p.lng AS longitude,
             p.is_featured, p.is_verified,
+            p.views_count, p.likes_count,
             p.status, p.user_id, p.created_at, p.updated_at,
-            u.first_name, u.last_name, u.phone_no, u.profile_image,
+            u.first_name, u.last_name, u.phone_no, u.profile_image_url AS profile_image,
             EXISTS(
                 SELECT 1 FROM saved_properties sl2
                 WHERE sl2.property_id = p.id AND sl2.user_id = ${is_saved_bind_pos}
@@ -286,11 +287,11 @@ pub async fn get_properties(
     // Count query
     let count_sql = if let Some(ref pt) = params.property_type {
         format!(
-            "SELECT COUNT(*) FROM listings p WHERE p.status = 'active' AND p.property_type = '{}'",
+            "SELECT COUNT(*) FROM properties p WHERE p.status = 'active' AND p.property_type = '{}'",
             pt.replace('\'', "''")
         )
     } else {
-        "SELECT COUNT(*) FROM listings p WHERE p.status = 'active'".to_string()
+        "SELECT COUNT(*) FROM properties p WHERE p.status = 'active'".to_string()
     };
     let total: i64 = sqlx::query_scalar(&count_sql)
         .fetch_one(&app_state.db)
@@ -354,7 +355,7 @@ pub async fn get_property_by_id(
     };
 
     // Increment views_count
-    let _ = sqlx::query("UPDATE listings SET views_count = views_count + 1 WHERE id = $1")
+    let _ = sqlx::query("UPDATE properties SET views_count = views_count + 1 WHERE id = $1")
         .bind(property_id)
         .execute(&app_state.db)
         .await;
@@ -661,7 +662,7 @@ pub async fn delete_property(
     };
 
     let owner: Option<Uuid> = match sqlx::query_scalar(
-        "SELECT user_id FROM listings WHERE id = $1 AND status != 'deleted'",
+        "SELECT user_id FROM properties WHERE id = $1 AND status != 'deleted'",
     )
     .bind(property_id)
     .fetch_optional(&app_state.db)
@@ -935,13 +936,13 @@ pub async fn like_property(
         .execute(&app_state.db)
         .await;
 
-        let _ = sqlx::query("UPDATE listings SET likes_count = likes_count + 1 WHERE id = $1")
+        let _ = sqlx::query("UPDATE properties SET likes_count = likes_count + 1 WHERE id = $1")
             .bind(property_id)
             .execute(&app_state.db)
             .await;
     }
 
-    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM listings WHERE id = $1")
+    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM properties WHERE id = $1")
         .bind(property_id)
         .fetch_one(&app_state.db)
         .await
@@ -991,7 +992,7 @@ pub async fn unlike_property(
     if let Ok(r) = result {
         if r.rows_affected() > 0 {
             let _ = sqlx::query(
-                "UPDATE listings SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1",
+                "UPDATE properties SET likes_count = GREATEST(likes_count - 1, 0) WHERE id = $1",
             )
             .bind(property_id)
             .execute(&app_state.db)
@@ -999,7 +1000,7 @@ pub async fn unlike_property(
         }
     }
 
-    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM listings WHERE id = $1")
+    let likes_count: i32 = sqlx::query_scalar("SELECT likes_count FROM properties WHERE id = $1")
         .bind(property_id)
         .fetch_one(&app_state.db)
         .await
@@ -1130,7 +1131,7 @@ pub async fn report_property(
     };
 
     let exists: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM listings WHERE id = $1 AND status != 'deleted'")
+        sqlx::query_scalar("SELECT id FROM properties WHERE id = $1 AND status != 'deleted'")
             .bind(property_id)
             .fetch_optional(&app_state.db)
             .await
@@ -1188,22 +1189,27 @@ pub async fn get_saved_properties(
     let limit = params.limit.unwrap_or(20).min(100);
     let offset = params.offset.unwrap_or(0);
 
-    // $1 = caller (is_saved, always true here), $2 = user_id for saved join, $3/$4 = limit/offset
+    // $1 = caller (is_saved, always true here), $2 = limit, $3 = offset
     let sql = r#"
         SELECT
-            p.id, p.title, p.description, p.property_type, p.price, p.deposit,
-            p.location, p.area_sqft, p.bedrooms, p.bathrooms, p.furnishing,
-            p.floor, p.total_floors, p.age_years, p.facing, p.parking, p.parking_count,
-            p.images, p.video_url, p.amenities, p.nearby_places, p.latitude, p.longitude,
+            p.id, p.title, p.description, p.property_type, p.price,
+            p.city AS location, p.locality, p.area_sqft, p.bhk AS bedrooms, p.bathrooms,
+            p.no_of_toilets, p.no_of_balconies, p.furnishing,
+            p.images, p.primary_image, p.amenities,
+            p.lat AS latitude, p.lng AS longitude,
             p.is_featured, p.is_verified, p.views_count, p.likes_count,
             p.status, p.user_id, p.created_at, p.updated_at,
-            u.first_name, u.last_name, u.phone_no, u.profile_image,
-            true AS is_saved
-        FROM saved_listings sl
-        JOIN listings p ON sl.listing_id = p.id
+            u.first_name, u.last_name, u.phone_no, u.profile_image_url AS profile_image,
+            true AS is_saved,
+            EXISTS(
+                SELECT 1 FROM property_likes pl
+                WHERE pl.property_id = p.id AND pl.user_id = $1
+            ) AS is_liked
+        FROM saved_properties sp
+        JOIN properties p ON sp.property_id = p.id
         LEFT JOIN users u ON p.user_id = u.id
-        WHERE sl.user_id = $1 AND p.status != 'deleted'
-        ORDER BY sl.created_at DESC
+        WHERE sp.user_id = $1 AND p.status != 'deleted'
+        ORDER BY sp.created_at DESC
         LIMIT $2 OFFSET $3
     "#;
 
@@ -1224,7 +1230,7 @@ pub async fn get_saved_properties(
     };
 
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM saved_listings sl JOIN listings p ON sl.listing_id = p.id WHERE sl.user_id = $1 AND p.status != 'deleted'"
+        "SELECT COUNT(*) FROM saved_properties sp JOIN properties p ON sp.property_id = p.id WHERE sp.user_id = $1 AND p.status != 'deleted'"
     )
     .bind(user_id)
     .fetch_one(&app_state.db)
