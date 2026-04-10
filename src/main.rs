@@ -67,6 +67,14 @@ async fn main() {
         panic!("Could not connect to Postgres");
     });
 
+    // ————————————— Running Migrations —————————————
+    log::info!("Running database migrations...");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run database migrations");
+    log::info!("Database migrations applied successfully.");
+
     // ———————————— Wire up repository & service ————————————
     let user_repo = UserRepository::new(pool.clone());
     let user_svc = UserService::new(user_repo);
