@@ -14,5 +14,5 @@ CREATE TABLE IF NOT EXISTS expo_events (
     created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_expo_events_location ON expo_events (location);
-CREATE INDEX idx_expo_events_event_date ON expo_events (event_date);
+CREATE INDEX IF NOT EXISTS idx_expo_events_location ON expo_events (location);
+CREATE INDEX IF NOT EXISTS idx_expo_events_event_date ON expo_events (event_date);

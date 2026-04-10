@@ -1,1 +1,1 @@
-ALTER TABLE listings DROP COLUMN user_type;
+ALTER TABLE listings DROP COLUMN IF EXISTS user_type;

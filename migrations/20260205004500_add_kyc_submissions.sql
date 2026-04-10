@@ -1,8 +1,17 @@
 -- Add migration script here
-CREATE TYPE kyc_doc_type AS ENUM ('AADHAAR', 'PAN', 'PASSPORT', 'OTHER');
-CREATE TYPE kyc_status AS ENUM ('PENDING', 'VERIFIED', 'REJECTED', 'PENDING_REVIEW');
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kyc_doc_type') THEN
+        CREATE TYPE kyc_doc_type AS ENUM ('AADHAAR', 'PAN', 'PASSPORT', 'OTHER');
+    END IF;
+END $$;
 
-CREATE TABLE kyc_submissions (
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kyc_status') THEN
+        CREATE TYPE kyc_status AS ENUM ('PENDING', 'VERIFIED', 'REJECTED', 'PENDING_REVIEW');
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS kyc_submissions (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     email TEXT NOT NULL,
@@ -20,4 +29,4 @@ CREATE TABLE kyc_submissions (
 );
 
 -- Index for faster lookups by user (one user might have multiple attempts)
-CREATE INDEX idx_kyc_submissions_user_id ON kyc_submissions(user_id);
+CREATE INDEX IF NOT EXISTS idx_kyc_submissions_user_id ON kyc_submissions(user_id);
