@@ -11,5 +11,5 @@ CREATE TABLE IF NOT EXISTS expo_registrations (
     UNIQUE (expo_id, user_id)
 );
 
-CREATE INDEX idx_expo_registrations_expo_id ON expo_registrations (expo_id);
-CREATE INDEX idx_expo_registrations_user_id ON expo_registrations (user_id);
+CREATE INDEX IF NOT EXISTS idx_expo_registrations_expo_id ON expo_registrations (expo_id);
+CREATE INDEX IF NOT EXISTS idx_expo_registrations_user_id ON expo_registrations (user_id);

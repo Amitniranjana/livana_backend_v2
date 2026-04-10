@@ -1,11 +1,18 @@
 -- Migration: Create KYC submissions table (new schema matching API doc)
 -- Generated: 20260228162800
 
--- Drop old table if it exists (only if schema was not in use)
--- DROP TABLE IF EXISTS kyc_submissions;
+-- Drop old KYC table (created by earlier migration 20260205004500 with incompatible schema)
+-- The old table had columns like: status (enum), s3_bucket, s3_key, file_sha256, etc.
+-- The new schema is completely different, so we drop and recreate.
+DROP TABLE IF EXISTS kyc_uploads CASCADE;
+DROP TABLE IF EXISTS kyc_submissions CASCADE;
+
+-- Drop old enum types from the earlier migration if they exist
+DROP TYPE IF EXISTS kyc_status CASCADE;
+DROP TYPE IF EXISTS kyc_doc_type CASCADE;
 
 -- KYC Submissions Table
-CREATE TABLE IF NOT EXISTS kyc_submissions (
+CREATE TABLE kyc_submissions (
     -- Primary
     id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id                     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -63,13 +70,12 @@ CREATE TABLE IF NOT EXISTS kyc_submissions (
     CONSTRAINT uq_kyc_user_id UNIQUE (user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_kyc_submissions_user_id   ON kyc_submissions(user_id);
-ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'pending';
-CREATE INDEX IF NOT EXISTS idx_kyc_submissions_status    ON kyc_submissions(verification_status);
-CREATE INDEX IF NOT EXISTS idx_kyc_submissions_submitted ON kyc_submissions(submitted_at DESC);
+CREATE INDEX idx_kyc_submissions_user_id   ON kyc_submissions(user_id);
+CREATE INDEX idx_kyc_submissions_status    ON kyc_submissions(verification_status);
+CREATE INDEX idx_kyc_submissions_submitted ON kyc_submissions(submitted_at DESC);
 
 -- KYC Uploads Table (tracks files uploaded via /api/kyc/upload/*)
-CREATE TABLE IF NOT EXISTS kyc_uploads (
+CREATE TABLE kyc_uploads (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     file_type   VARCHAR(50)  NOT NULL,   -- "profile" | "id_document" | "experience"
@@ -82,4 +88,4 @@ CREATE TABLE IF NOT EXISTS kyc_uploads (
     deleted_at  TIMESTAMPTZ             -- soft delete
 );
 
-CREATE INDEX IF NOT EXISTS idx_kyc_uploads_user_id ON kyc_uploads(user_id);
+CREATE INDEX idx_kyc_uploads_user_id ON kyc_uploads(user_id);

@@ -1,1 +1,1 @@
-ALTER TABLE listings ADD COLUMN user_type VARCHAR(50);
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS user_type VARCHAR(50);
