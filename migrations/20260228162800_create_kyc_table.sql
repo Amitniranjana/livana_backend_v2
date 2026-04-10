@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS kyc_submissions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_kyc_submissions_user_id   ON kyc_submissions(user_id);
+ALTER TABLE kyc_submissions ADD COLUMN IF NOT EXISTS verification_status VARCHAR(30) DEFAULT 'pending';
 CREATE INDEX IF NOT EXISTS idx_kyc_submissions_status    ON kyc_submissions(verification_status);
 CREATE INDEX IF NOT EXISTS idx_kyc_submissions_submitted ON kyc_submissions(submitted_at DESC);
 
