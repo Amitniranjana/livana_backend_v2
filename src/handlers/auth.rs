@@ -643,25 +643,114 @@ pub async fn send_forgot_password_link(
     State(app_state): State<AppState>,
     ExtractJson(payload): ExtractJson<ForgotPasswordRequest>,
 ) -> impl IntoResponse {
-    // 1. Find user by email
-    let user = match app_state.user_service.find_by_email(&payload.email).await {
-        Ok(Some(user)) => user,
-        Ok(None) => {
+    // Helper: detect if a string looks like a phone number
+    let looks_like_phone = |s: &str| -> bool {
+        let trimmed = s.trim();
+        trimmed.starts_with('+') || trimmed.chars().all(|c| c.is_ascii_digit())
+    };
+
+    // 1. Find user by email OR phone (auto-detect phone numbers in email field)
+    let user = if let Some(ref email_val) = payload.email {
+        if !email_val.is_empty() {
+            if looks_like_phone(email_val) {
+                // The "email" field actually contains a phone number
+                match app_state.user_service.find_by_phone(email_val).await {
+                    Ok(Some(user)) => user,
+                    Ok(None) => {
+                        let response = json!({
+                            "success": false,
+                            "message": "User not found with this phone number",
+                            "data": null
+                        });
+                        return (StatusCode::NOT_FOUND, Json(response));
+                    }
+                    Err(e) => {
+                        let response = json!({
+                            "success": false,
+                            "message": format!("Failed to find user: {}", e),
+                            "data": null
+                        });
+                        return (StatusCode::BAD_REQUEST, Json(response));
+                    }
+                }
+            } else {
+                // It's a real email
+                match app_state.user_service.find_by_email(email_val).await {
+                    Ok(Some(user)) => user,
+                    Ok(None) => {
+                        let response = json!({
+                            "success": false,
+                            "message": "User not found with this email",
+                            "data": null
+                        });
+                        return (StatusCode::NOT_FOUND, Json(response));
+                    }
+                    Err(e) => {
+                        let response = json!({
+                            "success": false,
+                            "message": format!("Failed to find user: {}", e),
+                            "data": null
+                        });
+                        return (StatusCode::BAD_REQUEST, Json(response));
+                    }
+                }
+            }
+        } else if let Some(ref phone) = payload.phone_no {
+            // email is empty, try phone_no field
+            match app_state.user_service.find_by_phone(phone).await {
+                Ok(Some(user)) => user,
+                Ok(None) => {
+                    let response = json!({
+                        "success": false,
+                        "message": "User not found with this phone number",
+                        "data": null
+                    });
+                    return (StatusCode::NOT_FOUND, Json(response));
+                }
+                Err(e) => {
+                    let response = json!({
+                        "success": false,
+                        "message": format!("Failed to find user: {}", e),
+                        "data": null
+                    });
+                    return (StatusCode::BAD_REQUEST, Json(response));
+                }
+            }
+        } else {
             let response = json!({
                 "success": false,
-                "message": "User not found with this email",
-                "data": null
-            });
-            return (StatusCode::NOT_FOUND, Json(response));
-        }
-        Err(e) => {
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to find user: {}", e),
+                "message": "Either email or phoneNo must be provided",
                 "data": null
             });
             return (StatusCode::BAD_REQUEST, Json(response));
         }
+    } else if let Some(ref phone) = payload.phone_no {
+        match app_state.user_service.find_by_phone(phone).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                let response = json!({
+                    "success": false,
+                    "message": "User not found with this phone number",
+                    "data": null
+                });
+                return (StatusCode::NOT_FOUND, Json(response));
+            }
+            Err(e) => {
+                let response = json!({
+                    "success": false,
+                    "message": format!("Failed to find user: {}", e),
+                    "data": null
+                });
+                return (StatusCode::BAD_REQUEST, Json(response));
+            }
+        }
+    } else {
+        let response = json!({
+            "success": false,
+            "message": "Either email or phoneNo must be provided",
+            "data": null
+        });
+        return (StatusCode::BAD_REQUEST, Json(response));
     };
 
     // 2. Generate 6-digit numeric OTP for password reset
