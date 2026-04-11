@@ -71,9 +71,12 @@ pub struct UpdateAssociateTypeRequest {
 }
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ForgotPasswordRequest {
     #[schema(example = "john.doe@example.com")]
-    pub email: String,
+    pub email: Option<String>,
+    #[schema(example = "+919876543210")]
+    pub phone_no: Option<String>,
 }
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
