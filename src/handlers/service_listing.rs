@@ -110,7 +110,7 @@ pub async fn add_service(
         FROM users
         WHERE id = $4
         ON CONFLICT (id) DO NOTHING
-        "#
+        "#,
     )
     .bind(&body.description)
     .bind(&body.category)
@@ -118,7 +118,12 @@ pub async fn add_service(
     .bind(provider_id)
     .execute(&app_state.db)
     .await
-    .map_err(|e| println!("[Service Adding] Failed to auto-sync carecrew_providers: {}", e));
+    .map_err(|e| {
+        println!(
+            "[Service Adding] Failed to auto-sync carecrew_providers: {}",
+            e
+        )
+    });
 
     let response = ApiResponse {
         success: true,

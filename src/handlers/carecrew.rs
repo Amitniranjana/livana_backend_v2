@@ -386,12 +386,13 @@ pub async fn update_booking_status(
     };
 
     match carecrew_service::update_booking_status(
-        &app_state.db, 
-        booking_id, 
+        &app_state.db,
+        booking_id,
         &payload.status,
         payload.notes.as_deref(),
         payload.estimated_cost,
-    ).await
+    )
+    .await
     {
         Ok(booking) => (
             StatusCode::OK,
@@ -639,7 +640,15 @@ pub async fn get_user_bookings(
     let offset = q.offset.unwrap_or(0).max(0);
     let page = (offset / limit) + 1;
 
-    match carecrew_service::get_user_bookings(&app_state.db, user_id, q.status.as_deref(), page, limit).await {
+    match carecrew_service::get_user_bookings(
+        &app_state.db,
+        user_id,
+        q.status.as_deref(),
+        page,
+        limit,
+    )
+    .await
+    {
         Ok(data) => (
             StatusCode::OK,
             Json(json!({
@@ -728,7 +737,15 @@ pub async fn get_provider_bookings_v2(
     // Determine provider_id. Currently, a provider's user_id maps to provider_id in our logic (due to get_provider_by_id OR clause).
     // Let's use the authenticated user's ID as the provider ID. If they want this to be separate, they would query by their provider_id.
     // In LivanaEco, `user_id` of the logged-in provider is the identifier we have.
-    match carecrew_service::get_provider_bookings_v2(&app_state.db, user_id, q.status.as_deref(), page, limit).await {
+    match carecrew_service::get_provider_bookings_v2(
+        &app_state.db,
+        user_id,
+        q.status.as_deref(),
+        page,
+        limit,
+    )
+    .await
+    {
         Ok(data) => (
             StatusCode::OK,
             Json(json!({

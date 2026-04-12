@@ -280,13 +280,12 @@ impl UserRepository {
         associate_type: &str,
     ) -> Result<(), String> {
         let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
-        let result = sqlx::query(
-            "UPDATE users SET associate_type = $2, updated_at = NOW() WHERE id = $1",
-        )
-        .bind(uuid)
-        .bind(associate_type)
-        .execute(&self.pool)
-        .await;
+        let result =
+            sqlx::query("UPDATE users SET associate_type = $2, updated_at = NOW() WHERE id = $1")
+                .bind(uuid)
+                .bind(associate_type)
+                .execute(&self.pool)
+                .await;
 
         match result {
             Ok(_) => Ok(()),
@@ -302,10 +301,11 @@ impl UserRepository {
         expires_minutes: i64,
     ) -> Result<(), String> {
         // Invalidate existing OTPs for this phone
-        let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE phone_no = $1 AND used = FALSE")
-            .bind(phone_no)
-            .execute(&self.pool)
-            .await;
+        let _ =
+            sqlx::query("UPDATE otp_records SET used = TRUE WHERE phone_no = $1 AND used = FALSE")
+                .bind(phone_no)
+                .execute(&self.pool)
+                .await;
 
         let id = uuid::Uuid::new_v4();
         let expires_at = chrono::Utc::now() + chrono::Duration::minutes(expires_minutes);
@@ -394,15 +394,18 @@ impl UserRepository {
     }
 
     /// Update a user's password hash in the database.
-    pub async fn update_password(&self, user_id: &str, new_password_hash: &str) -> Result<(), String> {
+    pub async fn update_password(
+        &self,
+        user_id: &str,
+        new_password_hash: &str,
+    ) -> Result<(), String> {
         let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
-        let result = sqlx::query(
-            "UPDATE users SET password = $2, updated_at = NOW() WHERE id = $1",
-        )
-        .bind(uuid)
-        .bind(new_password_hash)
-        .execute(&self.pool)
-        .await;
+        let result =
+            sqlx::query("UPDATE users SET password = $2, updated_at = NOW() WHERE id = $1")
+                .bind(uuid)
+                .bind(new_password_hash)
+                .execute(&self.pool)
+                .await;
 
         match result {
             Ok(_) => Ok(()),
@@ -410,4 +413,3 @@ impl UserRepository {
         }
     }
 }
-

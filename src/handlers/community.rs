@@ -1,6 +1,7 @@
 // src/handlers/community.rs
 //
 // Module 8: Community APIs
+//   8.0  GET /api/v1/communities            — List communities
 //   8.1  POST /api/v1/communities           — Create community
 //   8.2  POST /api/v1/communities/{id}/join  — Join community
 //   8.3  POST /api/v1/communities/{id}/posts — Post in community
@@ -219,4 +220,37 @@ pub async fn create_community_post(
     };
 
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// 8.0  GET /api/v1/communities — List all communities
+// ---------------------------------------------------------------------------
+
+pub async fn get_communities(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+) -> Result<impl IntoResponse, ApiError> {
+    // We just verify the user is properly authenticated (even if not strictly used in the query yet)
+    let _user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    let communities = sqlx::query_as!(
+        CommunityResponseDto,
+        r#"
+        SELECT id, name, description, created_by, created_at
+        FROM communities
+        ORDER BY created_at DESC
+        "#
+    )
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Communities fetched successfully".to_string(),
+        data: communities,
+    };
+
+    Ok((StatusCode::OK, Json(response)))
 }

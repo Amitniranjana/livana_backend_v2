@@ -128,7 +128,7 @@ pub async fn get_provider_by_id(
         Some(ref r) => {
             let base = provider_row_to_json(r);
             let provider_id = r.try_get::<Uuid, _>("id").unwrap_or(id);
-            
+
             // Fetch hourly rate and experience from the services table
             let svc_row = sqlx::query(
                 "SELECT price::FLOAT8 as price, experience::TEXT as experience FROM services WHERE provider_id = $1 LIMIT 1"
@@ -201,15 +201,17 @@ pub async fn create_booking(
     let p_row_opt = repo::get_provider_by_id(db, provider_id)
         .await
         .map_err(BookingCreateError::DbError)?;
-    
+
     let p_row = match p_row_opt {
         Some(row) => row,
         None => return Err(BookingCreateError::ProviderNotFound),
     };
-    
+
     // Override provider_id with the actual provider's PK
     provider_id = p_row.try_get::<Uuid, _>("id").unwrap_or(provider_id);
-    let service_type: String = p_row.try_get::<String, _>("service_type").unwrap_or_default();
+    let service_type: String = p_row
+        .try_get::<String, _>("service_type")
+        .unwrap_or_default();
 
     // 2. Check if the exact service_id exists first (this will lazily sync from the services table if needed)
     let s_exists = repo::service_exists(db, service_id)
@@ -218,7 +220,9 @@ pub async fn create_booking(
 
     if !s_exists {
         // Fallback: Resolve the matching service by name (to fix Flutter 404 Service Not Found issues for stale/bad uuids)
-        if let Ok(Some(resolved_service_id)) = repo::resolve_service_by_name(db, &service_type).await {
+        if let Ok(Some(resolved_service_id)) =
+            repo::resolve_service_by_name(db, &service_type).await
+        {
             service_id = resolved_service_id;
         } else {
             return Err(BookingCreateError::ServiceNotFound);
@@ -327,7 +331,7 @@ pub async fn get_user_bookings(
     limit: i32,
 ) -> Result<Value, sqlx::Error> {
     let (bookings, total_count) = repo::get_user_bookings(db, user_id, status, page, limit).await?;
-    
+
     let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i32;
     let total_pages = total_pages.max(1);
 
@@ -346,8 +350,9 @@ pub async fn get_provider_bookings_v2(
     page: i32,
     limit: i32,
 ) -> Result<Value, sqlx::Error> {
-    let (bookings, total_count) = repo::get_provider_bookings_v2(db, provider_id, status, page, limit).await?;
-    
+    let (bookings, total_count) =
+        repo::get_provider_bookings_v2(db, provider_id, status, page, limit).await?;
+
     let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i32;
     let total_pages = total_pages.max(1);
 

@@ -192,14 +192,12 @@ pub async fn unblock_user(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // Delete from blocked_users
-    sqlx::query(
-        "DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2"
-    )
-    .bind(blocker_id)
-    .bind(blocked_user_id)
-    .execute(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to unblock user: {}", e)))?;
+    sqlx::query("DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2")
+        .bind(blocker_id)
+        .bind(blocked_user_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to unblock user: {}", e)))?;
 
     let response = ApiResponse {
         success: true,
@@ -222,14 +220,12 @@ pub async fn unarchive_chat(
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
-    sqlx::query(
-        "DELETE FROM archived_chats WHERE user_id = $1 AND chat_id = $2"
-    )
-    .bind(user_id)
-    .bind(chat_id)
-    .execute(&app_state.db)
-    .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to unarchive chat: {}", e)))?;
+    sqlx::query("DELETE FROM archived_chats WHERE user_id = $1 AND chat_id = $2")
+        .bind(user_id)
+        .bind(chat_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to unarchive chat: {}", e)))?;
 
     let response = ApiResponse {
         success: true,

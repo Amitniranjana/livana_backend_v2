@@ -60,7 +60,17 @@ pub async fn get_notifications(
     let notifications: Vec<NotificationDto> = rows
         .into_iter()
         .map(
-            |(id, title, message, notification_type, is_read, related_entity_id, related_entity_type, action_status, created_at)| NotificationDto {
+            |(
+                id,
+                title,
+                message,
+                notification_type,
+                is_read,
+                related_entity_id,
+                related_entity_type,
+                action_status,
+                created_at,
+            )| NotificationDto {
                 id,
                 title,
                 message,

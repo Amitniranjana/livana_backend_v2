@@ -567,7 +567,7 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = &payload.location {
-        qb.push(", city = ");           // location maps to city
+        qb.push(", city = "); // location maps to city
         qb.push_bind(v);
     }
     if let Some(v) = payload.area_sqft {
@@ -575,7 +575,7 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = payload.bedrooms {
-        qb.push(", bhk = ");           // bedrooms maps to bhk
+        qb.push(", bhk = "); // bedrooms maps to bhk
         qb.push_bind(v);
     }
     if let Some(v) = payload.bathrooms {
@@ -595,11 +595,11 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = payload.latitude {
-        qb.push(", lat = ");           // latitude maps to lat
+        qb.push(", lat = "); // latitude maps to lat
         qb.push_bind(v);
     }
     if let Some(v) = payload.longitude {
-        qb.push(", lng = ");           // longitude maps to lng
+        qb.push(", lng = "); // longitude maps to lng
         qb.push_bind(v);
     }
     if let Some(v) = &payload.status {
@@ -1095,13 +1095,14 @@ pub async fn save_property(
         }
     };
 
-    let already: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM saved_properties WHERE property_id = $1 AND user_id = $2")
-            .bind(property_id)
-            .bind(user_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .unwrap_or(None);
+    let already: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM saved_properties WHERE property_id = $1 AND user_id = $2",
+    )
+    .bind(property_id)
+    .bind(user_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .unwrap_or(None);
 
     if already.is_none() {
         let _ = sqlx::query(

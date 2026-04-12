@@ -1,4 +1,4 @@
-use jsonwebtoken::{encode, Header, EncodingKey};
+use jsonwebtoken::{EncodingKey, Header, encode};
 use reqwest::Client;
 use serde_json::json;
 
@@ -13,13 +13,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(secret.as_bytes())
+        &EncodingKey::from_secret(secret.as_bytes()),
     )?;
 
     println!("Token generated: {}", token);
 
     let client = Client::new();
-    let res = client.post("http://localhost:9090/api/visits")
+    let res = client
+        .post("http://localhost:9090/api/visits")
         .header("Authorization", format!("Bearer {}", token))
         .json(&json!({
             "property_id": "44089683-d723-40d0-ac58-a267c7055cec",

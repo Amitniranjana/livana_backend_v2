@@ -177,7 +177,11 @@ pub async fn create_booking(
         .map(|dt| dt.with_timezone(&chrono::Utc))
         .map_err(|_| sqlx::Error::Protocol("Invalid scheduled_at datetime format".into()))?;
 
-    let booking_number = format!("BKG{}{}", chrono::Utc::now().format("%Y%m%d"), &uuid::Uuid::new_v4().to_string()[0..6].to_uppercase());
+    let booking_number = format!(
+        "BKG{}{}",
+        chrono::Utc::now().format("%Y%m%d"),
+        &uuid::Uuid::new_v4().to_string()[0..6].to_uppercase()
+    );
 
     let mut tx = db.begin().await?;
 
@@ -206,7 +210,7 @@ pub async fn create_booking(
         r#"
         INSERT INTO carecrew_booking_tracking (booking_id, status, description)
         VALUES ($1, 'pending', 'Your booking has been placed successfully')
-        "#
+        "#,
     )
     .bind(id)
     .execute(&mut *tx)
@@ -244,7 +248,11 @@ pub async fn update_booking_status(
         query.push_str(", notes = $3");
     }
     if estimated_cost.is_some() {
-        query.push_str(if notes.is_some() { ", estimated_cost = $4" } else { ", estimated_cost = $3" });
+        query.push_str(if notes.is_some() {
+            ", estimated_cost = $4"
+        } else {
+            ", estimated_cost = $3"
+        });
     }
     query.push_str(" WHERE id = $2 RETURNING *");
 
@@ -262,7 +270,7 @@ pub async fn update_booking_status(
         r#"
         INSERT INTO carecrew_booking_tracking (booking_id, status, description)
         VALUES ($1, $2, $3)
-        "#
+        "#,
     )
     .bind(id)
     .bind(new_status)
@@ -332,14 +340,14 @@ pub async fn service_exists(db: &Pool<Postgres>, service_id: Uuid) -> Result<boo
     .bind(service_id)
     .fetch_one(db)
     .await?;
-    
+
     if row.get::<i64, _>("total") > 0 {
         return Ok(true);
     }
-    
+
     // 2. Fallback: check if it exists in 'services'
     let service_row_opt = sqlx::query(
-        "SELECT id, service_name, category, description FROM services WHERE id = $1 LIMIT 1"
+        "SELECT id, service_name, category, description FROM services WHERE id = $1 LIMIT 1",
     )
     .bind(service_id)
     .fetch_optional(db)
@@ -364,9 +372,12 @@ pub async fn service_exists(db: &Pool<Postgres>, service_id: Uuid) -> Result<boo
 }
 
 /// Resolves a service ID by its name (service_type) to auto-correct mismatched UUIDs
-pub async fn resolve_service_by_name(db: &Pool<Postgres>, service_name: &str) -> Result<Option<Uuid>, sqlx::Error> {
+pub async fn resolve_service_by_name(
+    db: &Pool<Postgres>,
+    service_name: &str,
+) -> Result<Option<Uuid>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id FROM carecrew_services WHERE name ILIKE $1 AND is_active = true LIMIT 1"
+        "SELECT id FROM carecrew_services WHERE name ILIKE $1 AND is_active = true LIMIT 1",
     )
     .bind(service_name)
     .fetch_optional(db)
@@ -378,11 +389,17 @@ pub async fn resolve_service_by_name(db: &Pool<Postgres>, service_name: &str) ->
 // Endpoints 33, 34, 35 Implementation
 // ──────────────────────────────────────────────────────────────────────────────
 
-use crate::models::carecrew::{UserBookingResponse, ProviderBookingResponse};
+use crate::models::carecrew::{ProviderBookingResponse, UserBookingResponse};
 
-pub async fn get_user_bookings(db: &Pool<Postgres>, user_id: Uuid, status: Option<&str>, page: i32, limit: i32) -> Result<(Vec<UserBookingResponse>, i64), sqlx::Error> {
+pub async fn get_user_bookings(
+    db: &Pool<Postgres>,
+    user_id: Uuid,
+    status: Option<&str>,
+    page: i32,
+    limit: i32,
+) -> Result<(Vec<UserBookingResponse>, i64), sqlx::Error> {
     let offset = ((page - 1) * limit) as i64;
-    
+
     let base_query = "
         SELECT b.id as booking_id, b.booking_number, p.id as provider_id, p.name as provider_name, p.avatar_url as provider_image, 
                s.name as service_type, b.scheduled_at::text as scheduled_date_time, b.status, b.address, b.estimated_cost, b.created_at::text as created_at
@@ -390,29 +407,61 @@ pub async fn get_user_bookings(db: &Pool<Postgres>, user_id: Uuid, status: Optio
         JOIN carecrew_providers p ON b.provider_id = p.id
         JOIN carecrew_services s ON b.service_id = s.id
         WHERE b.user_id = $1";
-        
+
     let count_query = "SELECT COUNT(*) as total FROM carecrew_bookings WHERE user_id = $1";
 
     let (rows, total): (Vec<UserBookingResponse>, i64) = if let Some(st) = status {
-        let q = format!("{} AND b.status = $2 ORDER BY b.created_at DESC LIMIT $3 OFFSET $4", base_query);
+        let q = format!(
+            "{} AND b.status = $2 ORDER BY b.created_at DESC LIMIT $3 OFFSET $4",
+            base_query
+        );
         let count_q = format!("{} AND status = $2", count_query);
-        
-        let t = sqlx::query(&count_q).bind(user_id).bind(st).fetch_one(db).await?.get("total");
-        let r = sqlx::query_as::<_, UserBookingResponse>(&q).bind(user_id).bind(st).bind(limit as i64).bind(offset).fetch_all(db).await?;
+
+        let t = sqlx::query(&count_q)
+            .bind(user_id)
+            .bind(st)
+            .fetch_one(db)
+            .await?
+            .get("total");
+        let r = sqlx::query_as::<_, UserBookingResponse>(&q)
+            .bind(user_id)
+            .bind(st)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
         (r, t)
     } else {
-        let q = format!("{} ORDER BY b.created_at DESC LIMIT $2 OFFSET $3", base_query);
-        let t = sqlx::query(count_query).bind(user_id).fetch_one(db).await?.get("total");
-        let r = sqlx::query_as::<_, UserBookingResponse>(&q).bind(user_id).bind(limit as i64).bind(offset).fetch_all(db).await?;
+        let q = format!(
+            "{} ORDER BY b.created_at DESC LIMIT $2 OFFSET $3",
+            base_query
+        );
+        let t = sqlx::query(count_query)
+            .bind(user_id)
+            .fetch_one(db)
+            .await?
+            .get("total");
+        let r = sqlx::query_as::<_, UserBookingResponse>(&q)
+            .bind(user_id)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
         (r, t)
     };
-    
+
     Ok((rows, total))
 }
 
-pub async fn get_provider_bookings_v2(db: &Pool<Postgres>, provider_id: Uuid, status: Option<&str>, page: i32, limit: i32) -> Result<(Vec<ProviderBookingResponse>, i64), sqlx::Error> {
+pub async fn get_provider_bookings_v2(
+    db: &Pool<Postgres>,
+    provider_id: Uuid,
+    status: Option<&str>,
+    page: i32,
+    limit: i32,
+) -> Result<(Vec<ProviderBookingResponse>, i64), sqlx::Error> {
     let offset = ((page - 1) * limit) as i64;
-    
+
     let base_query = "
         SELECT b.id as booking_id, b.booking_number, u.first_name || ' ' || u.last_name as customer_name, u.phone_no as customer_phone, u.profile_picture as customer_image,
                s.name as service_type, b.scheduled_at::text as scheduled_date_time, b.status, b.address, b.problem_description, b.estimated_cost, b.created_at::text as created_at
@@ -420,29 +469,58 @@ pub async fn get_provider_bookings_v2(db: &Pool<Postgres>, provider_id: Uuid, st
         JOIN users u ON b.user_id = u.id
         JOIN carecrew_services s ON b.service_id = s.id
         WHERE b.provider_id = $1";
-        
+
     let count_query = "SELECT COUNT(*) as total FROM carecrew_bookings WHERE provider_id = $1";
 
     let (rows, total): (Vec<ProviderBookingResponse>, i64) = if let Some(st) = status {
-        let q = format!("{} AND b.status = $2 ORDER BY b.created_at DESC LIMIT $3 OFFSET $4", base_query);
+        let q = format!(
+            "{} AND b.status = $2 ORDER BY b.created_at DESC LIMIT $3 OFFSET $4",
+            base_query
+        );
         let count_q = format!("{} AND status = $2", count_query);
-        
-        let t = sqlx::query(&count_q).bind(provider_id).bind(st).fetch_one(db).await?.get("total");
-        let r = sqlx::query_as::<_, ProviderBookingResponse>(&q).bind(provider_id).bind(st).bind(limit as i64).bind(offset).fetch_all(db).await?;
+
+        let t = sqlx::query(&count_q)
+            .bind(provider_id)
+            .bind(st)
+            .fetch_one(db)
+            .await?
+            .get("total");
+        let r = sqlx::query_as::<_, ProviderBookingResponse>(&q)
+            .bind(provider_id)
+            .bind(st)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
         (r, t)
     } else {
-        let q = format!("{} ORDER BY b.created_at DESC LIMIT $2 OFFSET $3", base_query);
-        let t = sqlx::query(count_query).bind(provider_id).fetch_one(db).await?.get("total");
-        let r = sqlx::query_as::<_, ProviderBookingResponse>(&q).bind(provider_id).bind(limit as i64).bind(offset).fetch_all(db).await?;
+        let q = format!(
+            "{} ORDER BY b.created_at DESC LIMIT $2 OFFSET $3",
+            base_query
+        );
+        let t = sqlx::query(count_query)
+            .bind(provider_id)
+            .fetch_one(db)
+            .await?
+            .get("total");
+        let r = sqlx::query_as::<_, ProviderBookingResponse>(&q)
+            .bind(provider_id)
+            .bind(limit as i64)
+            .bind(offset)
+            .fetch_all(db)
+            .await?;
         (r, t)
     };
-    
+
     Ok((rows, total))
 }
 
-pub async fn get_booking_details(db: &Pool<Postgres>, booking_id: Uuid) -> Result<Option<crate::models::carecrew::BookingDetailsResponse>, sqlx::Error> {
+pub async fn get_booking_details(
+    db: &Pool<Postgres>,
+    booking_id: Uuid,
+) -> Result<Option<crate::models::carecrew::BookingDetailsResponse>, sqlx::Error> {
     use crate::models::carecrew::{BookingDetailsResponse, TrackingStatusDto};
-    
+
     let query = "
         SELECT b.id as booking_id, b.booking_number, p.id as provider_id, p.name as provider_name, p.phone as provider_phone, p.avatar_url as provider_image, p.rating as provider_rating,
                s.name as service_type, b.scheduled_at::text as scheduled_date_time, b.status, b.address, b.problem_description, b.contact_number, b.estimated_cost, b.final_cost, b.payment_status,
@@ -451,14 +529,17 @@ pub async fn get_booking_details(db: &Pool<Postgres>, booking_id: Uuid) -> Resul
         JOIN carecrew_providers p ON b.provider_id = p.id
         JOIN carecrew_services s ON b.service_id = s.id
         WHERE b.id = $1";
-        
-    let row_opt = sqlx::query(query).bind(booking_id).fetch_optional(db).await?;
-    
+
+    let row_opt = sqlx::query(query)
+        .bind(booking_id)
+        .fetch_optional(db)
+        .await?;
+
     let row = match row_opt {
         Some(r) => r,
-        None => return Ok(None)
+        None => return Ok(None),
     };
-    
+
     let tracking_rows = sqlx::query_as::<_, TrackingStatusDto>(
         "SELECT status, created_at::text as timestamp, description FROM carecrew_booking_tracking WHERE booking_id = $1 ORDER BY created_at ASC"
     ).bind(booking_id).fetch_all(db).await?;

@@ -90,7 +90,9 @@ pub async fn send_vibe(
         };
 
         let db = &app_state.db;
-        let sender_name = get_user_display_name(db, sender_id).await.unwrap_or_else(|_| "A user".to_string());
+        let sender_name = get_user_display_name(db, sender_id)
+            .await
+            .unwrap_or_else(|_| "A user".to_string());
 
         // Notify the target user
         if let Err(e) = create_notification(
@@ -193,8 +195,10 @@ pub async fn accept_vibe(
     .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
 
     use crate::utils::notification_chat_helper::{create_notification, get_user_display_name};
-    let target_name = get_user_display_name(&app_state.db, user_id).await.unwrap_or_else(|_| "A user".to_string());
-    
+    let target_name = get_user_display_name(&app_state.db, user_id)
+        .await
+        .unwrap_or_else(|_| "A user".to_string());
+
     // Notify the original sender
     if let Err(e) = create_notification(
         &app_state.db,
@@ -204,7 +208,9 @@ pub async fn accept_vibe(
         "VIBE_STATUS",
         Some(vibe_id),
         Some("VIBE"),
-    ).await {
+    )
+    .await
+    {
         println!("[Vibe] Failed to notify sender about accepted vibe: {}", e);
     }
 
@@ -275,8 +281,10 @@ pub async fn reject_vibe(
     .map_err(|e| println!("[Vibe] Failed to update notification action_status: {}", e));
 
     use crate::utils::notification_chat_helper::{create_notification, get_user_display_name};
-    let target_name = get_user_display_name(&app_state.db, user_id).await.unwrap_or_else(|_| "A user".to_string());
-    
+    let target_name = get_user_display_name(&app_state.db, user_id)
+        .await
+        .unwrap_or_else(|_| "A user".to_string());
+
     // Notify the original sender
     if let Err(e) = create_notification(
         &app_state.db,
@@ -286,7 +294,9 @@ pub async fn reject_vibe(
         "VIBE_STATUS",
         Some(vibe_id),
         Some("VIBE"),
-    ).await {
+    )
+    .await
+    {
         println!("[Vibe] Failed to notify sender about rejected vibe: {}", e);
     }
 
