@@ -135,16 +135,19 @@ pub async fn list_jobs(
         .map_err(|e| ApiError::InternalServerError(format!("Count query error: {}", e)))?;
 
     // Execute data query
-    let mut data_query = sqlx::query_as::<_, (
-        Uuid,
-        String,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        String,
-        chrono::DateTime<chrono::Utc>,
-    )>(&query_sql);
+    let mut data_query = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(&query_sql);
 
     if let Some(ref loc) = q.location {
         if !loc.is_empty() {
@@ -286,12 +289,11 @@ pub async fn edit_job(
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     // 1. Fetch the job and verify ownership
-    let job_owner: Option<(Uuid,)> =
-        sqlx::query_as("SELECT created_by FROM jobs WHERE id = $1")
-            .bind(job_id)
-            .fetch_optional(&app_state.db)
-            .await
-            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let job_owner: Option<(Uuid,)> = sqlx::query_as("SELECT created_by FROM jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     match job_owner {
         None => return Err(ApiError::NotFound("Job not found".to_string())),
@@ -302,9 +304,7 @@ pub async fn edit_job(
                     .bind(auth_user_id_uuid)
                     .fetch_optional(&app_state.db)
                     .await
-                    .map_err(|e| {
-                        ApiError::InternalServerError(format!("Database error: {}", e))
-                    })?;
+                    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
             let is_admin = user_role
                 .map(|(role,)| role.to_lowercase() == "admin")
@@ -523,4 +523,3 @@ pub async fn get_applicants(
 
     Ok((StatusCode::OK, Json(response)))
 }
-

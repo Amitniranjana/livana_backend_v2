@@ -85,7 +85,9 @@ pub async fn register_associate(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to register associate: {}", e)))?;
 
-    let gender = payload.gender.unwrap_or_else(|| "not_specified".to_string());
+    let gender = payload
+        .gender
+        .unwrap_or_else(|| "not_specified".to_string());
 
     // Optionally create profile with gender
     sqlx::query(

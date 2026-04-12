@@ -79,7 +79,11 @@ impl UserService {
         Ok(None)
     }
 
-    pub async fn update_password(&self, user_id: &str, new_password_hash: &str) -> Result<(), String> {
+    pub async fn update_password(
+        &self,
+        user_id: &str,
+        new_password_hash: &str,
+    ) -> Result<(), String> {
         self.user_repository
             .update_password(user_id, new_password_hash)
             .await

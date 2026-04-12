@@ -105,10 +105,7 @@ pub fn careers_routes() -> Router<AppState> {
     };
     Router::new()
         .route("/api/v1/jobs", post(post_job).get(list_jobs))
-        .route(
-            "/api/v1/jobs/{job_id}",
-            get(get_job_detail).put(edit_job),
-        )
+        .route("/api/v1/jobs/{job_id}", get(get_job_detail).put(edit_job))
         .route("/api/v1/jobs/{job_id}/apply", post(apply_job))
         .route("/api/v1/jobs/{job_id}/applicants", get(get_applicants))
 }
@@ -238,9 +235,14 @@ pub fn property_filter_routes() -> Router<AppState> {
 
 /// Community APIs (JWT-protected)
 pub fn community_routes() -> Router<AppState> {
-    use crate::handlers::community::{create_community, create_community_post, join_community};
+    use crate::handlers::community::{
+        create_community, create_community_post, get_communities, join_community,
+    };
     Router::new()
-        .route("/api/v1/communities", post(create_community))
+        .route(
+            "/api/v1/communities",
+            post(create_community).get(get_communities),
+        )
         .route("/api/v1/communities/{id}/join", post(join_community))
         .route(
             "/api/v1/communities/{id}/posts",
@@ -250,12 +252,20 @@ pub fn community_routes() -> Router<AppState> {
 
 /// Moderation APIs (JWT-protected)
 pub fn moderation_routes() -> Router<AppState> {
-    use crate::handlers::moderation::{archive_chat, block_user, report_entity, unarchive_chat, unblock_user};
+    use crate::handlers::moderation::{
+        archive_chat, block_user, report_entity, unarchive_chat, unblock_user,
+    };
     Router::new()
-        .route("/api/v1/users/{id}/block", post(block_user).delete(unblock_user))
+        .route(
+            "/api/v1/users/{id}/block",
+            post(block_user).delete(unblock_user),
+        )
         .route("/api/v1/users/{id}/unblock", post(unblock_user))
         .route("/api/v1/report", post(report_entity))
-        .route("/api/v1/chats/{id}/archive", post(archive_chat).delete(unarchive_chat))
+        .route(
+            "/api/v1/chats/{id}/archive",
+            post(archive_chat).delete(unarchive_chat),
+        )
         .route("/api/v1/chats/{id}/unarchive", post(unarchive_chat))
 }
 

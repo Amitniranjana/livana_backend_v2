@@ -19,7 +19,13 @@ pub fn chat_routes() -> Router<AppState> {
         .route("/api/v1/chats/upload", post(upload_chat_media))
         .route("/api/v1/chats/{chat_id}/messages", get(get_chat_messages))
         // ── Chime ARN-based message fetch (Flutter sends full ARN) ──
-        .route("/api/v1/chats/channel/messages", get(get_chat_messages_by_channel))
+        .route(
+            "/api/v1/chats/channel/messages",
+            get(get_chat_messages_by_channel),
+        )
         // ── Full ARN inside the Path (4 segments) ──
-        .route("/api/v1/chats/{arn_prefix}/{app_id}/channel/{channel_id}/messages", get(get_chat_messages_arn_path))
+        .route(
+            "/api/v1/chats/{arn_prefix}/{app_id}/channel/{channel_id}/messages",
+            get(get_chat_messages_arn_path),
+        )
 }

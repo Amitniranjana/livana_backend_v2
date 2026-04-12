@@ -53,12 +53,20 @@ pub async fn create_review(
 
     let booking_id = match Uuid::parse_str(&body.booking_id) {
         Ok(u) => u,
-        Err(_) => return Err(ApiError::BadRequest("Invalid booking_id format".to_string())),
+        Err(_) => {
+            return Err(ApiError::BadRequest(
+                "Invalid booking_id format".to_string(),
+            ));
+        }
     };
 
     let provider_id = match Uuid::parse_str(&body.provider_id) {
         Ok(u) => u,
-        Err(_) => return Err(ApiError::BadRequest("Invalid provider_id format".to_string())),
+        Err(_) => {
+            return Err(ApiError::BadRequest(
+                "Invalid provider_id format".to_string(),
+            ));
+        }
     };
 
     // 1. Check booking exists and is completed

@@ -211,17 +211,17 @@ pub async fn book_visit_handler(
         let user_name = get_user_display_name(db, user_id)
             .await
             .unwrap_or_else(|_| "A user".to_string());
-        let scheduled_str = body.scheduled_date_time.format("%d %b %Y, %I:%M %p").to_string();
+        let scheduled_str = body
+            .scheduled_date_time
+            .format("%d %b %Y, %I:%M %p")
+            .to_string();
 
         // Notify the provider (builder / landlord / broker)
         if let Err(e) = create_notification(
             db,
             body.provider_id,
             "New Visit Booking! 📅",
-            &format!(
-                "{} booked a site visit on {}",
-                user_name, scheduled_str
-            ),
+            &format!("{} booked a site visit on {}", user_name, scheduled_str),
             "BOOKING",
             Some(visit_id),
             Some("SITE_VISIT"),
@@ -236,10 +236,7 @@ pub async fn book_visit_handler(
             db,
             user_id,
             body.provider_id,
-            &format!(
-                "📅 {} booked a site visit for {}",
-                user_name, scheduled_str
-            ),
+            &format!("📅 {} booked a site visit for {}", user_name, scheduled_str),
         )
         .await
         {
@@ -519,7 +516,9 @@ pub async fn update_visit_status_handler(
                 .bind(visit_id)
                 .execute(&state.db)
                 .await
-                .map_err(|e| println!("[Visit] Failed to update notification action_status: {}", e));
+                .map_err(|e| {
+                    println!("[Visit] Failed to update notification action_status: {}", e)
+                });
             }
 
             // Notify the user about the status update
@@ -533,7 +532,12 @@ pub async fn update_visit_status_handler(
                 };
 
                 let msg = if body.status.as_str() == "cancelled" {
-                    format!("Your site visit was cancelled. Reason: {}", body.cancellation_reason.as_deref().unwrap_or("Not provided"))
+                    format!(
+                        "Your site visit was cancelled. Reason: {}",
+                        body.cancellation_reason
+                            .as_deref()
+                            .unwrap_or("Not provided")
+                    )
                 } else {
                     format!("Your site visit status was updated to '{}'", body.status)
                 };
@@ -546,8 +550,13 @@ pub async fn update_visit_status_handler(
                     "VISIT_STATUS_UPDATE",
                     Some(visit_id),
                     Some("SITE_VISIT"),
-                ).await {
-                    println!("[Visit] Failed to create notification for status update: {}", e);
+                )
+                .await
+                {
+                    println!(
+                        "[Visit] Failed to create notification for status update: {}",
+                        e
+                    );
                 }
             }
 
