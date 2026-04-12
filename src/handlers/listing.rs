@@ -167,6 +167,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "likes_count": row.try_get::<Option<i32>, _>("likes_count").ok().flatten().unwrap_or(0),
         "status": row.try_get::<Option<String>, _>("status").ok().flatten(),
         "user_type": row.try_get::<Option<String>, _>("user_type").ok().flatten(),
+        "broker_contact_allowed": row.try_get::<Option<bool>, _>("broker_contact_allowed").ok().flatten().unwrap_or(true),
         "created_at": row.try_get::<Option<chrono::DateTime<Utc>>, _>("created_at")
             .ok().flatten().map(|d| d.to_rfc3339()),
         "updated_at": row.try_get::<Option<chrono::DateTime<Utc>>, _>("updated_at")
@@ -192,6 +193,7 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
             p.no_of_toilets, p.no_of_balconies, p.furnishing,
             p.images, p.primary_image, p.amenities,
             p.lat AS latitude, p.lng AS longitude,
+            p.deposit, p.floor, p.total_floors, p.age_years, p.facing, p.parking, p.parking_count, p.video_url, p.user_type, p.broker_contact_allowed,
             p.is_featured, p.is_verified,
             p.views_count, p.likes_count,
             p.status, p.user_id, p.created_at, p.updated_at,
@@ -422,14 +424,16 @@ pub async fn create_property(
             id, title, description, property_type, price,
             city, area_sqft, bhk, bathrooms, no_of_toilets, no_of_balconies, furnishing,
             images, amenities, lat, lng,
+            deposit, floor, total_floors, age_years, facing, parking, parking_count, video_url, user_type, broker_contact_allowed,
             is_featured, is_verified,
             status, user_id, created_at, updated_at
         ) VALUES (
             $1, $2, $3, $4, $5,
             $6, $7, $8, $9, $10, $11, $12,
             $13, $14, $15, $16,
+            $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
             false, false,
-            'active', $17, $18, $18
+            'active', $27, $28, $28
         )
         RETURNING id
         "#,
@@ -450,6 +454,16 @@ pub async fn create_property(
     .bind(amenities_json)
     .bind(payload.latitude)    // lat
     .bind(payload.longitude)   // lng
+    .bind(payload.deposit)
+    .bind(payload.floor)
+    .bind(payload.total_floors)
+    .bind(payload.age_years)
+    .bind(&payload.facing)
+    .bind(payload.parking)
+    .bind(payload.parking_count)
+    .bind(&payload.video_url)
+    .bind(&payload.user_type)
+    .bind(payload.broker_contact_allowed)
     .bind(user_id)
     .bind(now)
     .fetch_one(&app_state.db)
@@ -601,6 +615,46 @@ pub async fn update_property(
         let j = serde_json::to_value(v).unwrap_or(json!([]));
         qb.push(", amenities = ");
         qb.push_bind(j);
+    }
+    if let Some(v) = payload.deposit {
+        qb.push(", deposit = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.floor {
+        qb.push(", floor = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.total_floors {
+        qb.push(", total_floors = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.age_years {
+        qb.push(", age_years = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.facing {
+        qb.push(", facing = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.parking {
+        qb.push(", parking = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.parking_count {
+        qb.push(", parking_count = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.video_url {
+        qb.push(", video_url = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.user_type {
+        qb.push(", user_type = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.broker_contact_allowed {
+        qb.push(", broker_contact_allowed = ");
+        qb.push_bind(v);
     }
 
     qb.push(" WHERE id = ");
