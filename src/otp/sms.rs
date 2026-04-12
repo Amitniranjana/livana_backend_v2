@@ -20,18 +20,27 @@ pub async fn send_sms_otp(phone: &str, otp: &str) -> Result<(), OtpError> {
         let attr = aws_sdk_sns::types::MessageAttributeValue::builder()
             .data_type("String")
             .string_value(sender_id)
-            .build();
-        // In some SDK versions this returns a Result, in others the struct.
-        // If it returns Result, we need to handle it.
-        // Based on previous error "expected struct ... found enum Result", it returns Result.
-
-        // Use map_err or unwrap. Since this is optional/config, unwrap is okay if we are sure it builds,
-        // but better to be safe. But wait, if I use `?` inside `if let`, I return from function.
-        // It's fine.
-        let attr =
-            attr.map_err(|e| OtpError::Internal(format!("Failed to build SenderID: {}", e)))?;
-
+            .build()
+            .map_err(|e| OtpError::Internal(format!("Failed to build SenderID: {}", e)))?;
         publish_builder = publish_builder.message_attributes("AWS.SNS.SMS.SenderID", attr);
+    }
+
+    if let Ok(entity_id) = std::env::var("AWS_DLT_ENTITY_ID") {
+        let attr = aws_sdk_sns::types::MessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(entity_id)
+            .build()
+            .map_err(|e| OtpError::Internal(format!("Failed to build EntityId: {}", e)))?;
+        publish_builder = publish_builder.message_attributes("AWS.MM.SMS.EntityId", attr);
+    }
+
+    if let Ok(template_id) = std::env::var("AWS_DLT_TEMPLATE_ID") {
+        let attr = aws_sdk_sns::types::MessageAttributeValue::builder()
+            .data_type("String")
+            .string_value(template_id)
+            .build()
+            .map_err(|e| OtpError::Internal(format!("Failed to build TemplateId: {}", e)))?;
+        publish_builder = publish_builder.message_attributes("AWS.MM.SMS.TemplateId", attr);
     }
 
     let resp = publish_builder
