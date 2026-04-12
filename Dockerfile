@@ -15,6 +15,9 @@ COPY . .
 
 
 # Build your project, this compiles the actual binary
+# SQLX_OFFLINE=true tells sqlx to use cached query data from .sqlx/
+# instead of connecting to a live database at compile time.
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # After building, the binary will be located at /app/target/release/my_app
