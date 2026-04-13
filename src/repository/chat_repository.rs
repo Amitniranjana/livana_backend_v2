@@ -27,32 +27,35 @@ impl ChatRepository {
     pub async fn get_recent_chats(&self, user_id: Uuid) -> Result<Vec<RecentChat>, String> {
         let rows = sqlx::query_as::<_, RecentChat>(
             r#"
-            SELECT
-                c.id           AS chat_id,
-                m.content      AS last_message,
-                COALESCE(m.message_type, 'text') AS message_type,
-                m.created_at   AS last_message_time,
-                COALESCE(other_user.id, $1) AS other_user_id,
-                COALESCE(NULLIF(TRIM(COALESCE(other_user.first_name, '') || ' ' || COALESCE(other_user.last_name, '')), ''), 'Unknown User') AS other_user_name,
-                other_user.profile_picture AS other_user_image
-            FROM chats c
-            JOIN messages m ON m.chat_id = c.id
-            LEFT JOIN chat_participants cp_other
-                ON cp_other.chat_id = c.id AND cp_other.user_id != $1
-            LEFT JOIN users other_user
-                ON other_user.id = cp_other.user_id
-            WHERE c.id IN (
-                SELECT chat_id
-                FROM chat_participants
-                WHERE user_id = $1
-            )
-            AND c.is_deleted = FALSE
-            AND m.created_at = (
-                SELECT MAX(created_at)
-                FROM messages
-                WHERE chat_id = c.id
-            )
-            ORDER BY m.created_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (COALESCE(other_user.id, $1))
+                    c.id           AS chat_id,
+                    m.content      AS last_message,
+                    COALESCE(m.message_type, 'text') AS message_type,
+                    m.created_at   AS last_message_time,
+                    COALESCE(other_user.id, $1) AS other_user_id,
+                    COALESCE(NULLIF(TRIM(COALESCE(other_user.first_name, '') || ' ' || COALESCE(other_user.last_name, '')), ''), 'Unknown User') AS other_user_name,
+                    other_user.profile_picture AS other_user_image
+                FROM chats c
+                JOIN messages m ON m.chat_id = c.id
+                LEFT JOIN chat_participants cp_other
+                    ON cp_other.chat_id = c.id AND cp_other.user_id != $1
+                LEFT JOIN users other_user
+                    ON other_user.id = cp_other.user_id
+                WHERE c.id IN (
+                    SELECT chat_id
+                    FROM chat_participants
+                    WHERE user_id = $1
+                )
+                AND c.is_deleted = FALSE
+                AND m.created_at = (
+                    SELECT MAX(created_at)
+                    FROM messages
+                    WHERE chat_id = c.id
+                )
+                ORDER BY COALESCE(other_user.id, $1), m.created_at DESC
+            ) sub
+            ORDER BY last_message_time DESC
             "#,
         )
         .bind(user_id)
