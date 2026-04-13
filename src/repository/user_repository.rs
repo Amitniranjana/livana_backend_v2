@@ -157,17 +157,17 @@ impl UserRepository {
         // Returns (gender, bio, profile_image_url)
         let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
 
+        #[derive(sqlx::FromRow)]
         struct ProfileRow {
             gender: Option<String>,
             bio: Option<String>,
             profile_image_url: Option<String>,
         }
 
-        let result = sqlx::query_as!(
-            ProfileRow,
-            "SELECT gender, bio, profile_image_url FROM user_profiles WHERE user_id = $1",
-            uuid
+        let result = sqlx::query_as::<_, ProfileRow>(
+            "SELECT gender, bio, profile_image_url FROM user_profiles WHERE user_id = $1"
         )
+        .bind(uuid)
         .fetch_optional(&self.pool)
         .await;
 
