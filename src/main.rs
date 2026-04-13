@@ -105,7 +105,7 @@ async fn main() {
 
     let ocr_service = Arc::new(crate::services::ocr::TesseractOcr::new());
 
-    let kyc_svc = crate::services::kyc_service::KycService::new(kyc_repo, s3_storage, ocr_service);
+    let kyc_svc = crate::services::kyc_service::KycService::new(kyc_repo, s3_storage.clone(), ocr_service);
 
     // ── New: PostgreSQL-backed Chat DB service ──
     let chat_repo = ChatRepository::new(pool.clone());
@@ -120,6 +120,7 @@ async fn main() {
         kyc_service: Arc::new(kyc_svc),
         chat_db_service: Arc::new(chat_db_svc),
         google_client_id,
+        storage_service: s3_storage.clone(),
     };
 
     let app = Router::new()

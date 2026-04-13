@@ -16,3 +16,4 @@ pub mod reviews;
 pub mod saved_properties;
 pub mod service;
 pub mod vibes;
+pub mod listing_image;

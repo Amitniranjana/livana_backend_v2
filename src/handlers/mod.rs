@@ -26,3 +26,4 @@ pub mod recent_chats;
 pub mod saved_properties;
 pub mod service_listing;
 pub mod vibes;
+pub mod listing_image;

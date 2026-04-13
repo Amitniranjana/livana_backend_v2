@@ -70,6 +70,8 @@ pub fn listing_routes() -> Router<AppState> {
         .route("/api/properties/{id}/save", delete(unsave_property))
         // Report
         .route("/api/properties/{id}/report", post(report_property))
+        // Listing Images Upload (New API)
+        .route("/api/listings/upload/images", post(crate::handlers::listing_image::upload_listing_images))
 }
 
 pub fn broker_routes() -> Router<AppState> {
