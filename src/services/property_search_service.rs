@@ -9,8 +9,22 @@ use sqlx::{Pool, Postgres, Row};
 
 fn row_to_property_json(row: &sqlx::postgres::PgRow) -> Value {
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
-    let images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
+    let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
+    let images: Vec<String> = raw_images.into_iter().map(|img| {
+        if let Some(idx) = img.find(" | ") {
+            img[..idx].to_string()
+        } else {
+            img
+        }
+    }).collect();
     let amenities_val: Value = row.try_get("amenities").unwrap_or(json!([]));
+
+    let raw_primary_image = row.try_get::<Option<String>, _>("primary_image").unwrap_or_default().unwrap_or_default();
+    let primary_image = if let Some(idx) = raw_primary_image.find(" | ") {
+        raw_primary_image[..idx].to_string()
+    } else {
+        raw_primary_image
+    };
 
     json!({
         "propertyId":    row.try_get::<uuid::Uuid,_>("id").map(|u|u.to_string()).unwrap_or_default(),
@@ -32,7 +46,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow) -> Value {
         "furnishing":    row.try_get::<Option<String>,_>("furnishing").unwrap_or_default(),
         "availability":  row.try_get::<Option<String>,_>("availability").unwrap_or_default(),
         "images":        images,
-        "primaryImage":  row.try_get::<Option<String>,_>("primary_image").unwrap_or_default(),
+        "primaryImage":  primary_image,
         "isVerified":    row.try_get::<bool,_>("is_verified").unwrap_or(false),
         "postedBy":      row.try_get::<Option<String>,_>("posted_by").unwrap_or_default(),
         "projectName":   row.try_get::<Option<String>,_>("project_name").unwrap_or_default(),

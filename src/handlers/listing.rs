@@ -114,7 +114,14 @@ pub struct SavedPropertiesParams {
 fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value {
     // Parse JSON columns
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
-    let images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
+    let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
+    let images: Vec<String> = raw_images.into_iter().map(|img| {
+        if let Some(idx) = img.find(" | ") {
+            img[..idx].to_string()
+        } else {
+            img
+        }
+    }).collect();
 
     let amenities_val: Value = row.try_get("amenities").unwrap_or(json!([]));
     let amenities: Vec<String> = serde_json::from_value(amenities_val).unwrap_or_default();
@@ -413,7 +420,18 @@ pub async fn create_property(
     let property_id = Uuid::new_v4();
     let now = Utc::now();
 
-    let images_json = serde_json::to_value(payload.images.unwrap_or_default()).unwrap_or(json!([]));
+    fn clean_image_url(url: &str) -> String {
+        if let Some(idx) = url.find(" | ") {
+            url[..idx].to_string()
+        } else {
+            url.to_string()
+        }
+    }
+
+    let raw_images = payload.images.unwrap_or_default();
+    let cleaned_images: Vec<String> = raw_images.into_iter().map(|img| clean_image_url(&img)).collect();
+    let images_json = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
+    
     let amenities_json =
         serde_json::to_value(payload.amenities.unwrap_or_default()).unwrap_or(json!([]));
     let _nearby_json = payload.nearby_places.unwrap_or(json!({}));
@@ -607,7 +625,14 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = &payload.images {
-        let j = serde_json::to_value(v).unwrap_or(json!([]));
+        let cleaned_images: Vec<String> = v.iter().map(|img| {
+            if let Some(idx) = img.find(" | ") {
+                img[..idx].to_string()
+            } else {
+                img.to_string()
+            }
+        }).collect();
+        let j = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
         qb.push(", images = ");
         qb.push_bind(j);
     }
