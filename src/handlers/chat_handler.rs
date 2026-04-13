@@ -122,6 +122,46 @@ pub async fn create_channel(
         }
     }
 
+    // 2.5 Deduplicate 1-on-1 chats
+    if final_participants.len() == 2 {
+        let u1 = final_participants[0].0;
+        let u2 = final_participants[1].0;
+
+        let existing_chat_id: Option<uuid::Uuid> = sqlx::query_scalar(
+            r#"
+            SELECT cp1.chat_id
+            FROM chat_participants cp1
+            JOIN chat_participants cp2 ON cp1.chat_id = cp2.chat_id
+            JOIN chats c ON c.id = cp1.chat_id
+            WHERE cp1.user_id = $1 AND cp2.user_id = $2
+              AND c.is_deleted = FALSE
+              AND (
+                  SELECT COUNT(*) FROM chat_participants cp3 WHERE cp3.chat_id = cp1.chat_id
+              ) = 2
+            ORDER BY c.created_at DESC
+            LIMIT 1
+            "#
+        )
+        .bind(u1)
+        .bind(u2)
+        .fetch_optional(&app_state.db)
+        .await
+        .unwrap_or(None);
+
+        if let Some(chat_id) = existing_chat_id {
+            return (
+                StatusCode::OK,
+                Json(crate::models::chat::ChatChannel {
+                    channel_arn: format!("local_channel_arn/{}", chat_id),
+                    name: payload.name.clone(),
+                    mode: payload.mode.clone(),
+                    privacy: payload.privacy.clone(),
+                }),
+            )
+                .into_response();
+        }
+    }
+
     // 3. Create the Channel
     let channel = match app_state
         .chat_service
