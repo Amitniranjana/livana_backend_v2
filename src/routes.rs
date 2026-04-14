@@ -71,7 +71,11 @@ pub fn listing_routes() -> Router<AppState> {
         // Report
         .route("/api/properties/{id}/report", post(report_property))
         // Listing Images Upload (New API)
-        .route("/api/listings/upload/images", post(crate::handlers::listing_image::upload_listing_images))
+        .route(
+            "/api/listings/upload/images",
+            post(crate::handlers::listing_image::upload_listing_images)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
 }
 
 pub fn broker_routes() -> Router<AppState> {
