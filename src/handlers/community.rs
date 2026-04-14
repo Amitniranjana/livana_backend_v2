@@ -89,6 +89,7 @@ pub async fn create_community(
             description: payload.description,
             created_by: user_id,
             created_at: now,
+            is_joined: true,
         },
     };
 
@@ -230,17 +231,23 @@ pub async fn get_communities(
     State(app_state): State<AppState>,
     auth: AuthenticationUser,
 ) -> Result<impl IntoResponse, ApiError> {
-    // We just verify the user is properly authenticated (even if not strictly used in the query yet)
-    let _user_id = Uuid::parse_str(&auth.user_id)
+    // We just verify the user is properly authenticated
+    let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
 
     let communities = sqlx::query_as!(
         CommunityResponseDto,
         r#"
-        SELECT id, name, description, created_by, created_at
-        FROM communities
-        ORDER BY created_at DESC
-        "#
+        SELECT
+            c.id, c.name, c.description, c.created_by, c.created_at,
+            EXISTS(
+                SELECT 1 FROM community_members cm 
+                WHERE cm.community_id = c.id AND cm.user_id = $1
+            ) as "is_joined!"
+        FROM communities c
+        ORDER BY c.created_at DESC
+        "#,
+        user_id
     )
     .fetch_all(&app_state.db)
     .await
