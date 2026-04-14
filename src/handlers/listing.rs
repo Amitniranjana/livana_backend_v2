@@ -115,11 +115,16 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
     // Parse JSON columns
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
     let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
-    let images: Vec<String> = raw_images.into_iter().map(|img| {
-        if let Some(idx) = img.find(" | ") {
+    let images: Vec<String> = raw_images.into_iter().filter_map(|img| {
+        let clean = if let Some(idx) = img.find(" | ") {
             img[..idx].to_string()
         } else {
             img
+        };
+        if clean.starts_with("http://0.0.0.0") || clean.starts_with("http://localhost") || clean.contains("image_picker_") {
+            None
+        } else {
+            Some(clean)
         }
     }).collect();
 
@@ -421,15 +426,19 @@ pub async fn create_property(
     let now = Utc::now();
 
     fn clean_image_url(url: &str) -> String {
-        if let Some(idx) = url.find(" | ") {
+        let clean = if let Some(idx) = url.find(" | ") {
             url[..idx].to_string()
         } else {
             url.to_string()
-        }
+        };
+        clean
     }
 
     let raw_images = payload.images.unwrap_or_default();
-    let cleaned_images: Vec<String> = raw_images.into_iter().map(|img| clean_image_url(&img)).collect();
+    let cleaned_images: Vec<String> = raw_images.into_iter()
+        .map(|img| clean_image_url(&img))
+        .filter(|img| !img.starts_with("http://0.0.0.0") && !img.starts_with("http://localhost") && !img.contains("image_picker_"))
+        .collect();
     let images_json = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
     
     let amenities_json =
@@ -625,11 +634,16 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = &payload.images {
-        let cleaned_images: Vec<String> = v.iter().map(|img| {
-            if let Some(idx) = img.find(" | ") {
+        let cleaned_images: Vec<String> = v.iter().filter_map(|img| {
+            let clean = if let Some(idx) = img.find(" | ") {
                 img[..idx].to_string()
             } else {
                 img.to_string()
+            };
+            if clean.starts_with("http://0.0.0.0") || clean.starts_with("http://localhost") || clean.contains("image_picker_") {
+                None
+            } else {
+                Some(clean)
             }
         }).collect();
         let j = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
