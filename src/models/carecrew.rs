@@ -203,6 +203,10 @@ mod tests {
             service_id: "service-uuid".to_string(),
             scheduled_at: "2026-03-01T10:00:00Z".to_string(),
             notes: Some("Please come early".to_string()),
+            address: Some("123 Street".to_string()),
+            problem_description: Some("Leaking tap".to_string()),
+            contact_number: Some("1234567890".to_string()),
+            estimated_cost: Some(500.0),
         };
         assert!(!req.provider_id.is_empty());
         assert!(!req.service_id.is_empty());

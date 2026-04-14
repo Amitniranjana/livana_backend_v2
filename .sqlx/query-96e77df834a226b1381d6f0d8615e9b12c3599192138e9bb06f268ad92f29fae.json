@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, name, description, created_by, created_at\n        FROM communities\n        ORDER BY created_at DESC\n        ",
+  "query": "\n        SELECT\n            c.id, c.name, c.description, c.created_by, c.created_at,\n            EXISTS(\n                SELECT 1 FROM community_members cm \n                WHERE cm.community_id = c.id AND cm.user_id = $1\n            ) as \"is_joined!\"\n        FROM communities c\n        ORDER BY c.created_at DESC\n        ",
   "describe": {
     "columns": [
       {
@@ -27,18 +27,26 @@
         "ordinal": 4,
         "name": "created_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_joined!",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Uuid"
+      ]
     },
     "nullable": [
       false,
       false,
       true,
       false,
-      false
+      false,
+      null
     ]
   },
-  "hash": "e57577945464eb3a78fb6155838922810a6abe62fceaba4aacf3d059dd9fb735"
+  "hash": "96e77df834a226b1381d6f0d8615e9b12c3599192138e9bb06f268ad92f29fae"
 }
