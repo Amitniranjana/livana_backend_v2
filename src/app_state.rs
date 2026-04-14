@@ -20,4 +20,6 @@ pub struct AppState {
     pub google_client_id: String,
     /// Shared Storage Service (AWS S3) for generic file uploads cross-module
     pub storage_service: Arc<crate::services::storage::S3Storage>,
+    /// Public Storage Service (AWS S3) for public listing images
+    pub public_storage_service: Arc<crate::services::storage::S3Storage>,
 }

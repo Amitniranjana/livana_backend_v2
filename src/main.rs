@@ -99,8 +99,15 @@ async fn main() {
     let s3_bucket_name =
         env::var("KYC_BUCKET_NAME").unwrap_or_else(|_| "livana-kyc-documents".to_string());
     let s3_storage = Arc::new(crate::services::storage::S3Storage::new(
-        s3_client,
+        s3_client.clone(),
         s3_bucket_name,
+    ));
+
+    let public_bucket_name =
+        env::var("PUBLIC_BUCKET_NAME").unwrap_or_else(|_| "livana-public-listings".to_string());
+    let public_storage = Arc::new(crate::services::storage::S3Storage::new(
+        s3_client.clone(),
+        public_bucket_name,
     ));
 
     let ocr_service = Arc::new(crate::services::ocr::TesseractOcr::new());
@@ -121,6 +128,7 @@ async fn main() {
         chat_db_service: Arc::new(chat_db_svc),
         google_client_id,
         storage_service: s3_storage.clone(),
+        public_storage_service: public_storage.clone(),
     };
 
     let app = Router::new()

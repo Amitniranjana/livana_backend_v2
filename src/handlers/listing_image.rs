@@ -116,13 +116,13 @@ pub async fn upload_listing_images(
         let image_id = Uuid::new_v4();
         let key = format!("listings/{}/{}/{}_{}", listing_type, session_id, image_id, filename);
 
-        if let Err(e) = app_state.storage_service.upload_file(&key, bytes.to_vec(), &content_type).await {
+        if let Err(e) = app_state.public_storage_service.upload_file(&key, bytes.to_vec(), &content_type).await {
             log::error!("Failed to upload image {}: {}", filename, e);
             // Even if one fails, we can proceed with others to support resilience in batch upload
             continue; 
         }
 
-        let bucket_name = std::env::var("KYC_BUCKET_NAME").unwrap_or_else(|_| "livana-kyc-documents".to_string());
+        let bucket_name = std::env::var("PUBLIC_BUCKET_NAME").unwrap_or_else(|_| "livana-public-listings".to_string());
         let aws_region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
         let url = format!("https://{}.s3.{}.amazonaws.com/{}", bucket_name, aws_region, key);
 
