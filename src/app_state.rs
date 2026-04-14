@@ -18,4 +18,6 @@ pub struct AppState {
     pub chat_db_service: Arc<ChatDbService>,
     /// Google OAuth Client ID — used to validate the `aud` field in id_tokens.
     pub google_client_id: String,
+    /// Shared Storage Service (AWS S3) for generic file uploads cross-module
+    pub storage_service: Arc<crate::services::storage::S3Storage>,
 }
