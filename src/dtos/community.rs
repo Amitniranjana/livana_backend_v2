@@ -18,6 +18,7 @@ pub struct CommunityResponseDto {
     pub description: Option<String>,
     pub created_by: Uuid,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub is_joined: bool,
 }
 
 /// Request body for posting in a community.
