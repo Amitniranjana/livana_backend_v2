@@ -121,7 +121,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         } else {
             img
         };
-        if clean.starts_with("http://0.0.0.0") || clean.starts_with("http://localhost") || clean.contains("image_picker_") {
+        if !clean.starts_with("https://") {
             None
         } else {
             Some(clean)
@@ -437,7 +437,7 @@ pub async fn create_property(
     let raw_images = payload.images.unwrap_or_default();
     let cleaned_images: Vec<String> = raw_images.into_iter()
         .map(|img| clean_image_url(&img))
-        .filter(|img| !img.starts_with("http://0.0.0.0") && !img.starts_with("http://localhost") && !img.contains("image_picker_"))
+        .filter(|img| img.starts_with("https://"))
         .collect();
     let images_json = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
     
@@ -640,7 +640,7 @@ pub async fn update_property(
             } else {
                 img.to_string()
             };
-            if clean.starts_with("http://0.0.0.0") || clean.starts_with("http://localhost") || clean.contains("image_picker_") {
+            if !clean.starts_with("https://") {
                 None
             } else {
                 Some(clean)
