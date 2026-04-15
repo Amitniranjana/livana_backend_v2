@@ -23,6 +23,7 @@ impl S3Storage {
 #[async_trait]
 impl StorageService for S3Storage {
     async fn upload_file(&self, key: &str, data: Vec<u8>, content_type: &str) -> Result<()> {
+        log::info!("S3 upload: bucket={}, key={}, size={}, content_type={}", self.bucket, key, data.len(), content_type);
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -31,7 +32,10 @@ impl StorageService for S3Storage {
             .content_type(content_type)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("S3 Upload Error: {}", e))?;
+            .map_err(|e| {
+                log::error!("S3 PutObject failed: bucket={}, key={}, error={:?}", self.bucket, key, e);
+                anyhow::anyhow!("S3 Upload Error (bucket={}): {:?}", self.bucket, e)
+            })?;
 
         Ok(())
     }
