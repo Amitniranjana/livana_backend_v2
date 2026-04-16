@@ -115,18 +115,21 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
     // Parse JSON columns
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
     let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
-    let images: Vec<String> = raw_images.into_iter().filter_map(|img| {
-        let clean = if let Some(idx) = img.find(" | ") {
-            img[..idx].to_string()
-        } else {
-            img
-        };
-        if !clean.starts_with("https://") {
-            None
-        } else {
-            Some(clean)
-        }
-    }).collect();
+    let images: Vec<String> = raw_images
+        .into_iter()
+        .filter_map(|img| {
+            let clean = if let Some(idx) = img.find(" | ") {
+                img[..idx].to_string()
+            } else {
+                img
+            };
+            if !clean.starts_with("https://") {
+                None
+            } else {
+                Some(clean)
+            }
+        })
+        .collect();
 
     let amenities_val: Value = row.try_get("amenities").unwrap_or(json!([]));
     let amenities: Vec<String> = serde_json::from_value(amenities_val).unwrap_or_default();
@@ -435,12 +438,13 @@ pub async fn create_property(
     }
 
     let raw_images = payload.images.unwrap_or_default();
-    let cleaned_images: Vec<String> = raw_images.into_iter()
+    let cleaned_images: Vec<String> = raw_images
+        .into_iter()
         .map(|img| clean_image_url(&img))
         .filter(|img| img.starts_with("https://"))
         .collect();
     let images_json = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
-    
+
     let amenities_json =
         serde_json::to_value(payload.amenities.unwrap_or_default()).unwrap_or(json!([]));
     let _nearby_json = payload.nearby_places.unwrap_or(json!({}));
@@ -634,18 +638,21 @@ pub async fn update_property(
         qb.push_bind(v);
     }
     if let Some(v) = &payload.images {
-        let cleaned_images: Vec<String> = v.iter().filter_map(|img| {
-            let clean = if let Some(idx) = img.find(" | ") {
-                img[..idx].to_string()
-            } else {
-                img.to_string()
-            };
-            if !clean.starts_with("https://") {
-                None
-            } else {
-                Some(clean)
-            }
-        }).collect();
+        let cleaned_images: Vec<String> = v
+            .iter()
+            .filter_map(|img| {
+                let clean = if let Some(idx) = img.find(" | ") {
+                    img[..idx].to_string()
+                } else {
+                    img.to_string()
+                };
+                if !clean.starts_with("https://") {
+                    None
+                } else {
+                    Some(clean)
+                }
+            })
+            .collect();
         let j = serde_json::to_value(cleaned_images).unwrap_or(json!([]));
         qb.push(", images = ");
         qb.push_bind(j);

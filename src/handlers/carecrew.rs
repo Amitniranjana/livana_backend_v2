@@ -18,8 +18,12 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::app_state::AppState;
-use crate::models::carecrew::{CreateBookingRequest, UpdateBookingStatusRequest};
-use crate::services::carecrew_service::{self, BookingCreateError, BookingUpdateError};
+use crate::models::carecrew::{
+    CancelBookingRequest, CreateBookingRequest, UpdateBookingStatusRequest,
+};
+use crate::services::carecrew_service::{
+    self, BookingCancelError, BookingCreateError, BookingDetailError, BookingUpdateError,
+};
 
 // ─── JWT helper (mirrors the pattern in listing.rs) ───────────────────────────
 
@@ -367,8 +371,7 @@ pub async fn update_booking_status(
     Path(id): Path<String>,
     Json(payload): Json<UpdateBookingStatusRequest>,
 ) -> impl axum::response::IntoResponse {
-    // Auth check (any authenticated user may update — e.g. provider or admin side)
-    let _user_id = match require_auth(&headers, &app_state.jwt_secret) {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
         Ok(uid) => uid,
         Err((code, body)) => return (code, body),
     };
@@ -388,6 +391,7 @@ pub async fn update_booking_status(
     match carecrew_service::update_booking_status(
         &app_state.db,
         booking_id,
+        user_id,
         &payload.status,
         payload.notes.as_deref(),
         payload.estimated_cost,
@@ -404,7 +408,13 @@ pub async fn update_booking_status(
         Err(BookingUpdateError::BookingNotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({
-                "success": false, "message": "Booking not found", "error_code": "NOT_FOUND"
+                "success": false, "message": "Booking not found", "error_code": "BOOKING_NOT_FOUND"
+            })),
+        ),
+        Err(BookingUpdateError::AccessDenied) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false, "message": "You do not have permission to perform this action", "error_code": "ACCESS_DENIED"
             })),
         ),
         Err(BookingUpdateError::InvalidStatus(s)) => (
@@ -420,7 +430,7 @@ pub async fn update_booking_status(
             Json(json!({
                 "success": false,
                 "message": format!("Cannot transition booking from '{}' to '{}'", from, to),
-                "error_code": "INVALID_TRANSITION"
+                "error_code": "INVALID_STATUS_TRANSITION"
             })),
         ),
         Err(BookingUpdateError::DbError(e)) => {
@@ -675,7 +685,7 @@ pub async fn get_booking_details(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> impl axum::response::IntoResponse {
-    let _user_id = match require_auth(&headers, &app_state.jwt_secret) {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
         Ok(uid) => uid,
         Err((code, body)) => return (code, body),
     };
@@ -692,7 +702,7 @@ pub async fn get_booking_details(
         }
     };
 
-    match carecrew_service::get_booking_details(&app_state.db, booking_id).await {
+    match carecrew_service::get_booking_details(&app_state.db, booking_id, user_id).await {
         Ok(Some(booking)) => (
             StatusCode::OK,
             Json(json!({
@@ -704,11 +714,87 @@ pub async fn get_booking_details(
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
-                "success": false, "message": "Booking not found", "error_code": "NOT_FOUND"
+                "success": false, "message": "Booking not found", "error_code": "BOOKING_NOT_FOUND"
             })),
         ),
-        Err(e) => {
+        Err(BookingDetailError::AccessDenied) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false, "message": "You do not have permission to perform this action", "error_code": "ACCESS_DENIED"
+            })),
+        ),
+        Err(BookingDetailError::DbError(e)) => {
             log::error!("get_booking_details DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+/// PUT /api/bookings/{booking_id}/cancel
+pub async fn cancel_booking(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<CancelBookingRequest>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let booking_id = match Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid booking ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
+    };
+
+    match carecrew_service::cancel_booking(
+        &app_state.db,
+        booking_id,
+        user_id,
+        payload.cancellation_reason.as_deref(),
+    )
+    .await
+    {
+        Ok(booking) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Booking cancelled successfully",
+                "data": { "booking": booking }
+            })),
+        ),
+        Err(BookingCancelError::BookingNotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false, "message": "Booking not found", "error_code": "BOOKING_NOT_FOUND"
+            })),
+        ),
+        Err(BookingCancelError::AccessDenied) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false, "message": "You do not have permission to perform this action", "error_code": "ACCESS_DENIED"
+            })),
+        ),
+        Err(BookingCancelError::CannotCancel(msg)) => (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false, "message": msg, "error_code": "BOOKING_CANNOT_BE_CANCELLED"
+            })),
+        ),
+        Err(BookingCancelError::DbError(e)) => {
+            log::error!("cancel_booking DB error: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
@@ -760,6 +846,168 @@ pub async fn get_provider_bookings_v2(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(json!({
                     "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PUT /api/v1/carecrew/providers/{provider_id} — Edit Provider Profile
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+pub struct UpdateProviderRequest {
+    pub name: Option<String>,
+    pub bio: Option<String>,
+    pub service_type: Option<String>,
+    pub city: Option<String>,
+    pub phone: Option<String>,
+    pub avatar_url: Option<String>,
+}
+
+/// PUT /api/v1/carecrew/providers/{provider_id} — Edit Provider (with body)
+pub async fn edit_provider_profile(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(provider_id): Path<String>,
+    Json(payload): Json<UpdateProviderRequest>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let pid = match Uuid::parse_str(&provider_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false, "message": "Invalid provider ID", "error_code": "INVALID_UUID"
+                })),
+            );
+        }
+    };
+
+    // 1. Ownership check
+    let owner_row: Option<Uuid> =
+        match sqlx::query_scalar::<_, Uuid>("SELECT user_id FROM carecrew_providers WHERE id = $1")
+            .bind(pid)
+            .fetch_optional(&app_state.db)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("edit_provider DB error: {}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false, "message": "Database error", "error_code": "DB_ERROR"
+                    })),
+                );
+            }
+        };
+
+    match owner_row {
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({
+                    "success": false, "message": "Provider not found", "error_code": "NOT_FOUND"
+                })),
+            );
+        }
+        Some(oid) if oid != user_id => {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false, "message": "You do not have permission to perform this action", "error_code": "ACCESS_DENIED"
+                })),
+            );
+        }
+        _ => {}
+    }
+
+    // 2. Validate phone format if provided (basic: digits, +, -, spaces, 7-15 chars)
+    if let Some(ref phone) = payload.phone {
+        let cleaned: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
+        if cleaned.len() < 7 || cleaned.len() > 15 {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "message": "Phone number must contain 7-15 digits",
+                    "error_code": "VALIDATION_ERROR"
+                })),
+            );
+        }
+    }
+
+    // 3. Validate avatar_url if provided (must start with https://)
+    if let Some(ref url) = payload.avatar_url {
+        if !url.starts_with("https://") && !url.starts_with("http://") {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({
+                    "success": false,
+                    "message": "profile_image must be a valid URL (http:// or https://)",
+                    "error_code": "VALIDATION_ERROR"
+                })),
+            );
+        }
+    }
+
+    // 4. Partial update via COALESCE
+    match sqlx::query(
+        r#"
+        UPDATE carecrew_providers SET
+            name         = COALESCE($2, name),
+            bio          = COALESCE($3, bio),
+            service_type = COALESCE($4, service_type),
+            city         = COALESCE($5, city),
+            phone        = COALESCE($6, phone),
+            avatar_url   = COALESCE($7, avatar_url),
+            updated_at   = NOW()
+        WHERE id = $1
+        RETURNING id, name, bio, service_type, city, phone, avatar_url
+        "#,
+    )
+    .bind(pid)
+    .bind(&payload.name)
+    .bind(&payload.bio)
+    .bind(&payload.service_type)
+    .bind(&payload.city)
+    .bind(&payload.phone)
+    .bind(&payload.avatar_url)
+    .fetch_one(&app_state.db)
+    .await
+    {
+        Ok(row) => {
+            use sqlx::Row;
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "Provider profile updated successfully",
+                    "data": {
+                        "id": row.get::<Uuid, _>("id").to_string(),
+                        "name": row.get::<String, _>("name"),
+                        "bio": row.try_get::<Option<String>, _>("bio").unwrap_or_default(),
+                        "service_type": row.get::<String, _>("service_type"),
+                        "city": row.try_get::<Option<String>, _>("city").unwrap_or_default(),
+                        "phone": row.try_get::<Option<String>, _>("phone").unwrap_or_default(),
+                        "avatar_url": row.try_get::<Option<String>, _>("avatar_url").unwrap_or_default(),
+                    }
+                })),
+            )
+        }
+        Err(e) => {
+            log::error!("edit_provider update error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false, "message": "Failed to update provider", "error_code": "DB_ERROR"
                 })),
             )
         }

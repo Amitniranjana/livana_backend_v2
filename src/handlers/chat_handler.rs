@@ -140,7 +140,7 @@ pub async fn create_channel(
               ) = 2
             ORDER BY c.created_at DESC
             LIMIT 1
-            "#
+            "#,
         )
         .bind(u1)
         .bind(u2)

@@ -14,6 +14,17 @@ pub struct AddServiceRequest {
     pub location: String,
 }
 
+/// Partial update — only provided fields are updated.
+#[derive(Debug, Deserialize)]
+pub struct UpdateServiceRequest {
+    pub service_name: Option<String>,
+    pub category: Option<String>,
+    pub price: Option<i32>,
+    pub description: Option<String>,
+    pub experience: Option<String>,
+    pub location: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ServicesQuery {
     pub limit: Option<i64>,

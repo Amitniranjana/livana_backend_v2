@@ -1,5 +1,6 @@
 use crate::models::carecrew::{is_valid_status, is_valid_transition};
 use crate::repository::carecrew_repository as repo;
+use crate::utils::notification_chat_helper::create_notification;
 use serde_json::{Value, json};
 /// CareCrew Service Layer
 /// Business logic for the CareCrew module — delegates to repository,
@@ -251,11 +252,36 @@ pub async fn create_booking(
     .await
     .map_err(BookingCreateError::DbError)?;
 
+    // 4. Notify provider about new booking
+    let booking_number: String = row.try_get("booking_number").unwrap_or_default();
+    // Resolve provider's user_id for notification
+    let provider_user_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM carecrew_providers WHERE id = $1")
+            .bind(provider_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+
+    if let Some(puid) = provider_user_id {
+        let _ = create_notification(
+            db,
+            puid,
+            &format!("New Booking {}", booking_number),
+            "You have received a new booking request",
+            "BOOKING",
+            Some(booking_id),
+            Some("booking"),
+        )
+        .await;
+    }
+
     Ok(booking_row_to_json(&row))
 }
 
 pub enum BookingUpdateError {
     BookingNotFound,
+    AccessDenied,
     InvalidStatus(String),
     InvalidTransition { from: String, to: String },
     DbError(sqlx::Error),
@@ -264,6 +290,7 @@ pub enum BookingUpdateError {
 pub async fn update_booking_status(
     db: &Pool<Postgres>,
     booking_id: Uuid,
+    caller_id: Uuid,
     new_status: &str,
     notes: Option<&str>,
     estimated_cost: Option<f64>,
@@ -273,13 +300,28 @@ pub async fn update_booking_status(
         return Err(BookingUpdateError::InvalidStatus(new_status.to_string()));
     }
 
-    // Fetch current booking
-    let existing = repo::get_booking_by_id(db, booking_id)
-        .await
-        .map_err(BookingUpdateError::DbError)?
-        .ok_or(BookingUpdateError::BookingNotFound)?;
+    // Fetch current booking owner and provider for validation
+    let (owner_id, provider_id, current_status) =
+        repo::get_booking_owner_and_provider(db, booking_id)
+            .await
+            .map_err(BookingUpdateError::DbError)?
+            .ok_or(BookingUpdateError::BookingNotFound)?;
 
-    let current_status: String = existing.try_get("status").unwrap_or_default();
+    // Resolve provider's user_id
+    let provider_user_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM carecrew_providers WHERE id = $1")
+            .bind(provider_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+
+    // Ownership check: caller must be the booking owner OR the assigned provider
+    let is_owner = caller_id == owner_id;
+    let is_provider = provider_user_id.map_or(false, |puid| puid == caller_id);
+    if !is_owner && !is_provider {
+        return Err(BookingUpdateError::AccessDenied);
+    }
 
     // Validate transition
     if !is_valid_transition(&current_status, new_status) {
@@ -292,6 +334,36 @@ pub async fn update_booking_status(
     let row = repo::update_booking_status(db, booking_id, new_status, notes, estimated_cost)
         .await
         .map_err(BookingUpdateError::DbError)?;
+
+    // Notify the booking owner about status change (if the caller is the provider)
+    let booking_number: String = row.try_get("booking_number").unwrap_or_default();
+    if is_provider {
+        let _ = create_notification(
+            db,
+            owner_id,
+            &format!("Booking {} updated", booking_number),
+            &format!("Your booking status has been updated to {}", new_status),
+            "BOOKING",
+            Some(booking_id),
+            Some("booking"),
+        )
+        .await;
+    }
+    // Notify the provider if the owner updated the status
+    if is_owner {
+        if let Some(puid) = provider_user_id {
+            let _ = create_notification(
+                db,
+                puid,
+                &format!("Booking {} updated", booking_number),
+                &format!("Booking status has been updated to {}", new_status),
+                "BOOKING",
+                Some(booking_id),
+                Some("booking"),
+            )
+            .await;
+        }
+    }
 
     Ok(booking_row_to_json(&row))
 }
@@ -320,7 +392,7 @@ pub async fn get_provider_bookings(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// New Endpoint Implementations
+// New Endpoint Implementations (Endpoints 33, 34, 35, 36)
 // ──────────────────────────────────────────────────────────────────────────────
 
 pub async fn get_user_bookings(
@@ -367,6 +439,136 @@ pub async fn get_provider_bookings_v2(
 pub async fn get_booking_details(
     db: &Pool<Postgres>,
     booking_id: Uuid,
-) -> Result<Option<crate::models::carecrew::BookingDetailsResponse>, sqlx::Error> {
-    repo::get_booking_details(db, booking_id).await
+    caller_id: Uuid,
+) -> Result<Option<crate::models::carecrew::BookingDetailsResponse>, BookingDetailError> {
+    // Ownership check: caller must be booking owner or provider
+    let ownership = repo::get_booking_owner_and_provider(db, booking_id)
+        .await
+        .map_err(BookingDetailError::DbError)?;
+
+    match ownership {
+        None => Ok(None), // booking not found
+        Some((owner_id, provider_id, _status)) => {
+            // Resolve provider's user_id
+            let provider_user_id: Option<Uuid> =
+                sqlx::query_scalar("SELECT user_id FROM carecrew_providers WHERE id = $1")
+                    .bind(provider_id)
+                    .fetch_optional(db)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let is_owner = caller_id == owner_id;
+            let is_provider = provider_user_id.map_or(false, |puid| puid == caller_id);
+
+            if !is_owner && !is_provider {
+                return Err(BookingDetailError::AccessDenied);
+            }
+
+            repo::get_booking_details(db, booking_id)
+                .await
+                .map_err(BookingDetailError::DbError)
+        }
+    }
+}
+
+pub enum BookingDetailError {
+    AccessDenied,
+    DbError(sqlx::Error),
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Cancel Booking (Endpoint 37)
+// ──────────────────────────────────────────────────────────────────────────────
+
+pub enum BookingCancelError {
+    BookingNotFound,
+    AccessDenied,
+    CannotCancel(String),
+    DbError(sqlx::Error),
+}
+
+pub async fn cancel_booking(
+    db: &Pool<Postgres>,
+    booking_id: Uuid,
+    caller_id: Uuid,
+    cancellation_reason: Option<&str>,
+) -> Result<Value, BookingCancelError> {
+    // 1. Fetch booking ownership info
+    let (owner_id, provider_id, current_status) =
+        repo::get_booking_owner_and_provider(db, booking_id)
+            .await
+            .map_err(BookingCancelError::DbError)?
+            .ok_or(BookingCancelError::BookingNotFound)?;
+
+    // 2. Resolve provider's user_id
+    let provider_user_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT user_id FROM carecrew_providers WHERE id = $1")
+            .bind(provider_id)
+            .fetch_optional(db)
+            .await
+            .ok()
+            .flatten();
+
+    // 3. Ownership check
+    let is_owner = caller_id == owner_id;
+    let is_provider = provider_user_id.map_or(false, |puid| puid == caller_id);
+
+    if !is_owner && !is_provider {
+        return Err(BookingCancelError::AccessDenied);
+    }
+
+    // 4. Status guard — only pending or confirmed can be cancelled
+    if current_status != "pending" && current_status != "confirmed" {
+        return Err(BookingCancelError::CannotCancel(format!(
+            "Booking with status '{}' cannot be cancelled. Only 'pending' or 'confirmed' bookings can be cancelled.",
+            current_status
+        )));
+    }
+
+    // 5. Perform cancellation
+    let row = repo::cancel_booking(db, booking_id, cancellation_reason)
+        .await
+        .map_err(BookingCancelError::DbError)?;
+
+    let booking_number: String = row.try_get("booking_number").unwrap_or_default();
+
+    // 6. Notify both parties
+    if is_owner {
+        // User cancelled → notify provider
+        if let Some(puid) = provider_user_id {
+            let _ = create_notification(
+                db,
+                puid,
+                &format!("Booking {} cancelled", booking_number),
+                &format!(
+                    "The customer has cancelled booking {}. Reason: {}",
+                    booking_number,
+                    cancellation_reason.unwrap_or("Not specified")
+                ),
+                "BOOKING",
+                Some(booking_id),
+                Some("booking"),
+            )
+            .await;
+        }
+    } else {
+        // Provider cancelled → notify user
+        let _ = create_notification(
+            db,
+            owner_id,
+            &format!("Booking {} cancelled by provider", booking_number),
+            &format!(
+                "Your booking {} has been cancelled by the provider. Reason: {}",
+                booking_number,
+                cancellation_reason.unwrap_or("Not specified")
+            ),
+            "BOOKING",
+            Some(booking_id),
+            Some("booking"),
+        )
+        .await;
+    }
+
+    Ok(booking_row_to_json(&row))
 }

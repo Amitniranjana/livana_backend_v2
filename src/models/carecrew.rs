@@ -70,6 +70,11 @@ pub struct UpdateBookingStatusRequest {
     pub estimated_cost: Option<f64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CancelBookingRequest {
+    pub cancellation_reason: Option<String>,
+}
+
 // ─── Response DTOs (API Endpoints 33, 34, 35, 36) ─────────────────────────────
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -129,6 +134,8 @@ pub struct BookingDetailsResponse {
     pub final_cost: Option<f64>,
     pub payment_status: String,
     pub tracking_status: Vec<TrackingStatusDto>,
+    pub cancelled_at: Option<String>,
+    pub cancellation_reason: Option<String>,
     pub created_at: String,
     pub updated_at: Option<String>,
 }

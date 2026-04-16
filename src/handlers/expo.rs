@@ -21,7 +21,7 @@ use crate::{
         expo::{
             CreateExpoRequest, CreateExpoResponseData, ExpoDetailData, ExpoEventListItem,
             ExpoEventsData, ExpoListQuery, ExpoParticipantsData, ExpoParticipantsQuery,
-            ParticipantItem, RegisterExpoRequest,
+            ParticipantItem, RegisterExpoRequest, UpdateExpoRequest,
         },
         response::ApiResponse,
     },
@@ -464,6 +464,112 @@ pub async fn get_expo_participants(
             current_page,
             total_pages,
         },
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/expo/{expo_id} — Edit Expo Event (partial update)
+// ---------------------------------------------------------------------------
+
+pub async fn edit_expo(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(expo_id): Path<Uuid>,
+    Json(payload): Json<UpdateExpoRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    // 1. Ownership check — only organizer can edit
+    let organizer: Option<Uuid> =
+        sqlx::query_scalar("SELECT organizer_id FROM expo_events WHERE id = $1")
+            .bind(expo_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    match organizer {
+        None => return Err(ApiError::NotFound("Expo event not found".to_string())),
+        Some(oid) if oid != user_id => return Err(ApiError::access_denied()),
+        _ => {}
+    }
+
+    // 2. Validate max_participants >= current registered count
+    if let Some(max_p) = payload.max_participants {
+        let current_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM expo_registrations WHERE expo_id = $1")
+                .bind(expo_id)
+                .fetch_one(&app_state.db)
+                .await
+                .unwrap_or(0);
+
+        if (max_p as i64) < current_count {
+            return Err(ApiError::BadRequest(format!(
+                "max_participants ({}) cannot be less than current registered users ({})",
+                max_p, current_count
+            )));
+        }
+    }
+
+    // 3. Parse and validate dates if provided
+    let event_date: Option<chrono::NaiveDate> = match &payload.event_date {
+        Some(d) => Some(
+            chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|_| {
+                ApiError::BadRequest("Invalid event_date format. Expected YYYY-MM-DD".to_string())
+            })?,
+        ),
+        None => None,
+    };
+
+    let start_time: Option<chrono::NaiveTime> = match &payload.start_time {
+        Some(t) => Some(chrono::NaiveTime::parse_from_str(t, "%H:%M").map_err(|_| {
+            ApiError::BadRequest("Invalid start_time format. Expected HH:MM".to_string())
+        })?),
+        None => None,
+    };
+
+    let end_time: Option<chrono::NaiveTime> = match &payload.end_time {
+        Some(t) => Some(chrono::NaiveTime::parse_from_str(t, "%H:%M").map_err(|_| {
+            ApiError::BadRequest("Invalid end_time format. Expected HH:MM".to_string())
+        })?),
+        None => None,
+    };
+
+    // 4. Partial update via COALESCE
+    sqlx::query(
+        r#"
+        UPDATE expo_events SET
+            title            = COALESCE($2, title),
+            description      = COALESCE($3, description),
+            location         = COALESCE($4, location),
+            event_date       = COALESCE($5, event_date),
+            start_time       = COALESCE($6, start_time),
+            end_time         = COALESCE($7, end_time),
+            banner_image     = COALESCE($8, banner_image),
+            max_participants = COALESCE($9, max_participants),
+            updated_at       = NOW()
+        WHERE id = $1
+        "#,
+    )
+    .bind(expo_id)
+    .bind(&payload.title)
+    .bind(&payload.description)
+    .bind(&payload.location)
+    .bind(event_date)
+    .bind(start_time)
+    .bind(end_time)
+    .bind(&payload.banner_image)
+    .bind(payload.max_participants)
+    .execute(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to update expo: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Expo event updated successfully".to_string(),
+        data: serde_json::json!({ "expo_id": expo_id }),
     };
 
     Ok((StatusCode::OK, Json(response)))

@@ -1,21 +1,16 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
-use chrono::Utc;
 
 // Use the multipart from axum_extra as consistent with the rest of the app
-use axum_extra::extract::Multipart; 
+use axum_extra::extract::Multipart;
 
 use crate::{
     app_state::AppState,
-    dtos::listing_image::{UploadedImage, UploadedImagesData, ListingImageResponse},
-    utils::auth_extractor::AuthenticationUser,
+    dtos::listing_image::{ListingImageResponse, UploadedImage, UploadedImagesData},
     services::storage::StorageService,
+    utils::auth_extractor::AuthenticationUser,
 };
 
 pub async fn upload_listing_images(
@@ -23,7 +18,10 @@ pub async fn upload_listing_images(
     auth: AuthenticationUser,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
-    log::info!("=== upload_listing_images called by user: {} ===", auth.user_id);
+    log::info!(
+        "=== upload_listing_images called by user: {} ===",
+        auth.user_id
+    );
 
     let mut files = Vec::new();
     let mut temp_session_id = None;
@@ -39,7 +37,10 @@ pub async fn upload_listing_images(
 
         log::info!(
             "  Field #{}: name={:?}, file_name={:?}, content_type={:?}",
-            field_count, name, file_name, content_type_header
+            field_count,
+            name,
+            file_name,
+            content_type_header
         );
 
         if name == "temp_session_id" {
@@ -52,7 +53,12 @@ pub async fn upload_listing_images(
                 log::info!("    -> listing_type = {}", text);
                 listing_type = text;
             }
-        } else if file_name.is_some() || name == "files" || name == "images" || name.starts_with("file") || name.starts_with("image") {
+        } else if file_name.is_some()
+            || name == "files"
+            || name == "images"
+            || name.starts_with("file")
+            || name.starts_with("image")
+        {
             // This is a file upload field
             // Max 10 images constraint
             if files.len() >= 10 {
@@ -62,17 +68,19 @@ pub async fn upload_listing_images(
                     Json(json!({
                         "success": false,
                         "message": "Max 10 images allowed"
-                    }))
-                ).into_response();
+                    })),
+                )
+                    .into_response();
             }
 
             let filename = file_name.unwrap_or_else(|| "upload.jpg".to_string());
             let content_type = content_type_header.unwrap_or_else(|| "image/jpeg".to_string());
 
             // Validate format
-            if !content_type.starts_with("image/jpeg") &&
-               !content_type.starts_with("image/png") &&
-               !content_type.starts_with("image/webp") {
+            if !content_type.starts_with("image/jpeg")
+                && !content_type.starts_with("image/png")
+                && !content_type.starts_with("image/webp")
+            {
                 log::warn!("    -> Rejected: unsupported content_type={}", content_type);
                 return (
                     StatusCode::BAD_REQUEST,
@@ -96,8 +104,9 @@ pub async fn upload_listing_images(
                             Json(json!({
                                 "success": false,
                                 "message": format!("File {} exceeds max size of 5MB", filename)
-                            }))
-                        ).into_response();
+                            })),
+                        )
+                            .into_response();
                     }
                     if size == 0 {
                         log::warn!("    -> Skipping empty file: {}", filename);
@@ -112,8 +121,9 @@ pub async fn upload_listing_images(
                         Json(json!({
                             "success": false,
                             "message": format!("Error reading file stream: {}", e)
-                        }))
-                    ).into_response();
+                        })),
+                    )
+                        .into_response();
                 }
             }
         } else {
@@ -123,10 +133,17 @@ pub async fn upload_listing_images(
         }
     }
 
-    log::info!("Multipart parsing done. Total fields={}, files collected={}", field_count, files.len());
+    log::info!(
+        "Multipart parsing done. Total fields={}, files collected={}",
+        field_count,
+        files.len()
+    );
 
     if files.is_empty() {
-        log::warn!("No files found in multipart request (parsed {} fields total)", field_count);
+        log::warn!(
+            "No files found in multipart request (parsed {} fields total)",
+            field_count
+        );
         return (
             StatusCode::BAD_REQUEST,
             Json(json!({
@@ -138,19 +155,37 @@ pub async fn upload_listing_images(
 
     let session_id = temp_session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let user_uuid = Uuid::parse_str(&auth.user_id).unwrap_or_default();
-    
+
     let mut uploaded_images = Vec::new();
     let total_files = files.len() as i32;
 
-    log::info!("Starting S3 uploads: {} files, session={}, type={}", total_files, session_id, listing_type);
+    log::info!(
+        "Starting S3 uploads: {} files, session={}, type={}",
+        total_files,
+        session_id,
+        listing_type
+    );
 
     for (i, (filename, content_type, bytes, size)) in files.into_iter().enumerate() {
         let image_id = Uuid::new_v4();
-        let key = format!("listings/{}/{}/{}_{}", listing_type, session_id, image_id, filename);
+        let key = format!(
+            "listings/{}/{}/{}_{}",
+            listing_type, session_id, image_id, filename
+        );
 
-        log::info!("  Uploading [{}/{}] key={} size={}", i + 1, total_files, key, size);
+        log::info!(
+            "  Uploading [{}/{}] key={} size={}",
+            i + 1,
+            total_files,
+            key,
+            size
+        );
 
-        match app_state.public_storage_service.upload_file(&key, bytes.to_vec(), &content_type).await {
+        match app_state
+            .public_storage_service
+            .upload_file(&key, bytes.to_vec(), &content_type)
+            .await
+        {
             Ok(()) => {
                 log::info!("  S3 upload OK for {}", filename);
             }
@@ -161,14 +196,19 @@ pub async fn upload_listing_images(
                     Json(json!({
                         "success": false,
                         "message": format!("S3 upload failed for {}: {}", filename, e)
-                    }))
-                ).into_response();
+                    })),
+                )
+                    .into_response();
             }
         }
 
-        let bucket_name = std::env::var("PUBLIC_BUCKET_NAME").unwrap_or_else(|_| "livana-public-listings".to_string());
+        let bucket_name = std::env::var("PUBLIC_BUCKET_NAME")
+            .unwrap_or_else(|_| "livana-public-listings".to_string());
         let aws_region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
-        let url = format!("https://{}.s3.{}.amazonaws.com/{}", bucket_name, aws_region, key);
+        let url = format!(
+            "https://{}.s3.{}.amazonaws.com/{}",
+            bucket_name, aws_region, key
+        );
 
         let uploaded_at = Utc::now();
         let order_index = (i + 1) as i32;
@@ -207,7 +247,10 @@ pub async fn upload_listing_images(
         });
     }
 
-    log::info!("Upload complete. {} images uploaded successfully.", uploaded_images.len());
+    log::info!(
+        "Upload complete. {} images uploaded successfully.",
+        uploaded_images.len()
+    );
 
     if uploaded_images.is_empty() {
         return (
@@ -215,8 +258,9 @@ pub async fn upload_listing_images(
             Json(json!({
                 "success": false,
                 "message": "Failed to upload any images."
-            }))
-        ).into_response();
+            })),
+        )
+            .into_response();
     }
 
     (
@@ -228,7 +272,8 @@ pub async fn upload_listing_images(
                 uploaded_images,
                 total_uploaded: total_files,
                 temp_session_id: session_id,
-            }
-        })
-    ).into_response()
+            },
+        }),
+    )
+        .into_response()
 }

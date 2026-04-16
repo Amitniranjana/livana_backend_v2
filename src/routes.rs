@@ -140,8 +140,8 @@ pub fn suggestions_routes() -> Router<AppState> {
 /// CareCrew Module (Step 4)
 pub fn carecrew_routes() -> Router<AppState> {
     use crate::handlers::carecrew::{
-        create_booking, get_featured_providers, get_provider, get_provider_bookings, get_service,
-        list_services, search_providers, update_booking_status,
+        create_booking, edit_provider_profile, get_featured_providers, get_provider,
+        get_provider_bookings, get_service, list_services, search_providers, update_booking_status,
     };
     Router::new()
         // Service endpoints (public)
@@ -153,7 +153,10 @@ pub fn carecrew_routes() -> Router<AppState> {
             "/api/v1/carecrew/providers/featured",
             get(get_featured_providers),
         )
-        .route("/api/v1/carecrew/providers/{id}", get(get_provider))
+        .route(
+            "/api/v1/carecrew/providers/{id}",
+            get(get_provider).put(edit_provider_profile),
+        )
         // Booking endpoints (authenticated)
         .route("/api/v1/carecrew/bookings", post(create_booking))
         .route(
@@ -166,16 +169,18 @@ pub fn carecrew_routes() -> Router<AppState> {
         )
 }
 
-/// Global Bookings Endpoints (Endpoints 33, 34, 35, 36)
+/// Global Bookings Endpoints (Endpoints 33, 34, 35, 36, 37)
 pub fn bookings_routes() -> Router<AppState> {
     use crate::handlers::carecrew::{
-        get_booking_details, get_provider_bookings_v2, get_user_bookings, update_booking_status,
+        cancel_booking, get_booking_details, get_provider_bookings_v2, get_user_bookings,
+        update_booking_status,
     };
     Router::new()
         .route("/api/bookings", get(get_user_bookings))
         .route("/api/bookings/provider", get(get_provider_bookings_v2))
         .route("/api/bookings/{id}", get(get_booking_details))
         .route("/api/bookings/{id}/status", put(update_booking_status))
+        .route("/api/bookings/{id}/cancel", put(cancel_booking))
 }
 
 /// CareCrew Tickets (Support Module)
@@ -242,17 +247,23 @@ pub fn property_filter_routes() -> Router<AppState> {
 /// Community APIs (JWT-protected)
 pub fn community_routes() -> Router<AppState> {
     use crate::handlers::community::{
-        create_community, create_community_post, get_communities, join_community,
+        create_community, create_community_post, edit_community, edit_community_post,
+        get_communities, join_community,
     };
     Router::new()
         .route(
             "/api/v1/communities",
             post(create_community).get(get_communities),
         )
+        .route("/api/v1/communities/{id}", put(edit_community))
         .route("/api/v1/communities/{id}/join", post(join_community))
         .route(
             "/api/v1/communities/{id}/posts",
             post(create_community_post),
+        )
+        .route(
+            "/api/v1/communities/{community_id}/posts/{post_id}",
+            put(edit_community_post),
         )
 }
 
@@ -297,12 +308,13 @@ pub fn language_routes() -> Router<AppState> {
 /// Expo Event APIs (JWT-protected)
 pub fn expo_routes() -> Router<AppState> {
     use crate::handlers::expo::{
-        create_expo, get_all_expos, get_expo_details, get_expo_participants, register_for_expo,
+        create_expo, edit_expo, get_all_expos, get_expo_details, get_expo_participants,
+        register_for_expo,
     };
     Router::new()
         .route("/api/expo", post(create_expo))
         .route("/api/expo", get(get_all_expos))
-        .route("/api/expo/{expo_id}", get(get_expo_details))
+        .route("/api/expo/{expo_id}", get(get_expo_details).put(edit_expo))
         .route("/api/expo/{expo_id}/register", post(register_for_expo))
         .route(
             "/api/expo/{expo_id}/participants",
@@ -312,10 +324,13 @@ pub fn expo_routes() -> Router<AppState> {
 
 /// Service Provider Listing APIs
 pub fn service_listing_routes() -> Router<AppState> {
-    use crate::handlers::service_listing::{add_service, filter_providers, get_all_services};
+    use crate::handlers::service_listing::{
+        add_service, edit_service, filter_providers, get_all_services,
+    };
     Router::new()
         .route("/api/services", post(add_service).get(get_all_services))
         .route("/api/services/providers", get(filter_providers))
+        .route("/api/services/{service_id}", put(edit_service))
 }
 
 /// CareCrew Review APIs

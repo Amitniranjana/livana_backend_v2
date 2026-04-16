@@ -7,7 +7,7 @@
 
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -20,7 +20,7 @@ use crate::{
         response::ApiResponse,
         service::{
             AddServiceRequest, ProviderItem, ProvidersFilterQuery, ProvidersListData, ServiceItem,
-            ServiceResponse, ServicesListData, ServicesQuery,
+            ServiceResponse, ServicesListData, ServicesQuery, UpdateServiceRequest,
         },
     },
     utils::{api_error::ApiError, auth_extractor::AuthenticationUser},
@@ -329,6 +329,102 @@ pub async fn filter_providers(
             total_count,
             current_page,
             total_pages,
+        },
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/services/{service_id} — Edit a Service (partial update)
+// ---------------------------------------------------------------------------
+
+pub async fn edit_service(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(service_id): Path<uuid::Uuid>,
+    Json(body): Json<UpdateServiceRequest>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user token".to_string()))?;
+
+    // 1. Ownership check — only the provider who created it can edit
+    let owner_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT provider_id FROM services WHERE id = $1")
+            .bind(service_id)
+            .fetch_optional(&app_state.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    match owner_id {
+        None => return Err(ApiError::NotFound("Service not found".to_string())),
+        Some(oid) if oid != user_id => return Err(ApiError::access_denied()),
+        _ => {}
+    }
+
+    // 2. Validate fields if provided
+    if let Some(ref cat) = body.category {
+        if !VALID_CATEGORIES.contains(&cat.as_str()) {
+            return Err(ApiError::CustomError(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Invalid category. Must be one of: {}",
+                    VALID_CATEGORIES.join(", ")
+                ),
+                "VALIDATION_ERROR".to_string(),
+            ));
+        }
+    }
+
+    if let Some(price) = body.price {
+        if price <= 0 {
+            return Err(ApiError::CustomError(
+                StatusCode::BAD_REQUEST,
+                "Price must be greater than 0".to_string(),
+                "VALIDATION_ERROR".to_string(),
+            ));
+        }
+    }
+
+    // 3. Partial update via COALESCE
+    let row = sqlx::query(
+        r#"
+        UPDATE services SET
+            service_name = COALESCE($2, service_name),
+            category     = COALESCE($3, category),
+            price        = COALESCE($4, price),
+            description  = COALESCE($5, description),
+            experience   = COALESCE($6, experience),
+            location     = COALESCE($7, location),
+            updated_at   = NOW()
+        WHERE id = $1
+        RETURNING id, provider_id, service_name, category, price, description, experience, location, created_at
+        "#,
+    )
+    .bind(service_id)
+    .bind(&body.service_name)
+    .bind(&body.category)
+    .bind(body.price)
+    .bind(&body.description)
+    .bind(&body.experience)
+    .bind(&body.location)
+    .fetch_one(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Failed to update service: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Service updated successfully".to_string(),
+        data: ServiceItem {
+            id: row.get("id"),
+            provider_id: row.get("provider_id"),
+            service_name: row.get("service_name"),
+            category: row.get("category"),
+            price: row.get("price"),
+            description: row.get("description"),
+            experience: row.get("experience"),
+            location: row.get("location"),
+            created_at: row.get("created_at"),
         },
     };
 

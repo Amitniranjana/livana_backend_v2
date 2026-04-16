@@ -515,6 +515,71 @@ pub async fn get_provider_bookings_v2(
     Ok((rows, total))
 }
 
+/// Returns (user_id, provider_id, status) for ownership validation.
+pub async fn get_booking_owner_and_provider(
+    db: &Pool<Postgres>,
+    booking_id: Uuid,
+) -> Result<Option<(Uuid, Uuid, String)>, sqlx::Error> {
+    let row =
+        sqlx::query("SELECT user_id, provider_id, status FROM carecrew_bookings WHERE id = $1")
+            .bind(booking_id)
+            .fetch_optional(db)
+            .await?;
+
+    Ok(row.map(|r| {
+        (
+            r.get::<Uuid, _>("user_id"),
+            r.get::<Uuid, _>("provider_id"),
+            r.get::<String, _>("status"),
+        )
+    }))
+}
+
+/// Cancel a booking: set status = 'cancelled', cancelled_at = NOW(), insert tracking row.
+pub async fn cancel_booking(
+    db: &Pool<Postgres>,
+    booking_id: Uuid,
+    cancellation_reason: Option<&str>,
+) -> Result<sqlx::postgres::PgRow, sqlx::Error> {
+    let mut tx = db.begin().await?;
+
+    let row = sqlx::query(
+        r#"
+        UPDATE carecrew_bookings
+        SET status = 'cancelled',
+            cancelled_at = NOW(),
+            cancellation_reason = $2,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        "#,
+    )
+    .bind(booking_id)
+    .bind(cancellation_reason)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    let description = match cancellation_reason {
+        Some(reason) => format!("Booking cancelled: {}", reason),
+        None => "Booking cancelled".to_string(),
+    };
+
+    sqlx::query(
+        r#"
+        INSERT INTO carecrew_booking_tracking (booking_id, status, description)
+        VALUES ($1, 'cancelled', $2)
+        "#,
+    )
+    .bind(booking_id)
+    .bind(&description)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(row)
+}
+
 pub async fn get_booking_details(
     db: &Pool<Postgres>,
     booking_id: Uuid,
@@ -524,6 +589,7 @@ pub async fn get_booking_details(
     let query = "
         SELECT b.id as booking_id, b.booking_number, p.id as provider_id, p.name as provider_name, p.phone as provider_phone, p.avatar_url as provider_image, p.rating as provider_rating,
                s.name as service_type, b.scheduled_at::text as scheduled_date_time, b.status, b.address, b.problem_description, b.contact_number, b.estimated_cost, b.final_cost, b.payment_status,
+               b.cancelled_at::text as cancelled_at, b.cancellation_reason,
                b.created_at::text as created_at, b.updated_at::text as updated_at
         FROM carecrew_bookings b
         JOIN carecrew_providers p ON b.provider_id = p.id
@@ -562,6 +628,8 @@ pub async fn get_booking_details(
         final_cost: row.try_get("final_cost").ok(),
         payment_status: row.get("payment_status"),
         tracking_status: tracking_rows,
+        cancelled_at: row.try_get("cancelled_at").ok(),
+        cancellation_reason: row.try_get("cancellation_reason").ok(),
         created_at: row.get("created_at"),
         updated_at: row.try_get("updated_at").ok(),
     }))
