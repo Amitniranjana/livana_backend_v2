@@ -17,6 +17,20 @@ pub struct CreateExpoRequest {
     pub max_participants: i32,
 }
 
+/// Partial update for an expo event.
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct UpdateExpoRequest {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub location: Option<String>,
+    pub event_date: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    pub banner_image: Option<String>,
+    pub max_participants: Option<i32>,
+}
+
 // ── POST /api/expo — Response data ──────────────────────────────────────────
 
 #[allow(dead_code)]

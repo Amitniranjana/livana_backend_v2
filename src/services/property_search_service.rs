@@ -10,16 +10,22 @@ use sqlx::{Pool, Postgres, Row};
 fn row_to_property_json(row: &sqlx::postgres::PgRow) -> Value {
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
     let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
-    let images: Vec<String> = raw_images.into_iter().map(|img| {
-        if let Some(idx) = img.find(" | ") {
-            img[..idx].to_string()
-        } else {
-            img
-        }
-    }).collect();
+    let images: Vec<String> = raw_images
+        .into_iter()
+        .map(|img| {
+            if let Some(idx) = img.find(" | ") {
+                img[..idx].to_string()
+            } else {
+                img
+            }
+        })
+        .collect();
     let amenities_val: Value = row.try_get("amenities").unwrap_or(json!([]));
 
-    let raw_primary_image = row.try_get::<Option<String>, _>("primary_image").unwrap_or_default().unwrap_or_default();
+    let raw_primary_image = row
+        .try_get::<Option<String>, _>("primary_image")
+        .unwrap_or_default()
+        .unwrap_or_default();
     let primary_image = if let Some(idx) = raw_primary_image.find(" | ") {
         raw_primary_image[..idx].to_string()
     } else {

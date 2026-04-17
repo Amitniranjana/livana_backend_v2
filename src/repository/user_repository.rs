@@ -165,7 +165,7 @@ impl UserRepository {
         }
 
         let result = sqlx::query_as::<_, ProfileRow>(
-            "SELECT gender, bio, profile_image_url FROM user_profiles WHERE user_id = $1"
+            "SELECT gender, bio, profile_image_url FROM user_profiles WHERE user_id = $1",
         )
         .bind(uuid)
         .fetch_optional(&self.pool)

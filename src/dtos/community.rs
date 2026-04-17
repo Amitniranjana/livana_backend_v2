@@ -38,3 +38,18 @@ pub struct CommunityPostResponseDto {
     pub content: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
+
+/// Partial update for a community — only provided fields are updated.
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct UpdateCommunityDto {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Update a community post — content is REQUIRED and cannot be empty.
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct UpdateCommunityPostDto {
+    pub content: String,
+}
