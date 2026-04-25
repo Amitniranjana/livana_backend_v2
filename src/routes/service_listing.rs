@@ -2,7 +2,7 @@ use crate::app_state::AppState;
 use crate::handlers::service_listing::{
     add_service, edit_service, filter_providers, get_all_services,
 };
-use axum::{Router, routing::{post, put}};
+use axum::{Router, routing::{get, post, put}};
 
 pub fn service_listing_routes() -> Router<AppState> {
     Router::new()
