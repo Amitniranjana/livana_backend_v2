@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE communities SET\n            name        = COALESCE($2, name),\n            description = COALESCE($3, description),\n            updated_at  = NOW()\n        WHERE id = $1\n        RETURNING id, name, description, created_by, created_at,\n            true as \"is_joined!\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_by",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_joined!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "62699a0a632cce86b089bcb53a0be55111ba641c676156e6b261b0c3ac1882db"
+}
