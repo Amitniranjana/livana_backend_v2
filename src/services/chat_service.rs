@@ -23,7 +23,6 @@ impl ChatService {
         }
     }
 
-    /// Create an App Instance User in Chime
     pub async fn create_app_instance_user(
         &self,
         app_instance_arn: &str,
@@ -37,15 +36,30 @@ impl ChatService {
             .app_instance_user_id(user_id)
             .name(name)
             .send()
-            .await
-            .context("Failed to create app instance user")?;
+            .await;
 
-        let user_arn = resp.app_instance_user_arn().unwrap_or_default().to_string();
-
-        Ok(ChatUser {
-            app_instance_user_arn: user_arn,
-            name: name.to_string(),
-        })
+        match resp {
+            Ok(r) => {
+                let user_arn = r.app_instance_user_arn().unwrap_or_default().to_string();
+                Ok(ChatUser {
+                    app_instance_user_arn: user_arn,
+                    name: name.to_string(),
+                })
+            }
+            Err(e) => {
+                let err_str = format!("{:?}", e);
+                if err_str.contains("ConflictException") || err_str.contains("already exists") {
+                    // Fallback: construct the ARN manually since it already exists
+                    let user_arn = format!("{}/user/{}", app_instance_arn, user_id);
+                    Ok(ChatUser {
+                        app_instance_user_arn: user_arn,
+                        name: name.to_string(),
+                    })
+                } else {
+                    Err(anyhow::anyhow!("Failed to create app instance user: {}", err_str))
+                }
+            }
+        }
     }
 
     /// Create a Chat Channel
