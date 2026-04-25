@@ -284,6 +284,12 @@ pub fn property_review_routes() -> Router<AppState> {
         .route("/api/reviews/property/{id}/reply", post(reply_to_review))
 }
 
+/// Analytics APIs (public)
+pub fn analytics_routes() -> Router<AppState> {
+    use crate::handlers::analytics::get_rent_trends;
+    Router::new().route("/api/v1/analytics/rent-trends", get(get_rent_trends))
+}
+
 pub mod chat_routes;
 pub use chat_routes::chat_routes;
 
@@ -292,3 +298,4 @@ pub use kyc::kyc_routes;
 
 pub mod chat;
 pub mod visit;
+

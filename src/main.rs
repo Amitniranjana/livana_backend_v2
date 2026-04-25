@@ -21,12 +21,13 @@ use crate::{
     repository::chat_repository::ChatRepository,
     repository::user_repository::UserRepository,
     routes::{
-        associate_routes, auth_routes, bookings_routes, broker_routes, carecrew_review_routes,
-        carecrew_routes, carecrew_ticket_routes, career_routes, careers_routes, community_routes,
-        expo_routes, health_routes, language_routes, listing_routes, moderation_routes,
-        notifications_routes, property_filter_routes, property_review_routes,
-        property_search_routes, recent_chats_routes, reviews_routes, saved_properties_routes,
-        service_listing_routes, suggestions_routes, user_routes, vibes_routes,
+        analytics_routes, associate_routes, auth_routes, bookings_routes, broker_routes,
+        carecrew_review_routes, carecrew_routes, carecrew_ticket_routes, career_routes,
+        careers_routes, community_routes, expo_routes, health_routes, language_routes,
+        listing_routes, moderation_routes, notifications_routes, property_filter_routes,
+        property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
+        saved_properties_routes, service_listing_routes, suggestions_routes, user_routes,
+        vibes_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -175,6 +176,8 @@ async fn main() {
         .merge(service_listing_routes())
         .merge(carecrew_review_routes())
         .merge(property_review_routes())
+        // ── Analytics (public) ─────────────────────────────────────
+        .merge(analytics_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

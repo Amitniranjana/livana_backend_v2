@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod associate;
 pub mod auth;
 pub mod career;
