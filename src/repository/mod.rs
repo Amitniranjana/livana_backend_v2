@@ -1,3 +1,4 @@
+pub mod analytics_repository;
 pub mod carecrew_repository;
 pub mod carecrew_tickets_repository;
 pub mod chat_repository;

@@ -1,3 +1,4 @@
+pub mod analytics_service;
 pub mod carecrew_service;
 pub mod carecrew_tickets_service;
 pub mod chat_db_service;
