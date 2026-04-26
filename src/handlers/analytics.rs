@@ -79,6 +79,145 @@ pub async fn get_rent_trends(
     }
 }
 
+// ─── Heatmap ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct HeatmapQuery {
+    /// City name (required)
+    pub city: String,
+    /// Optional property type filter
+    pub property_type: Option<String>,
+    /// Look-back window in days (default 30)
+    pub days: Option<i32>,
+}
+
+/// GET /api/v1/analytics/rent-heatmap
+///
+/// Returns average rent broken down by locality within a city —
+/// suitable for rendering a visual heatmap.
+pub async fn get_rent_heatmap(
+    State(app_state): State<AppState>,
+    Query(q): Query<HeatmapQuery>,
+) -> impl IntoResponse {
+    if q.city.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "Query parameter 'city' is required and cannot be empty",
+                "error_code": "MISSING_CITY"
+            })),
+        );
+    }
+
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+
+    match analytics_service::get_rent_heatmap(
+        &app_state.db,
+        q.city.trim(),
+        q.property_type.as_deref(),
+        days,
+    )
+    .await
+    {
+        Ok(data) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Rent heatmap retrieved successfully",
+                "data": data
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_rent_heatmap DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to retrieve rent heatmap",
+                    "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+// ─── Area Comparison ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ComparisonQuery {
+    /// Comma-separated list of cities (at least 2)
+    pub cities: String,
+    /// Optional property type filter
+    pub property_type: Option<String>,
+    /// Look-back window in days (default 30)
+    pub days: Option<i32>,
+}
+
+/// GET /api/v1/analytics/rent-comparison
+///
+/// Compares rent statistics across multiple cities.
+/// Pass cities as a comma-separated list: `?cities=Ahmedabad,Mumbai`
+pub async fn get_rent_comparison(
+    State(app_state): State<AppState>,
+    Query(q): Query<ComparisonQuery>,
+) -> impl IntoResponse {
+    let city_list: Vec<&str> = q.cities.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+
+    if city_list.len() < 2 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "At least 2 cities are required for comparison (comma-separated)",
+                "error_code": "INSUFFICIENT_CITIES"
+            })),
+        );
+    }
+
+    if city_list.len() > 10 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "Maximum of 10 cities can be compared at once",
+                "error_code": "TOO_MANY_CITIES"
+            })),
+        );
+    }
+
+    let days = q.days.unwrap_or(30).clamp(1, 365);
+
+    match analytics_service::get_rent_comparison(
+        &app_state.db,
+        &city_list,
+        q.property_type.as_deref(),
+        days,
+    )
+    .await
+    {
+        Ok(data) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Rent comparison retrieved successfully",
+                "data": data
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_rent_comparison DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to retrieve rent comparison",
+                    "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

@@ -286,8 +286,14 @@ pub fn property_review_routes() -> Router<AppState> {
 
 /// Analytics APIs (public)
 pub fn analytics_routes() -> Router<AppState> {
-    use crate::handlers::analytics::get_rent_trends;
-    Router::new().route("/api/v1/analytics/rent-trends", get(get_rent_trends))
+    use crate::handlers::analytics::{get_rent_comparison, get_rent_heatmap, get_rent_trends};
+    Router::new()
+        .route("/api/v1/analytics/rent-trends", get(get_rent_trends))
+        .route("/api/v1/analytics/rent-heatmap", get(get_rent_heatmap))
+        .route(
+            "/api/v1/analytics/rent-comparison",
+            get(get_rent_comparison),
+        )
 }
 
 pub mod chat_routes;
