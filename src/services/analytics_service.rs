@@ -1,7 +1,6 @@
 /// Analytics Service Layer
 /// Business logic for rent-trend analytics.
 /// Delegates to `analytics_repository`, computes % change and trend direction.
-
 use crate::repository::analytics_repository as repo;
 use serde_json::{Value, json};
 use sqlx::{Pool, Postgres};
@@ -102,9 +101,16 @@ pub async fn get_rent_heatmap(
         .collect();
 
     let overall_avg = if !data.is_empty() {
-        let total: f64 = data.iter().map(|d| d.avg_rent * d.listing_count as f64).sum();
+        let total: f64 = data
+            .iter()
+            .map(|d| d.avg_rent * d.listing_count as f64)
+            .sum();
         let count: i64 = data.iter().map(|d| d.listing_count).sum();
-        if count > 0 { (total / count as f64 * 100.0).round() / 100.0 } else { 0.0 }
+        if count > 0 {
+            (total / count as f64 * 100.0).round() / 100.0
+        } else {
+            0.0
+        }
     } else {
         0.0
     };
@@ -144,8 +150,12 @@ pub async fn get_rent_comparison(
         .collect();
 
     // Compute the cheapest and most expensive city
-    let cheapest = summaries.iter().min_by(|a, b| a.avg_rent.partial_cmp(&b.avg_rent).unwrap());
-    let most_expensive = summaries.iter().max_by(|a, b| a.avg_rent.partial_cmp(&b.avg_rent).unwrap());
+    let cheapest = summaries
+        .iter()
+        .min_by(|a, b| a.avg_rent.partial_cmp(&b.avg_rent).unwrap());
+    let most_expensive = summaries
+        .iter()
+        .max_by(|a, b| a.avg_rent.partial_cmp(&b.avg_rent).unwrap());
 
     // If we have exactly 2 cities, compute the difference %
     let diff_percentage = if summaries.len() == 2 {

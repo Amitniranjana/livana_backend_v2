@@ -1,6 +1,5 @@
 /// Analytics Repository
 /// Raw SQL queries for rent trend data from the `properties` table.
-
 use sqlx::{Pool, Postgres, Row};
 
 /// A single daily aggregation data point.
@@ -57,9 +56,7 @@ pub async fn get_rent_trend_data(
     query.push_str(" GROUP BY d ORDER BY d ASC");
 
     // Build the sqlx query and bind params in order
-    let mut q = sqlx::query(&query)
-        .bind(city)
-        .bind(days.to_string()); // cast to TEXT for interval concat
+    let mut q = sqlx::query(&query).bind(city).bind(days.to_string()); // cast to TEXT for interval concat
 
     if let Some(loc) = locality {
         q = q.bind(format!("%{}%", loc));
@@ -115,9 +112,7 @@ pub async fn get_overall_average_rent(
         query.push_str(&format!(" AND property_type ILIKE ${}", bind_idx));
     }
 
-    let mut q = sqlx::query(&query)
-        .bind(city)
-        .bind(days.to_string());
+    let mut q = sqlx::query(&query).bind(city).bind(days.to_string());
 
     if let Some(loc) = locality {
         q = q.bind(format!("%{}%", loc));
@@ -175,9 +170,7 @@ pub async fn get_rent_heatmap_data(
 
     query.push_str(" GROUP BY loc ORDER BY avg_rent DESC");
 
-    let mut q = sqlx::query(&query)
-        .bind(city)
-        .bind(days.to_string());
+    let mut q = sqlx::query(&query).bind(city).bind(days.to_string());
 
     if let Some(pt) = property_type {
         q = q.bind(pt);
@@ -223,9 +216,7 @@ pub async fn get_city_rent_summary(
     days: i32,
 ) -> Result<Vec<CitySummary>, sqlx::Error> {
     // $1 = days, $2..$N = cities, $N+1 = property_type (optional)
-    let city_placeholders: Vec<String> = (0..cities.len())
-        .map(|i| format!("${}", 2 + i))
-        .collect();
+    let city_placeholders: Vec<String> = (0..cities.len()).map(|i| format!("${}", 2 + i)).collect();
     let pt_bind_idx = 2 + cities.len();
 
     let mut query = format!(

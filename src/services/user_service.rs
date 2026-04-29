@@ -3,24 +3,19 @@ use crate::dtos::response::UserResponse;
 use crate::models::user::User;
 use crate::repository::user_repository::UserRepository;
 use chrono::Utc;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct UserService {
     pub user_repository: UserRepository,
-    // in-memory store for reset codes: user_id -> code
-    pub reset_codes: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl UserService {
     pub fn new(user_repository: UserRepository) -> Self {
-        UserService {
-            user_repository,
-            reset_codes: Arc::new(Mutex::new(HashMap::new())),
-        }
+        UserService { user_repository }
+
     }
 
     pub async fn create_user(
@@ -63,21 +58,7 @@ impl UserService {
         self.user_repository.find_by_email(email).await
     }
 
-    pub async fn store_reset_code(&self, user_id: &str, code: &str) -> Result<(), String> {
-        let mut map = self.reset_codes.lock().map_err(|e| e.to_string())?;
-        map.insert(user_id.to_string(), code.to_string());
-        Ok(())
-    }
 
-    pub async fn verify_reset_code(&self, code: &str) -> Result<Option<String>, String> {
-        let map = self.reset_codes.lock().map_err(|e| e.to_string())?;
-        for (uid, c) in map.iter() {
-            if c == code {
-                return Ok(Some(uid.clone()));
-            }
-        }
-        Ok(None)
-    }
 
     pub async fn update_password(
         &self,
@@ -89,16 +70,7 @@ impl UserService {
             .await
     }
 
-    pub async fn delete_reset_code(&self, code: &str) -> Result<(), String> {
-        let mut map = self.reset_codes.lock().map_err(|e| e.to_string())?;
-        let key = map
-            .iter()
-            .find_map(|(k, v)| if v == code { Some(k.clone()) } else { None });
-        if let Some(k) = key {
-            map.remove(&k);
-        }
-        Ok(())
-    }
+
 
     pub async fn get_user_profile(&self, user_id: &str) -> Result<UserResponse, String> {
         // 1. Get basic user info
@@ -223,5 +195,41 @@ impl UserService {
 
     pub async fn invalidate_otps(&self, phone_no: &str) -> Result<(), String> {
         self.user_repository.invalidate_otps(phone_no).await
+    }
+
+    // -------------------------------------------------------------------------
+    // Email-based OTP methods
+    // -------------------------------------------------------------------------
+
+    /// Store an OTP for an email address with a given purpose.
+    pub async fn store_email_otp(
+        &self,
+        email: &str,
+        otp_code: &str,
+        purpose: &str,
+        expires_minutes: i64,
+    ) -> Result<(), String> {
+        self.user_repository
+            .store_email_otp(email, otp_code, purpose, expires_minutes)
+            .await
+    }
+
+    /// Verify and consume an email OTP for a given purpose.
+    pub async fn verify_and_consume_email_otp(
+        &self,
+        email: &str,
+        otp_code: &str,
+        purpose: &str,
+    ) -> Result<bool, String> {
+        self.user_repository
+            .verify_email_otp(email, otp_code, purpose)
+            .await
+    }
+
+    /// Invalidate all unused OTPs for an email + purpose.
+    pub async fn invalidate_email_otps(&self, email: &str, purpose: &str) -> Result<(), String> {
+        self.user_repository
+            .invalidate_email_otps(email, purpose)
+            .await
     }
 }

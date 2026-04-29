@@ -1,6 +1,7 @@
 // src/otp/mod.rs
 use rand::{Rng, thread_rng};
 
+/// Generate a cryptographically-random 6-digit numeric OTP.
 pub fn generate_otp() -> String {
     let mut rng = thread_rng();
     format!("{:06}", rng.gen_range(0..1_000_000))
@@ -50,7 +51,7 @@ mod tests {
         dotenvy::dotenv().ok();
         let email = std::env::var("TEST_EMAIL").expect("TEST_EMAIL must be set");
         let otp = generate_otp();
-        let result = send_email_otp(&email, &otp).await;
+        let result = send_email_otp(&email, &otp, "Email Verification").await;
         assert!(result.is_ok(), "Email sending failed: {:?}", result.err());
     }
 }

@@ -1,6 +1,5 @@
 /// Analytics Handler
 /// HTTP handler for `GET /api/v1/analytics/rent-trends`.
-
 use axum::{
     Json,
     extract::{Query, State},
@@ -162,7 +161,12 @@ pub async fn get_rent_comparison(
     State(app_state): State<AppState>,
     Query(q): Query<ComparisonQuery>,
 ) -> impl IntoResponse {
-    let city_list: Vec<&str> = q.cities.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let city_list: Vec<&str> = q
+        .cities
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     if city_list.len() < 2 {
         return (

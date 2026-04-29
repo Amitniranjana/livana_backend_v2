@@ -412,4 +412,118 @@ impl UserRepository {
             Err(e) => Err(e.to_string()),
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Email-based OTP methods
+    // -------------------------------------------------------------------------
+
+    /// Store an OTP for an email address with a specific purpose.
+    /// Invalidates any existing unused OTPs for the same email + purpose first.
+    pub async fn store_email_otp(
+        &self,
+        email: &str,
+        otp_code: &str,
+        purpose: &str,
+        expires_minutes: i64,
+    ) -> Result<(), String> {
+        // Invalidate existing OTPs for this email + purpose
+        let _ = sqlx::query(
+            "UPDATE otp_records SET used = TRUE WHERE email = $1 AND purpose = $2 AND used = FALSE",
+        )
+        .bind(email)
+        .bind(purpose)
+        .execute(&self.pool)
+        .await;
+
+        let id = uuid::Uuid::new_v4();
+        let expires_at = chrono::Utc::now() + chrono::Duration::minutes(expires_minutes);
+
+        let result = sqlx::query(
+            "INSERT INTO otp_records (id, email, otp_code, purpose, expires_at) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(id)
+        .bind(email)
+        .bind(otp_code)
+        .bind(purpose)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Verify an email OTP for a given purpose. Returns:
+    /// - `Ok(true)` if valid and consumed
+    /// - `Ok(false)` if wrong code
+    /// - `Err("OTP has expired")` if expired
+    /// - `Err("No OTP found ...")` if none exists
+    pub async fn verify_email_otp(
+        &self,
+        email: &str,
+        otp_code: &str,
+        purpose: &str,
+    ) -> Result<bool, String> {
+        #[derive(sqlx::FromRow)]
+        struct OtpRow {
+            id: uuid::Uuid,
+            otp_code: String,
+            expires_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let result = sqlx::query_as::<_, OtpRow>(
+            r#"SELECT id, otp_code, expires_at
+               FROM otp_records
+               WHERE email = $1 AND purpose = $2 AND used = FALSE
+               ORDER BY created_at DESC
+               LIMIT 1"#,
+        )
+        .bind(email)
+        .bind(purpose)
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(Some(row)) => {
+                // Check expiry
+                if chrono::Utc::now() > row.expires_at {
+                    let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE id = $1")
+                        .bind(row.id)
+                        .execute(&self.pool)
+                        .await;
+                    return Err("OTP has expired".to_string());
+                }
+                // Check code
+                if row.otp_code == otp_code {
+                    let _ = sqlx::query("UPDATE otp_records SET used = TRUE WHERE id = $1")
+                        .bind(row.id)
+                        .execute(&self.pool)
+                        .await;
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
+            Ok(None) => Err("No OTP found for this email".to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Invalidate all unused OTPs for an email + purpose combination.
+    pub async fn invalidate_email_otps(&self, email: &str, purpose: &str) -> Result<(), String> {
+        let result = sqlx::query(
+            "UPDATE otp_records SET used = TRUE WHERE email = $1 AND purpose = $2 AND used = FALSE",
+        )
+        .bind(email)
+        .bind(purpose)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }

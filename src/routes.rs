@@ -139,7 +139,7 @@ pub fn suggestions_routes() -> Router<AppState> {
 
 /// CareCrew Module (Step 4)
 pub mod carecrew;
-pub use carecrew::{carecrew_routes, bookings_routes};
+pub use carecrew::{bookings_routes, carecrew_routes};
 
 /// CareCrew Tickets (Support Module)
 pub fn carecrew_ticket_routes() -> Router<AppState> {
@@ -304,4 +304,3 @@ pub use kyc::kyc_routes;
 
 pub mod chat;
 pub mod visit;
-

@@ -1,10 +1,13 @@
 use crate::app_state::AppState;
 use crate::handlers::community::{
-    create_community, create_community_post, edit_community, edit_community_post,
-    get_communities, join_community,
+    create_community, create_community_post, edit_community, edit_community_post, get_communities,
+    join_community,
 };
 
-use axum::{Router, routing::{post, put}};
+use axum::{
+    Router,
+    routing::{post, put},
+};
 
 pub fn community_routes() -> Router<AppState> {
     Router::new()
