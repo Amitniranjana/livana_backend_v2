@@ -1,0 +1,1 @@
+ALTER TABLE otp_records ALTER COLUMN phone_no SET NOT NULL;
