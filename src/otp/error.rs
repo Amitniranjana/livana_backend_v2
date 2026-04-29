@@ -6,6 +6,9 @@ pub enum OtpError {
     #[error("AWS error: {0}")]
     AwsError(String),
 
+    #[error("SMTP error: {0}")]
+    SmtpError(String),
+
     #[error("Invalid destination: {0}")]
     InvalidDestination(String),
 

@@ -66,6 +66,9 @@ aws-sdk-s3 = "1"
 # HTTP Client (Google OAuth token verification)
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
+# Email OTP (Gmail SMTP)
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls", "builder"] }
+
 # KYC Processing
 sha2 = "0.10"
 hex = "0.4"

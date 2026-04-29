@@ -1,0 +1,132 @@
+// ==============================================================================
+// ✉️ EMAIL OTP TEST SUITE
+// ==============================================================================
+//
+// NOTE: Replace `PASTE_OTP_FROM_EMAIL`, `PASTE_OLD_OTP`, and `OLD_OTP` 
+// with the actual OTP received in your inbox before running the verify/reset tests.
+//
+// SMTP CONFIGURATION:
+// To fully test email delivery locally, you must configure the following in your `.env`:
+//   SMTP_USERNAME=your_gmail@gmail.com
+//   SMTP_PASSWORD=your_gmail_app_password
+//   SMTP_FROM=your_gmail@gmail.com
+//
+// If these are missing or invalid, the email will fail to send, BUT the API will 
+// still return `200 OK`. The OTP will be generated, stored in the DB, and printed 
+// to your server terminal (Dev Mode Intercept) so you can still test the flow!
+// ==============================================================================
+
+@base_url = http://localhost:3000
+
+### 1. Send OTP — Signup
+// Expected: 200 OK, message saying OTP sent
+POST {{base_url}}/api/auth/send-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "purpose": "signup"
+}
+
+### 2. Send OTP — Invalid email format
+// Expected: 400 Bad Request
+POST {{base_url}}/api/auth/send-otp
+Content-Type: application/json
+
+{
+    "email": "not-an-email"
+}
+
+### 3. Verify OTP — Correct OTP
+// Expected: 200 OK, user verified
+POST {{base_url}}/api/auth/verify-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "otp": "PASTE_OTP_FROM_EMAIL",
+    "purpose": "signup"
+}
+
+### 4. Verify OTP — Wrong OTP
+// Expected: 400 or 401, OTP invalid error
+POST {{base_url}}/api/auth/verify-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "otp": "000000",
+    "purpose": "signup"
+}
+
+### 5. Verify OTP — Expired OTP (use an old one)
+// Expected: 400 or 401, OTP expired error
+POST {{base_url}}/api/auth/verify-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "otp": "PASTE_OLD_OTP",
+    "purpose": "signup"
+}
+
+### 6. Resend OTP
+// Expected: 200 OK, new OTP sent (old OTP should be invalidated)
+POST {{base_url}}/api/auth/resend-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "purpose": "signup"
+}
+
+### 7. Verify OLD OTP after resend (should fail)
+// Expected: 400 or 401, OTP invalid (already invalidated)
+POST {{base_url}}/api/auth/verify-otp
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "otp": "OLD_OTP",
+    "purpose": "signup"
+}
+
+### 8. Forgot Password — Send OTP
+// Expected: 200 OK, OTP sent to email (NO SMS should be triggered)
+POST {{base_url}}/api/auth/send-forgot-password-link
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com"
+}
+
+### 9. Reset Password — Correct OTP
+// Expected: 200 OK, password reset successful
+POST {{base_url}}/api/auth/reset-password
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "code": "PASTE_OTP_FROM_EMAIL",
+    "new_password": "NewPass@123"
+}
+
+### 10. Reset Password — Reuse same OTP (should fail)
+// Expected: 400, OTP already used
+POST {{base_url}}/api/auth/reset-password
+Content-Type: application/json
+
+{
+    "email": "testuser@gmail.com",
+    "code": "SAME_OTP_AS_ABOVE",
+    "new_password": "AnotherPass@123"
+}
+
+### 11. Phone OTP still works (regression check)
+// Expected: 200 OK, SMS OTP triggered (existing flow not broken)
+POST {{base_url}}/api/auth/send-otp
+Content-Type: application/json
+
+{
+    "phone_no": "+919999999999"
+}

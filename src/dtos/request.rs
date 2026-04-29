@@ -49,7 +49,12 @@ pub struct SigninRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SendOtpRequest {
     #[schema(example = "+919876543210")]
-    pub phone_no: String,
+    pub phone_no: Option<String>,
+    #[schema(example = "john.doe@example.com")]
+    pub email: Option<String>,
+    /// Purpose of the OTP: "signup", "forgot_password", "change_password"
+    #[schema(example = "signup")]
+    pub purpose: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -57,9 +62,14 @@ pub struct SendOtpRequest {
 #[serde(rename_all = "camelCase")]
 pub struct VerifyOtpRequest {
     #[schema(example = "+919876543210")]
-    pub phone_no: String,
+    pub phone_no: Option<String>,
+    #[schema(example = "john.doe@example.com")]
+    pub email: Option<String>,
     #[schema(example = "123456")]
     pub otp: String,
+    /// Purpose of the OTP: "signup", "forgot_password", "change_password"
+    #[schema(example = "signup")]
+    pub purpose: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -121,7 +131,6 @@ pub struct UpdateProfileRequest {
     pub commission_rate: Option<f64>,
 }
 /// --- Property Create/Update DTOs ---
-
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreatePropertyRequest {

@@ -56,7 +56,10 @@ impl ChatService {
                         name: name.to_string(),
                     })
                 } else {
-                    Err(anyhow::anyhow!("Failed to create app instance user: {}", err_str))
+                    Err(anyhow::anyhow!(
+                        "Failed to create app instance user: {}",
+                        err_str
+                    ))
                 }
             }
         }

@@ -301,7 +301,7 @@ pub async fn signout(State(_app_state): State<AppState>) -> impl IntoResponse {
     (StatusCode::OK, Json(response))
 }
 
-/// Send OTP to phone number
+/// Send OTP — supports email (preferred) or phone
 #[utoipa::path(
     post,
     path = "/api/auth/send-otp",
@@ -317,54 +317,81 @@ pub async fn send_otp(
     ExtractJson(payload): ExtractJson<SendOtpRequest>,
 ) -> impl IntoResponse {
     let otp = generate_otp();
+    let purpose = payload.purpose.as_deref().unwrap_or("signup");
 
-    // --- DEVELOPER FALLBACK ---
-    println!("========================================");
-    println!("🔑 [DEV MODE] SEND-OTP INTERCEPT:");
-    println!("Phone: {}", payload.phone_no);
-    println!("OTP Code: {}", otp);
-    println!("========================================");
+    // Prefer email over phone when both are provided
+    if let Some(ref email) = payload.email {
+        if !email.is_empty() {
+            println!("========================================");
+            println!("🔑 [DEV MODE] SEND-OTP (EMAIL) INTERCEPT:");
+            println!("Email: {}", email);
+            println!("OTP Code: {}", otp);
+            println!("========================================");
 
-    // Store OTP in database (10 minute expiry)
-    if let Err(e) = app_state
-        .user_service
-        .store_otp(&payload.phone_no, &otp, 10)
-        .await
-    {
-        let response = json!({
-            "success": false,
-            "message": format!("Failed to store OTP: {}", e),
-            "data": null
-        });
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            if let Err(e) = app_state
+                .user_service
+                .store_email_otp(email, &otp, purpose, 10)
+                .await
+            {
+                let response = json!({ "success": false, "message": format!("Failed to store OTP: {}", e), "data": null });
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            }
+
+            let purpose_label = match purpose {
+                "signup" => "Email Verification",
+                "forgot_password" => "Password Reset",
+                "change_password" => "Change Password",
+                _ => "Verification",
+            };
+            if let Err(e) = send_email_otp(email, &otp, purpose_label).await {
+                eprintln!("Warning: Failed to send email OTP to {}: {:?}", email, e);
+            } else {
+                println!("✓ OTP email sent to {}", email);
+            }
+
+            let response =
+                json!({ "success": true, "message": "OTP sent successfully", "data": null });
+            return (StatusCode::OK, Json(response));
+        }
     }
 
-    // Send SMS
-    if let Err(e) = send_sms_otp(&payload.phone_no, &otp).await {
-        eprintln!(
-            "Warning: Failed to send SMS OTP to {}: {:?}",
-            payload.phone_no, e
-        );
-        // Don't return error in dev mode — OTP is printed to console
-    } else {
-        println!("✓ OTP SMS sent to {}", payload.phone_no);
+    // Fallback: phone-based OTP (existing SMS flow)
+    if let Some(ref phone_no) = payload.phone_no {
+        if !phone_no.is_empty() {
+            println!("========================================");
+            println!("🔑 [DEV MODE] SEND-OTP (SMS) INTERCEPT:");
+            println!("Phone: {}", phone_no);
+            println!("OTP Code: {}", otp);
+            println!("========================================");
+
+            if let Err(e) = app_state.user_service.store_otp(phone_no, &otp, 10).await {
+                let response = json!({ "success": false, "message": format!("Failed to store OTP: {}", e), "data": null });
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            }
+
+            if let Err(e) = send_sms_otp(phone_no, &otp).await {
+                eprintln!("Warning: Failed to send SMS OTP to {}: {:?}", phone_no, e);
+            } else {
+                println!("✓ OTP SMS sent to {}", phone_no);
+            }
+
+            let response =
+                json!({ "success": true, "message": "OTP sent successfully", "data": null });
+            return (StatusCode::OK, Json(response));
+        }
     }
 
-    let response = json!({
-        "success": true,
-        "message": "OTP sent successfully",
-        "data": null
-    });
-    (StatusCode::OK, Json(response))
+    let response = json!({ "success": false, "message": "Either email or phoneNo must be provided", "data": null });
+    (StatusCode::BAD_REQUEST, Json(response))
 }
 
-/// Verify OTP and mark phone as verified
+/// Verify OTP — supports email (preferred) or phone
 #[utoipa::path(
     post,
     path = "/api/auth/verify-otp",
     request_body = VerifyOtpRequest,
     responses(
-        (status = 200, description = "Phone verified successfully"),
+        (status = 200, description = "Verified successfully"),
         (status = 401, description = "Invalid or expired OTP")
     ),
     tag = "Authentication"
@@ -373,111 +400,139 @@ pub async fn verify_otp(
     State(app_state): State<AppState>,
     ExtractJson(payload): ExtractJson<VerifyOtpRequest>,
 ) -> impl IntoResponse {
-    // 1. Verify OTP from database
-    let otp_valid = match app_state
-        .user_service
-        .verify_and_consume_otp(&payload.phone_no, &payload.otp)
-        .await
-    {
-        Ok(valid) => valid,
-        Err(e) => {
-            // "OTP has expired" or "No OTP found"
-            let response = json!({
-                "success": false,
-                "message": e,
-                "data": null
-            });
-            return (StatusCode::UNAUTHORIZED, Json(response));
-        }
-    };
+    let purpose = payload.purpose.as_deref().unwrap_or("signup");
 
-    if !otp_valid {
-        let response = json!({
-            "success": false,
-            "message": "Invalid OTP",
-            "data": null
-        });
-        return (StatusCode::UNAUTHORIZED, Json(response));
-    }
-
-    // 2. Find user by phone and mark as phone-verified
-    let user = match app_state
-        .user_service
-        .find_by_phone(&payload.phone_no)
-        .await
-    {
-        Ok(Some(user)) => user,
-        Ok(None) => {
-            let response = json!({
-                "success": false,
-                "message": "User not found for this phone number",
-                "data": null
-            });
-            return (StatusCode::NOT_FOUND, Json(response));
-        }
-        Err(e) => {
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to find user: {}", e),
-                "data": null
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-        }
-    };
-
-    // 3. Set is_phone_verified = true
-    if let Err(e) = app_state
-        .user_service
-        .set_phone_verified(&user.id.to_string())
-        .await
-    {
-        let response = json!({
-            "success": false,
-            "message": format!("Failed to update verification status: {}", e),
-            "data": null
-        });
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-    }
-
-    // 4. Generate JWT token
-    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
-        Ok(token) => token,
-        Err(e) => {
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to generate token: {}", e),
-                "data": null
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-        }
-    };
-
-    // 5. Return authenticated user
-    let response = json!({
-        "success": true,
-        "message": "Phone verified successfully",
-        "data": {
-            "token": token,
-            "user": {
-                "id": user.id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "email": user.email,
-                "phone_no": user.phone_no,
-                "user_role": user.user_role,
-                "associate_type": user.associate_type,
-                "is_phone_verified": true,
-                "verified": user.verified,
-                "status": user.status,
-                "created_at": user.created_at
+    // Prefer email over phone
+    if let Some(ref email) = payload.email {
+        if !email.is_empty() {
+            let otp_valid = match app_state
+                .user_service
+                .verify_and_consume_email_otp(email, &payload.otp, purpose)
+                .await
+            {
+                Ok(valid) => valid,
+                Err(e) => {
+                    let response = json!({ "success": false, "message": e, "data": null });
+                    return (StatusCode::UNAUTHORIZED, Json(response));
+                }
+            };
+            if !otp_valid {
+                let response = json!({ "success": false, "message": "Invalid OTP", "data": null });
+                return (StatusCode::UNAUTHORIZED, Json(response));
             }
-        }
-    });
 
-    (StatusCode::OK, Json(response))
+            let user = match app_state.user_service.find_by_email(email).await {
+                Ok(Some(user)) => user,
+                Ok(None) => {
+                    let response = json!({ "success": false, "message": "User not found for this email", "data": null });
+                    return (StatusCode::NOT_FOUND, Json(response));
+                }
+                Err(e) => {
+                    let response = json!({ "success": false, "message": format!("Failed to find user: {}", e), "data": null });
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+                }
+            };
+
+            let _ = app_state
+                .user_service
+                .set_phone_verified(&user.id.to_string())
+                .await;
+
+            let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
+                Ok(token) => token,
+                Err(e) => {
+                    let response = json!({ "success": false, "message": format!("Failed to generate token: {}", e), "data": null });
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+                }
+            };
+
+            let response = json!({
+                "success": true,
+                "message": "Email verified successfully",
+                "data": {
+                    "token": token,
+                    "user": {
+                        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+                        "email": user.email, "phone_no": user.phone_no, "user_role": user.user_role,
+                        "associate_type": user.associate_type, "is_phone_verified": true,
+                        "verified": user.verified, "status": user.status, "created_at": user.created_at
+                    }
+                }
+            });
+            return (StatusCode::OK, Json(response));
+        }
+    }
+
+    // Fallback: phone-based OTP verification
+    if let Some(ref phone_no) = payload.phone_no {
+        if !phone_no.is_empty() {
+            let otp_valid = match app_state
+                .user_service
+                .verify_and_consume_otp(phone_no, &payload.otp)
+                .await
+            {
+                Ok(valid) => valid,
+                Err(e) => {
+                    let response = json!({ "success": false, "message": e, "data": null });
+                    return (StatusCode::UNAUTHORIZED, Json(response));
+                }
+            };
+            if !otp_valid {
+                let response = json!({ "success": false, "message": "Invalid OTP", "data": null });
+                return (StatusCode::UNAUTHORIZED, Json(response));
+            }
+
+            let user = match app_state.user_service.find_by_phone(phone_no).await {
+                Ok(Some(user)) => user,
+                Ok(None) => {
+                    let response = json!({ "success": false, "message": "User not found for this phone number", "data": null });
+                    return (StatusCode::NOT_FOUND, Json(response));
+                }
+                Err(e) => {
+                    let response = json!({ "success": false, "message": format!("Failed to find user: {}", e), "data": null });
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+                }
+            };
+
+            if let Err(e) = app_state
+                .user_service
+                .set_phone_verified(&user.id.to_string())
+                .await
+            {
+                let response = json!({ "success": false, "message": format!("Failed to update verification status: {}", e), "data": null });
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            }
+
+            let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
+                Ok(token) => token,
+                Err(e) => {
+                    let response = json!({ "success": false, "message": format!("Failed to generate token: {}", e), "data": null });
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+                }
+            };
+
+            let response = json!({
+                "success": true,
+                "message": "Phone verified successfully",
+                "data": {
+                    "token": token,
+                    "user": {
+                        "id": user.id, "first_name": user.first_name, "last_name": user.last_name,
+                        "email": user.email, "phone_no": user.phone_no, "user_role": user.user_role,
+                        "associate_type": user.associate_type, "is_phone_verified": true,
+                        "verified": user.verified, "status": user.status, "created_at": user.created_at
+                    }
+                }
+            });
+            return (StatusCode::OK, Json(response));
+        }
+    }
+
+    let response = json!({ "success": false, "message": "Either email or phoneNo must be provided", "data": null });
+    (StatusCode::BAD_REQUEST, Json(response))
 }
 
-/// Resend OTP — invalidates old OTP and sends a new one
+/// Resend OTP — invalidates old OTP and sends a new one (email or phone)
 #[utoipa::path(
     post,
     path = "/api/auth/resend-otp",
@@ -492,51 +547,80 @@ pub async fn resend_otp(
     State(app_state): State<AppState>,
     ExtractJson(payload): ExtractJson<SendOtpRequest>,
 ) -> impl IntoResponse {
-    // 1. Invalidate existing OTPs
-    let _ = app_state
-        .user_service
-        .invalidate_otps(&payload.phone_no)
-        .await;
-
-    // 2. Generate and store new OTP
     let otp = generate_otp();
+    let purpose = payload.purpose.as_deref().unwrap_or("signup");
 
-    // --- DEVELOPER FALLBACK ---
-    println!("========================================");
-    println!("🔑 [DEV MODE] RESEND-OTP INTERCEPT:");
-    println!("Phone: {}", payload.phone_no);
-    println!("OTP Code: {}", otp);
-    println!("========================================");
+    // Prefer email over phone
+    if let Some(ref email) = payload.email {
+        if !email.is_empty() {
+            let _ = app_state
+                .user_service
+                .invalidate_email_otps(email, purpose)
+                .await;
 
-    if let Err(e) = app_state
-        .user_service
-        .store_otp(&payload.phone_no, &otp, 10)
-        .await
-    {
-        let response = json!({
-            "success": false,
-            "message": format!("Failed to store OTP: {}", e),
-            "data": null
-        });
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            println!("========================================");
+            println!("🔑 [DEV MODE] RESEND-OTP (EMAIL) INTERCEPT:");
+            println!("Email: {}", email);
+            println!("OTP Code: {}", otp);
+            println!("========================================");
+
+            if let Err(e) = app_state
+                .user_service
+                .store_email_otp(email, &otp, purpose, 10)
+                .await
+            {
+                let response = json!({ "success": false, "message": format!("Failed to store OTP: {}", e), "data": null });
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            }
+
+            let purpose_label = match purpose {
+                "signup" => "Email Verification",
+                "forgot_password" => "Password Reset",
+                "change_password" => "Change Password",
+                _ => "Verification",
+            };
+            if let Err(e) = send_email_otp(email, &otp, purpose_label).await {
+                eprintln!("Warning: Failed to resend email OTP to {}: {:?}", email, e);
+            } else {
+                println!("✓ Resend OTP email sent to {}", email);
+            }
+
+            let response =
+                json!({ "success": true, "message": "OTP resent successfully", "data": null });
+            return (StatusCode::OK, Json(response));
+        }
     }
 
-    // 3. Send SMS
-    if let Err(e) = send_sms_otp(&payload.phone_no, &otp).await {
-        eprintln!(
-            "Warning: Failed to resend SMS OTP to {}: {:?}",
-            payload.phone_no, e
-        );
-    } else {
-        println!("✓ Resend OTP SMS sent to {}", payload.phone_no);
+    // Fallback: phone-based resend
+    if let Some(ref phone_no) = payload.phone_no {
+        if !phone_no.is_empty() {
+            let _ = app_state.user_service.invalidate_otps(phone_no).await;
+
+            println!("========================================");
+            println!("🔑 [DEV MODE] RESEND-OTP (SMS) INTERCEPT:");
+            println!("Phone: {}", phone_no);
+            println!("OTP Code: {}", otp);
+            println!("========================================");
+
+            if let Err(e) = app_state.user_service.store_otp(phone_no, &otp, 10).await {
+                let response = json!({ "success": false, "message": format!("Failed to store OTP: {}", e), "data": null });
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+            }
+
+            if let Err(e) = send_sms_otp(phone_no, &otp).await {
+                eprintln!("Warning: Failed to resend SMS OTP to {}: {:?}", phone_no, e);
+            } else {
+                println!("✓ Resend OTP SMS sent to {}", phone_no);
+            }
+
+            let response =
+                json!({ "success": true, "message": "OTP resent successfully", "data": null });
+            return (StatusCode::OK, Json(response));
+        }
     }
 
-    let response = json!({
-        "success": true,
-        "message": "OTP resent successfully",
-        "data": null
-    });
-    (StatusCode::OK, Json(response))
+    let response = json!({ "success": false, "message": "Either email or phoneNo must be provided", "data": null });
+    (StatusCode::BAD_REQUEST, Json(response))
 }
 
 /// Update associate type (JWT-protected)
@@ -763,10 +847,10 @@ pub async fn send_forgot_password_link(
     println!("OTP Code: {}", reset_code);
     println!("========================================");
 
-    // 3. Store reset code in database
+    // 3. Store reset code in otp_records DB table (replaces in-memory HashMap)
     if let Err(e) = app_state
         .user_service
-        .store_reset_code(&user.id.to_string(), &reset_code)
+        .store_email_otp(&user.email, &reset_code, "forgot_password", 10)
         .await
     {
         let response = json!({
@@ -777,8 +861,8 @@ pub async fn send_forgot_password_link(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
     }
 
-    // 4. Send reset code via email
-    if let Err(e) = send_email_otp(&user.email, &reset_code).await {
+    // 4. Send reset code via email only (SMS removed)
+    if let Err(e) = send_email_otp(&user.email, &reset_code, "Password Reset").await {
         eprintln!(
             "Warning: Failed to send password reset email to {}: {:?}",
             user.email, e
@@ -787,25 +871,12 @@ pub async fn send_forgot_password_link(
         println!("✓ Password reset OTP sent to email {}", user.email);
     }
 
-    // 5. Also send reset code via SMS to phone
-    if !user.phone_no.is_empty() {
-        if let Err(e) = send_sms_otp(&user.phone_no, &reset_code).await {
-            eprintln!(
-                "Warning: Failed to send password reset SMS to {}: {:?}",
-                user.phone_no, e
-            );
-        } else {
-            println!("✓ Password reset OTP sent to phone {}", user.phone_no);
-        }
-    }
-
-    // 6. Return response
+    // 5. Return response
     let response = json!({
         "success": true,
-        "message": "Reset code generated and sent to email and phone",
+        "message": "Reset code generated and sent to email",
         "data": {
             "email": user.email,
-            "phone_no": user.phone_no,
             "reset_code_sent": true
         }
     });
@@ -813,7 +884,7 @@ pub async fn send_forgot_password_link(
     (StatusCode::OK, Json(response))
 }
 
-/// Reset password
+/// Reset password — verifies OTP from DB (replaces in-memory reset codes)
 #[utoipa::path(
     post,
     path = "/api/auth/reset-password",
@@ -830,38 +901,45 @@ pub async fn reset_password(
     State(app_state): State<AppState>,
     ExtractJson(payload): ExtractJson<ResetPasswordRequest>,
 ) -> impl IntoResponse {
-    // 1. Verify reset code
-    let user_id = match app_state
+    // 1. Verify reset code from otp_records DB table
+    let otp_valid = match app_state
         .user_service
-        .verify_reset_code(&payload.code)
+        .verify_and_consume_email_otp(&payload.email, &payload.code, "forgot_password")
         .await
     {
-        Ok(Some(user_id)) => user_id,
-        Ok(None) => {
-            let response = json!({
-                "success": false,
-                "message": "Invalid or expired reset code",
-                "data": null
-            });
-            return (StatusCode::BAD_REQUEST, Json(response));
-        }
+        Ok(valid) => valid,
         Err(e) => {
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to verify reset code: {}", e),
-                "data": null
-            });
+            let response = json!({ "success": false, "message": e, "data": null });
             return (StatusCode::BAD_REQUEST, Json(response));
         }
     };
 
-    // 2. Hash new password
+    if !otp_valid {
+        let response =
+            json!({ "success": false, "message": "Invalid or expired reset code", "data": null });
+        return (StatusCode::BAD_REQUEST, Json(response));
+    }
+
+    // 2. Find user by email
+    let user = match app_state.user_service.find_by_email(&payload.email).await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let response = json!({ "success": false, "message": "User not found with this email", "data": null });
+            return (StatusCode::NOT_FOUND, Json(response));
+        }
+        Err(e) => {
+            let response = json!({ "success": false, "message": format!("Failed to find user: {}", e), "data": null });
+            return (StatusCode::BAD_REQUEST, Json(response));
+        }
+    };
+
+    // 3. Hash new password
     let hashed_password = hash_string(&payload.new_password);
 
-    // 3. Update user password
+    // 4. Update user password
     if let Err(e) = app_state
         .user_service
-        .update_password(&user_id, &hashed_password)
+        .update_password(&user.id.to_string(), &hashed_password)
         .await
     {
         let response = json!({
@@ -872,19 +950,13 @@ pub async fn reset_password(
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
     }
 
-    // 4. Delete used reset code
-    let _ = app_state
-        .user_service
-        .delete_reset_code(&payload.code)
-        .await;
-
-    // 5. Return response
+    // 5. Return response (OTP already consumed during verification — no cleanup needed)
     let response = json!({
         "success": true,
         "message": "Password reset successfully",
         "data": {
             "password_updated": true,
-            "user_id": user_id
+            "user_id": user.id
         }
     });
 
@@ -923,7 +995,7 @@ pub async fn test_otp_delivery(
 
     let result = match payload.channel.as_str() {
         "sms" => send_sms_otp(&payload.destination, &otp).await,
-        "email" => send_email_otp(&payload.destination, &otp).await,
+        "email" => send_email_otp(&payload.destination, &otp, "Test").await,
         _ => {
             let response = json!({
                 "success": false,

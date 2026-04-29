@@ -1,9 +1,12 @@
 use crate::app_state::AppState;
-use axum::{Router, routing::{get, post, put}};
 use crate::handlers::carecrew::{
-    create_booking, edit_provider_profile, get_featured_providers, get_provider,
-    get_provider_bookings, get_service, list_services, search_providers, update_booking_status,
-    cancel_booking, get_booking_details, get_provider_bookings_v2, get_user_bookings,
+    cancel_booking, create_booking, edit_provider_profile, get_booking_details,
+    get_featured_providers, get_provider, get_provider_bookings, get_provider_bookings_v2,
+    get_service, get_user_bookings, list_services, search_providers, update_booking_status,
+};
+use axum::{
+    Router,
+    routing::{get, post, put},
 };
 
 pub fn carecrew_routes() -> Router<AppState> {

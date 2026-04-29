@@ -3,7 +3,10 @@ use crate::handlers::expo::{
     create_expo, edit_expo, get_all_expos, get_expo_details, get_expo_participants,
     register_for_expo,
 };
-use axum::{Router, routing::{get, post}};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 
 pub fn expo_routes() -> Router<AppState> {
     Router::new()
