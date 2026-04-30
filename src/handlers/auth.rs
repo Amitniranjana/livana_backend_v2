@@ -243,6 +243,20 @@ pub async fn signin(
         return (StatusCode::UNAUTHORIZED, Json(response));
     }
 
+    // Check if user has completed OTP verification
+    if !user.is_phone_verified {
+        let response = json!({
+            "success": false,
+            "message": "OTP verification pending",
+            "data": {
+                "requires_otp": true,
+                "email": user.email,
+                "phone_no": user.phone_no
+            }
+        });
+        return (StatusCode::FORBIDDEN, Json(response));
+    }
+
     // 3. Generate JWT token
     let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
         Ok(token) => token,
