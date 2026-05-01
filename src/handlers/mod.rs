@@ -27,4 +27,6 @@ pub mod property_search;
 pub mod recent_chats;
 pub mod saved_properties;
 pub mod service_listing;
+pub mod unified_listing;
+pub mod listing_validator;
 pub mod vibes;

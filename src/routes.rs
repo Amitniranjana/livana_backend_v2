@@ -304,3 +304,6 @@ pub use kyc::kyc_routes;
 
 pub mod chat;
 pub mod visit;
+
+pub mod unified_listing;
+pub use unified_listing::unified_listing_routes;

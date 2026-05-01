@@ -16,4 +16,5 @@ pub mod response;
 pub mod reviews;
 pub mod saved_properties;
 pub mod service;
+pub mod unified_listing;
 pub mod vibes;

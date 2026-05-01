@@ -27,7 +27,7 @@ use crate::{
         listing_routes, moderation_routes, notifications_routes, property_filter_routes,
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
         saved_properties_routes, service_listing_routes, suggestions_routes, user_routes,
-        vibes_routes,
+        unified_listing_routes, vibes_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -120,6 +120,32 @@ async fn main() {
     let chat_repo = ChatRepository::new(pool.clone());
     let chat_db_svc = ChatDbService::new(chat_repo);
 
+    // ── Redis (optional — gracefully degrades if unavailable) ──
+    let redis_pool = match env::var("REDIS_URL") {
+        Ok(url) => {
+            match redis::Client::open(url.as_str()) {
+                Ok(client) => match redis::aio::ConnectionManager::new(client).await {
+                    Ok(mgr) => {
+                        log::info!("Redis connected successfully at {}", url);
+                        Some(mgr)
+                    }
+                    Err(e) => {
+                        log::warn!("Redis connection failed (caching disabled): {}", e);
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::warn!("Redis client creation failed (caching disabled): {}", e);
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            log::info!("REDIS_URL not set — caching disabled");
+            None
+        }
+    };
+
     // ——————————— Build your AppState & Router ———————————
     let app_state = AppState {
         user_service: Arc::from(user_svc),
@@ -131,6 +157,7 @@ async fn main() {
         google_client_id,
         storage_service: s3_storage.clone(),
         public_storage_service: public_storage.clone(),
+        redis_pool,
     };
 
     let app = Router::new()
@@ -176,8 +203,10 @@ async fn main() {
         .merge(service_listing_routes())
         .merge(carecrew_review_routes())
         .merge(property_review_routes())
-        // ── Analytics (public) ─────────────────────────────────────
+        // ── Analytics (public) ─────────────────────────────────────────────────
         .merge(analytics_routes())
+        // ── Unified Listings API (new) ──────────────────────────────────────────
+        .merge(unified_listing_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
