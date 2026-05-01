@@ -80,6 +80,10 @@ mime_guess = "2.0"
 image = "0.25"
 validator = { version = "0.20.0", features = ["derive"] }
 
+# Redis (caching)
+redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
+bytes = "1"
+
 [[bin]]
 name = "gen_jwt"
 path = "gen_test_jwt.rs"

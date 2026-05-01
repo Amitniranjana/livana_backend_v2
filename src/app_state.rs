@@ -22,4 +22,6 @@ pub struct AppState {
     pub storage_service: Arc<crate::services::storage::S3Storage>,
     /// Public Storage Service (AWS S3) for public listing images
     pub public_storage_service: Arc<crate::services::storage::S3Storage>,
+    /// Redis connection manager for caching (optional — gracefully degrades if absent)
+    pub redis_pool: Option<redis::aio::ConnectionManager>,
 }
