@@ -18,7 +18,7 @@ jobs:
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -34,7 +34,7 @@ jobs:
       run: cargo build --release --verbose
 
     - name: Upload Binary as Artifact
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
         name: rust-release-binary
         path: target/release/${{ env.PROJECT_NAME }}
@@ -49,10 +49,18 @@ jobs:
 
     steps:
     - name: Download Artifact
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@v4
       with:
         name: rust-release-binary
         path: .
+
+    - name: Ensure Target Directory Exists
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.AWS_HOST }}
+        username: ${{ secrets.AWS_USERNAME }}
+        key: ${{ secrets.AWS_SSH_KEY }}
+        script: mkdir -p /home/${{ secrets.AWS_USERNAME }}/app_deploy
 
     - name: Copy Binary to AWS EC2 via SCP
       uses: appleboy/scp-action@v0.1.7
