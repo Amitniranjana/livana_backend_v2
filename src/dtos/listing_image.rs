@@ -26,6 +26,7 @@ pub struct ListingImageResponse {
 }
 
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct ErrorResponse {
     pub success: bool,
     pub message: String,

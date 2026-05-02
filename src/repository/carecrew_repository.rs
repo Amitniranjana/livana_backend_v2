@@ -221,6 +221,7 @@ pub async fn create_booking(
     Ok(row)
 }
 
+#[allow(dead_code)]
 pub async fn get_booking_by_id(
     db: &Pool<Postgres>,
     id: Uuid,
