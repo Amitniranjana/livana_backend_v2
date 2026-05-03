@@ -21,6 +21,22 @@ use serde_json::json;
 // Import OTP functions
 use crate::otp::{generate_otp, send_email_otp, send_sms_otp};
 
+// --- Email Validation Helper ---
+
+/// Returns `true` only if `email` looks like a real, deliverable address.
+fn is_valid_email(email: &str) -> bool {
+    let email = email.trim();
+    if email.is_empty()
+        || email.contains("placeholder")
+        || email.starts_with("temp_")
+        || !email.contains('@')
+        || email.ends_with("@placeholder.com")
+    {
+        return false;
+    }
+    true
+}
+
 // --- DTO for Testing OTP (Internal use) ---
 #[derive(Deserialize, Debug)]
 #[allow(dead_code)]
@@ -47,6 +63,24 @@ pub async fn signup(
     State(app_state): State<AppState>,
     ExtractJson(payload): ExtractJson<SignupRequest>,
 ) -> impl IntoResponse {
+    // 0. Validate email is present and valid
+    if payload.email.trim().is_empty() {
+        let response = json!({
+            "success": false,
+            "message": "Email is required.",
+            "data": null
+        });
+        return (StatusCode::BAD_REQUEST, Json(response));
+    }
+    if !is_valid_email(&payload.email) {
+        let response = json!({
+            "success": false,
+            "message": "Invalid or missing email address. Please provide a real email.",
+            "data": null
+        });
+        return (StatusCode::BAD_REQUEST, Json(response));
+    }
+
     let hashed_password = hash_string(&payload.password);
 
     // 1. Create user in database
@@ -55,7 +89,7 @@ pub async fn signup(
         .create_user(
             &payload.first_name,
             &payload.last_name,
-            payload.email.as_deref().unwrap_or(""),
+            &payload.email,
             &payload.phone_no,
             &hashed_password,
             &payload.gender,
@@ -336,6 +370,12 @@ pub async fn send_otp(
     // Prefer email over phone when both are provided
     if let Some(ref email) = payload.email {
         if !email.is_empty() {
+            // Validate email before sending OTP
+            if !is_valid_email(email) {
+                let response = json!({ "success": false, "message": "Invalid or missing email address. Please update your profile with a real email.", "data": null });
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(response));
+            }
+
             println!("========================================");
             println!("🔑 [DEV MODE] SEND-OTP (EMAIL) INTERCEPT:");
             println!("Email: {}", email);
@@ -358,7 +398,9 @@ pub async fn send_otp(
                 _ => "Verification",
             };
             if let Err(e) = send_email_otp(email, &otp, purpose_label).await {
-                eprintln!("Warning: Failed to send email OTP to {}: {:?}", email, e);
+                tracing::error!("Failed to send OTP email to {}: {:?}", email, e);
+                let response = json!({ "success": false, "message": "Failed to send OTP email. Please check your email address and try again.", "data": null });
+                return (StatusCode::BAD_REQUEST, Json(response));
             } else {
                 println!("✓ OTP email sent to {}", email);
             }
@@ -567,6 +609,12 @@ pub async fn resend_otp(
     // Prefer email over phone
     if let Some(ref email) = payload.email {
         if !email.is_empty() {
+            // Validate email before resending OTP
+            if !is_valid_email(email) {
+                let response = json!({ "success": false, "message": "Invalid or missing email address. Please update your profile with a real email.", "data": null });
+                return (StatusCode::UNPROCESSABLE_ENTITY, Json(response));
+            }
+
             let _ = app_state
                 .user_service
                 .invalidate_email_otps(email, purpose)
@@ -594,7 +642,9 @@ pub async fn resend_otp(
                 _ => "Verification",
             };
             if let Err(e) = send_email_otp(email, &otp, purpose_label).await {
-                eprintln!("Warning: Failed to resend email OTP to {}: {:?}", email, e);
+                tracing::error!("Failed to resend OTP email to {}: {:?}", email, e);
+                let response = json!({ "success": false, "message": "Failed to send OTP email. Please check your email address and try again.", "data": null });
+                return (StatusCode::BAD_REQUEST, Json(response));
             } else {
                 println!("✓ Resend OTP email sent to {}", email);
             }
@@ -854,6 +904,16 @@ pub async fn send_forgot_password_link(
     // 2. Generate 6-digit numeric OTP for password reset
     let reset_code = generate_otp();
 
+    // 2b. Validate the user's email before sending OTP
+    if !is_valid_email(&user.email) {
+        let response = json!({
+            "success": false,
+            "message": "Invalid or missing email address. Please update your profile with a real email.",
+            "data": null
+        });
+        return (StatusCode::UNPROCESSABLE_ENTITY, Json(response));
+    }
+
     // --- DEVELOPER FALLBACK ---
     println!("========================================");
     println!("🔑 [DEV MODE] FORGOT PASSWORD OTP INTERCEPT:");
@@ -877,10 +937,16 @@ pub async fn send_forgot_password_link(
 
     // 4. Send reset code via email only (SMS removed)
     if let Err(e) = send_email_otp(&user.email, &reset_code, "Password Reset").await {
-        eprintln!(
-            "Warning: Failed to send password reset email to {}: {:?}",
+        tracing::error!(
+            "Failed to send password reset email to {}: {:?}",
             user.email, e
         );
+        let response = json!({
+            "success": false,
+            "message": "Failed to send OTP email. Please check your email address and try again.",
+            "data": null
+        });
+        return (StatusCode::BAD_REQUEST, Json(response));
     } else {
         println!("✓ Password reset OTP sent to email {}", user.email);
     }

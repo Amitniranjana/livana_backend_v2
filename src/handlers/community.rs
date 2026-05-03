@@ -246,6 +246,7 @@ pub async fn get_communities(
             ) as "is_joined!"
         FROM communities c
         ORDER BY c.created_at DESC
+        -- cache bust 1
         "#,
         user_id
     )
@@ -309,6 +310,7 @@ pub async fn edit_community(
         WHERE id = $1
         RETURNING id, name, description, created_by, created_at,
             true as "is_joined!"
+        -- cache bust 2
         "#,
         community_id,
         payload.name,

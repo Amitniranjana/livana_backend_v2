@@ -57,14 +57,33 @@ pub async fn send_email_otp(email: &str, otp: &str, purpose: &str) -> Result<(),
         .port(587)
         .build();
 
-    // Send
-    mailer
-        .send(message)
-        .await
-        .map_err(|e| OtpError::SmtpError(format!("Failed to send email: {}", e)))?;
+    // Send with retry (max 1 retry, 2s delay)
+    let mut last_err_msg = String::new();
+    for attempt in 0..2u8 {
+        match mailer.send(message.clone()).await {
+            Ok(_) => {
+                tracing::info!("SMTP OTP email sent to {} (purpose: {})", email, purpose);
+                return Ok(());
+            }
+            Err(e) => {
+                last_err_msg = format!("{}", e);
+                tracing::error!(
+                    "SMTP send attempt {} failed for {}: {}",
+                    attempt + 1,
+                    email,
+                    last_err_msg
+                );
+                if attempt == 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            }
+        }
+    }
 
-    tracing::info!("SMTP OTP email sent to {} (purpose: {})", email, purpose);
-    Ok(())
+    Err(OtpError::SmtpError(format!(
+        "Failed to send OTP email after 2 attempts: {}",
+        last_err_msg
+    )))
 }
 
 /// Build a styled HTML email body containing the OTP.

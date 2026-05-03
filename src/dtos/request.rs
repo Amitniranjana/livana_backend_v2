@@ -13,7 +13,7 @@ pub struct SignupRequest {
     #[schema(example = "Doe")]
     pub last_name: String,
     #[schema(example = "john.doe@example.com")]
-    pub email: Option<String>,
+    pub email: String,
     #[schema(example = "password123")]
     pub password: String,
     #[schema(example = "1234567890")]
