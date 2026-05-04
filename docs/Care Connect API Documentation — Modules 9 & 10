@@ -1,0 +1,290 @@
+# Care Connect API Documentation — Modules 9 & 10
+
+---
+
+## Module 9: Moderation APIs
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 9.1 Block User
+
+**Endpoint:** `POST /api/v1/users/{id}/block`
+
+| Parameter | In   | Type | Description                 |
+| --------- | ---- | ---- | --------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the user to block     |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "User blocked successfully",
+  "data": {}
+}
+```
+
+> **Restrictions:**
+> - A user cannot block themselves → returns `400 Bad Request`
+> - Blocking an already-blocked user is idempotent (returns success)
+
+---
+
+### 9.2 Report Entity
+
+**Endpoint:** `POST /api/v1/report`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "entity_type": "PROPERTY",
+  "entity_id": "b3f2c5a1-7e4d-4a89-9c12-3d5e6f7a8b9c",
+  "reason": "Listing contains misleading photos and incorrect pricing."
+}
+```
+
+| Field         | Type   | Required | Description                                         |
+| ------------- | ------ | -------- | --------------------------------------------------- |
+| `entity_type` | string | Yes      | One of: `USER`, `PROPERTY`, `COMMUNITY`, `POST`     |
+| `entity_id`   | UUID   | Yes      | ID of the entity being reported                     |
+| `reason`      | string | Yes      | Reason for the report                               |
+
+**Success Response** `201 Created`:
+
+```json
+{
+  "success": true,
+  "message": "Report submitted successfully",
+  "data": {
+    "report_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+    "status": "PENDING_REVIEW"
+  }
+}
+```
+
+---
+
+### 9.3 Archive Chat
+
+**Endpoint:** `POST /api/v1/chats/{id}/archive`
+
+| Parameter | In   | Type | Description                   |
+| --------- | ---- | ---- | ----------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the chat to archive     |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Chat archived successfully",
+  "data": {}
+}
+```
+
+> **Security:** The authenticated user must be a participant of the chat. Non-participants receive `403 Forbidden`.
+
+---
+
+## Module 10: Vibe API (Shared Apartment Matchmaking)
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 10.1 Send Vibe
+
+**Endpoint:** `POST /api/v1/vibes`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "target_user_id": "d4e5f6a7-0b1c-4d2e-8f9a-0b1c2d3e4f5a"
+}
+```
+
+| Field            | Type | Required | Description                        |
+| ---------------- | ---- | -------- | ---------------------------------- |
+| `target_user_id` | UUID | Yes      | ID of the user to send a vibe to   |
+
+**Success Response** `201 Created`:
+
+```json
+{
+  "success": true,
+  "message": "Vibe sent successfully",
+  "data": {
+    "vibe_id": "e5f6a7b8-1c2d-4e3f-9a0b-1c2d3e4f5a6b",
+    "sender_id": "c4d5e6f7-8a9b-4c0d-1e2f-3a4b5c6d7e8f",
+    "target_user_id": "d4e5f6a7-0b1c-4d2e-8f9a-0b1c2d3e4f5a",
+    "status": "PENDING"
+  }
+}
+```
+
+> **Restrictions:**
+> - A user cannot send a vibe to themselves → `400 Bad Request`
+> - Duplicate pending vibes are handled gracefully (returns existing vibe ID)
+
+---
+
+### 10.2 Accept Vibe
+
+**Endpoint:** `POST /api/v1/vibes/{id}/accept`
+
+| Parameter | In   | Type | Description               |
+| --------- | ---- | ---- | ------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the vibe to accept  |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Vibe accepted. It's a match!",
+  "data": {}
+}
+```
+
+> **Security:** Only the `target_user_id` of the vibe can accept it → others get `403 Forbidden`.  
+> Already-accepted or already-rejected vibes return `400 Bad Request`.
+
+---
+
+### 10.3 Reject Vibe
+
+**Endpoint:** `POST /api/v1/vibes/{id}/reject`
+
+| Parameter | In   | Type | Description               |
+| --------- | ---- | ---- | ------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the vibe to reject  |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Vibe rejected",
+  "data": {}
+}
+```
+
+> **Security:** Only the `target_user_id` of the vibe can reject it → others get `403 Forbidden`.
+
+---
+
+### 10.4 Get Matches
+
+**Endpoint:** `GET /api/v1/vibes/matches`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Matches fetched successfully",
+  "data": [
+    {
+      "match_id": "e5f6a7b8-1c2d-4e3f-9a0b-1c2d3e4f5a6b",
+      "matched_user_id": "d4e5f6a7-0b1c-4d2e-8f9a-0b1c2d3e4f5a",
+      "matched_user_name": "Priya Sharma",
+      "matched_user_image": "https://storage.example.com/profiles/priya.jpg",
+      "matched_at": "2026-03-07T19:30:00Z"
+    },
+    {
+      "match_id": "f6a7b8c9-2d3e-4f5a-0b1c-2d3e4f5a6b7c",
+      "matched_user_id": "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+      "matched_user_name": "Rahul Mehta",
+      "matched_user_image": null,
+      "matched_at": "2026-03-06T14:15:00Z"
+    }
+  ]
+}
+```
+
+> Returns all users where a mutual vibe exists (status = `ACCEPTED`), regardless of who sent it. Sorted by most recent match first.
+
+---
+
+## Standard Error Format
+
+All endpoints follow the global error response structure:
+
+```json
+{
+  "success": false,
+  "message": "A human-readable description of the error",
+  "error_code": "NOT_FOUND",
+  "errors": null
+}
+```
+
+| Error Code              | HTTP Status | Description                                    |
+| ----------------------- | ----------- | ---------------------------------------------- |
+| `BAD_REQUEST`           | 400         | Malformed request, self-vibe, or self-block     |
+| `UNAUTHORIZED`          | 401         | Missing or invalid JWT token                   |
+| `FORBIDDEN`             | 403         | Not a chat participant / not the vibe target   |
+| `NOT_FOUND`             | 404         | User, vibe, or chat not found                  |
+| `CONFLICT`              | 409         | Duplicate resource conflict                    |
+| `VALIDATION_ERROR`      | 422         | Invalid `entity_type` or missing fields        |
+| `INTERNAL_SERVER_ERROR` | 500         | Unexpected server-side error                   |

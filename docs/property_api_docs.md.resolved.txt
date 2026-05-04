@@ -1,0 +1,441 @@
+﻿# 🏠 Property API — Care Connect App
+**Base URL:** `https://your-api-domain.com`  
+**Version:** Latest (Feb 2026)
+
+---
+
+## Authentication
+Endpoints marked **🔒** require:
+```
+Authorization: Bearer <jwt_token>
+```
+
+---
+
+## Standard Response Format
+```json
+{ "success": true, "message": "...", "data": { ... } }
+```
+On error:
+```json
+{ "success": false, "message": "Error reason" }
+```
+
+---
+
+## Property Object Schema
+Every property returned by any endpoint follows this exact shape:
+
+```json
+{
+  "id": "uuid",
+  "title": "Modern 2BHK Apartment",
+  "description": "Spacious apartment near metro.",
+  "property_type": "rent",
+  "price": 25000,
+  "deposit": 50000,
+  "location": "Bandra West, Mumbai",
+  "area_sqft": 1200,
+  "bedrooms": 2,
+  "bathrooms": 2,
+  "furnishing": "semi-furnished",
+  "floor": 5,
+  "total_floors": 12,
+  "age_years": 3,
+  "facing": "east",
+  "parking": true,
+  "parking_count": 1,
+  "images": ["https://cdn.example.com/img1.jpg"],
+  "video_url": "https://cdn.example.com/tour.mp4",
+  "amenities": ["gym", "pool", "security"],
+  "nearby_places": {
+    "schools": ["DPS School - 0.5km"],
+    "hospitals": ["City Hospital - 1km"]
+  },
+  "latitude": 19.076,
+  "longitude": 72.8777,
+  "is_featured": false,
+  "is_verified": false,
+  "is_saved": false,
+  "views_count": 120,
+  "likes_count": 34,
+  "status": "active",
+  "created_at": "2026-02-01T10:00:00Z",
+  "updated_at": "2026-02-28T12:00:00Z",
+  "owner": {
+    "id": "uuid",
+    "name": "John Doe",
+    "phone": "9876543210",
+    "profile_image": "https://cdn.example.com/avatar.jpg"
+  }
+}
+```
+
+> **Note:** `is_saved` reflects whether the **currently logged-in user** has saved this property. It is `false` for unauthenticated requests.
+
+---
+
+## Endpoints
+
+---
+
+### 1. Get All Properties
+```
+GET /api/properties
+```
+Public.
+
+**Query Params:**
+| Param | Type | Default | Values |
+|-------|------|---------|--------|
+| `property_type` | string | — | `"rent"` \| `"sale"` \| `"pg"` |
+| `sort_by` | string | `"latest"` | `"latest"` \| `"price_asc"` \| `"price_desc"` \| `"popular"` |
+| `limit` | integer | 20 | max 100 |
+| `offset` | integer | 0 | — |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Properties fetched successfully",
+  "data": {
+    "properties": [ { ...property } ],
+    "pagination": {
+      "total": 150,
+      "limit": 20,
+      "offset": 0,
+      "has_more": true
+    }
+  }
+}
+```
+
+---
+
+### 2. Get Property by ID
+```
+GET /api/properties/{property_id}
+```
+Public. Increments `views_count` by 1 on every call.  
+Optionally pass auth token — `is_saved` will be accurate for logged-in users.
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property fetched successfully",
+  "data": { "property": { ...property } }
+}
+```
+
+**Error `404`:** `{ "success": false, "message": "Property not found" }`
+
+---
+
+### 3. Create Property
+```
+POST /api/properties
+```
+🔒 Auth Required
+
+**Request Body:**
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `title` | string | ✅ | — |
+| `property_type` | string | ✅ | `"rent"` \| `"sale"` \| `"pg"` |
+| `price` | integer | ✅ | Monthly rent or sale price |
+| `description` | string | — | — |
+| `deposit` | integer | — | — |
+| `location` | string | — | Human-readable location |
+| `area_sqft` | integer | — | — |
+| `bedrooms` | integer | — | — |
+| `bathrooms` | integer | — | — |
+| `furnishing` | string | — | `"unfurnished"` \| `"semi-furnished"` \| `"fully-furnished"` |
+| `floor` | integer | — | — |
+| `total_floors` | integer | — | — |
+| `age_years` | integer | — | Age of property in years |
+| `facing` | string | — | `"north"` \| `"south"` \| `"east"` \| `"west"` |
+| `parking` | boolean | — | Default `false` |
+| `parking_count` | integer | — | — |
+| `images` | string[] | — | Array of image URLs |
+| `video_url` | string | — | Tour video URL |
+| `amenities` | string[] | — | e.g. `["gym","pool"]` |
+| `nearby_places` | object | — | e.g. `{"schools":["DPS - 0.5km"]}` |
+| `latitude` | float | — | GPS latitude |
+| `longitude` | float | — | GPS longitude |
+
+**Response `201`:**
+```json
+{
+  "success": true,
+  "message": "Property created successfully",
+  "data": { "property_id": "uuid" }
+}
+```
+
+---
+
+### 4. Update Property
+```
+PUT /api/properties/{property_id}
+```
+🔒 Auth Required — **Owner only**. Send only the fields you want to update.
+
+**Request Body:** Any subset of fields from Create Property (#3), plus:
+| Field | Type | Notes |
+|-------|------|-------|
+| `status` | string | `"active"` \| `"inactive"` |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property updated successfully",
+  "data": { "property": { ...updated_property } }
+}
+```
+
+**Errors:**
+- `403` — Not the owner
+- `404` — Property not found
+
+---
+
+### 5. Delete Property
+```
+DELETE /api/properties/{property_id}
+```
+🔒 Auth Required — **Owner only**. Soft delete (sets status to `"deleted"`).
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property deleted successfully",
+  "data": { "property_id": "uuid" }
+}
+```
+
+---
+
+### 6. Get My Properties (Broker)
+```
+GET /api/properties/broker
+```
+🔒 Auth Required — Returns properties posted by the logged-in user.
+
+**Query Params:**
+| Param | Type | Default | Values |
+|-------|------|---------|--------|
+| `status` | string | `"active"` | `"active"` \| `"inactive"` \| `"deleted"` |
+| `limit` | integer | 20 | max 100 |
+| `offset` | integer | 0 | — |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Your properties fetched successfully",
+  "data": {
+    "properties": [ { ...property } ],
+    "pagination": { "total": 5, "limit": 20, "offset": 0 }
+  }
+}
+```
+
+---
+
+### 7. Search Properties
+```
+GET /api/properties/search
+```
+Public.
+
+**Query Params:**
+| Param | Type | Description |
+|-------|------|-------------|
+| `query` | string | Searches title, description, location |
+| `property_type` | string | `"rent"` \| `"sale"` \| `"pg"` |
+| `min_price` | integer | Minimum price filter |
+| `max_price` | integer | Maximum price filter |
+| `bedrooms` | integer | Exact bedroom count |
+| `location` | string | Partial match on location |
+| `latitude` | float | User GPS latitude (for future geo-search) |
+| `longitude` | float | User GPS longitude |
+| `radius_km` | float | Search radius in km |
+| `limit` | integer | Default 20 |
+| `offset` | integer | Default 0 |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Search results",
+  "data": {
+    "properties": [ { ...property } ],
+    "count": 8,
+    "pagination": { "limit": 20, "offset": 0 }
+  }
+}
+```
+
+---
+
+### 8. Like Property
+```
+POST /api/properties/{property_id}/like
+```
+🔒 Auth Required — Idempotent (no duplicate likes).
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property liked",
+  "data": {
+    "property_id": "uuid",
+    "liked": true,
+    "likes_count": 35
+  }
+}
+```
+
+---
+
+### 9. Unlike Property
+```
+DELETE /api/properties/{property_id}/like
+```
+🔒 Auth Required
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property unliked",
+  "data": {
+    "property_id": "uuid",
+    "liked": false,
+    "likes_count": 34
+  }
+}
+```
+
+---
+
+### 10. Save Property
+```
+POST /api/properties/{property_id}/save
+```
+🔒 Auth Required — Adds to saved/wishlist. Idempotent.
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property saved",
+  "data": { "property_id": "uuid", "is_saved": true }
+}
+```
+
+---
+
+### 11. Unsave Property
+```
+DELETE /api/properties/{property_id}/save
+```
+🔒 Auth Required
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property removed from saved",
+  "data": { "property_id": "uuid", "is_saved": false }
+}
+```
+
+---
+
+### 12. Report Property
+```
+POST /api/properties/{property_id}/report
+```
+🔒 Auth Required
+
+**Request Body:**
+```json
+{
+  "reason": "spam",
+  "description": "This looks like a duplicate/fraudulent listing."
+}
+```
+
+| Field | Type | Required |
+|-------|------|----------|
+| `reason` | string | ✅ |
+| `description` | string | — |
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Property reported successfully",
+  "data": { "property_id": "uuid" }
+}
+```
+
+---
+
+### 13. Get Saved Properties
+```
+GET /api/properties/saved
+```
+🔒 Auth Required
+
+**Query Params:** `limit` (default 20), `offset` (default 0)
+
+**Response `200`:**
+```json
+{
+  "success": true,
+  "message": "Saved properties fetched successfully",
+  "data": {
+    "properties": [ { ...property, "is_saved": true } ],
+    "pagination": { "total": 3, "limit": 20, "offset": 0 }
+  }
+}
+```
+
+---
+
+## Error Reference
+
+| HTTP Status | Meaning |
+|-------------|---------|
+| `400` | Bad request / invalid UUID format |
+| `401` | Missing or invalid Bearer token |
+| `403` | Forbidden — not the property owner |
+| `404` | Property not found |
+| `500` | Internal server / database error |
+
+---
+
+## Quick Reference Table
+
+| # | Method | Endpoint | Auth |
+|---|--------|----------|------|
+| 1 | GET | `/api/properties` | Public |
+| 2 | GET | `/api/properties/{id}` | Public |
+| 3 | POST | `/api/properties` | 🔒 |
+| 4 | PUT | `/api/properties/{id}` | 🔒 Owner |
+| 5 | DELETE | `/api/properties/{id}` | 🔒 Owner |
+| 6 | GET | `/api/properties/broker` | 🔒 |
+| 7 | GET | `/api/properties/search` | Public |
+| 8 | POST | `/api/properties/{id}/like` | 🔒 |
+| 9 | DELETE | `/api/properties/{id}/like` | 🔒 |
+| 10 | POST | `/api/properties/{id}/save` | 🔒 |
+| 11 | DELETE | `/api/properties/{id}/save` | 🔒 |
+| 12 | POST | `/api/properties/{id}/report` | 🔒 |
+| 13 | GET | `/api/properties/saved` | 🔒 |
+

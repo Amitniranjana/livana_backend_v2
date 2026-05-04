@@ -1,0 +1,239 @@
+# Care Connect API Documentation — Modules 7 & 8
+
+---
+
+## Module 7: Property Filter API
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 7.1 Filter Properties
+
+**Endpoint:** `GET /api/v1/properties`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Query Parameters:**
+
+| Parameter   | Type    | Required | Description                                               |
+| ----------- | ------- | -------- | --------------------------------------------------------- |
+| `type`      | string  | No       | Property type: `residential`, `commercial`, or `acres`    |
+| `min_price` | integer | No       | Minimum price filter (inclusive)                           |
+| `max_price` | integer | No       | Maximum price filter (inclusive)                           |
+| `city`      | string  | No       | City name (partial match, case-insensitive)               |
+| `page`      | integer | No       | Page number, 1-based (default: `1`)                       |
+| `limit`     | integer | No       | Items per page (default: `10`, max: `50`)                 |
+
+**Example Request:**
+
+```
+GET /api/v1/properties?type=residential&city=Mumbai&min_price=2000000&page=1&limit=10
+```
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Properties fetched successfully",
+  "data": {
+    "properties": [
+      {
+        "id": "b3f2c5a1-7e4d-4a89-9c12-3d5e6f7a8b9c",
+        "title": "Luxury 3BHK Apartment in Bandra West",
+        "price": 8500000,
+        "location": "Mumbai",
+        "type": "flat",
+        "created_at": "2026-02-15T10:30:00Z"
+      },
+      {
+        "id": "a1d4e7b2-6c3f-4e91-8b0a-2c4d5e6f7a8b",
+        "title": "Spacious 2BHK in Andheri East",
+        "price": 4500000,
+        "location": "Mumbai",
+        "type": "flat",
+        "created_at": "2026-01-20T14:45:00Z"
+      }
+    ],
+    "total_count": 42,
+    "current_page": 1,
+    "total_pages": 5
+  }
+}
+```
+
+> **Type Mapping:** The `type` query parameter maps to internal values:  
+> `residential` → `flat` | `commercial` → `commercial` | `acres` → `plot`
+
+---
+
+## Module 8: Community APIs
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 8.1 Create Community
+
+**Endpoint:** `POST /api/v1/communities`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "name": "Mumbai Property Owners",
+  "description": "A community for property owners in Mumbai to share tips and market updates."
+}
+```
+
+| Field         | Type   | Required | Description                    |
+| ------------- | ------ | -------- | ------------------------------ |
+| `name`        | string | Yes      | Name of the community          |
+| `description` | string | No       | Description of the community   |
+
+**Success Response** `201 Created`:
+
+```json
+{
+  "success": true,
+  "message": "Community created successfully",
+  "data": {
+    "id": "f7a8b9c0-1d2e-4f3a-b5c6-7d8e9f0a1b2c",
+    "name": "Mumbai Property Owners",
+    "description": "A community for property owners in Mumbai to share tips and market updates.",
+    "created_by": "c4d5e6f7-8a9b-4c0d-1e2f-3a4b5c6d7e8f",
+    "created_at": "2026-03-07T18:30:00Z"
+  }
+}
+```
+
+> **Note:** The creator is automatically added as a member of the community.
+
+---
+
+### 8.2 Join Community
+
+**Endpoint:** `POST /api/v1/communities/{id}/join`
+
+| Parameter | In   | Type | Description                   |
+| --------- | ---- | ---- | ----------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the community to join   |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Successfully joined the community",
+  "data": {}
+}
+```
+
+> **Note:** If the user is already a member, the endpoint returns the same success response (idempotent).
+
+---
+
+### 8.3 Post in Community
+
+**Endpoint:** `POST /api/v1/communities/{id}/posts`
+
+| Parameter | In   | Type | Description                        |
+| --------- | ---- | ---- | ---------------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the community to post in     |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "content": "Has anyone noticed the recent price trends in Bandra? Seems like a good time to invest!"
+}
+```
+
+| Field     | Type   | Required | Description         |
+| --------- | ------ | -------- | ------------------- |
+| `content` | string | Yes      | Content of the post |
+
+**Success Response** `201 Created`:
+
+```json
+{
+  "success": true,
+  "message": "Post created successfully",
+  "data": {
+    "post_id": "d3e4f5a6-7b8c-4d9e-0f1a-2b3c4d5e6f7a",
+    "community_id": "f7a8b9c0-1d2e-4f3a-b5c6-7d8e9f0a1b2c",
+    "author_id": "c4d5e6f7-8a9b-4c0d-1e2f-3a4b5c6d7e8f",
+    "content": "Has anyone noticed the recent price trends in Bandra? Seems like a good time to invest!",
+    "created_at": "2026-03-07T19:15:00Z"
+  }
+}
+```
+
+> **Security:** Only members of the community can create posts. Non-members receive `403 Forbidden`.
+
+---
+
+## Standard Error Format
+
+All endpoints follow the global error response structure:
+
+```json
+{
+  "success": false,
+  "message": "A human-readable description of the error",
+  "error_code": "NOT_FOUND",
+  "errors": null
+}
+```
+
+| Error Code              | HTTP Status | Description                                    |
+| ----------------------- | ----------- | ---------------------------------------------- |
+| `BAD_REQUEST`           | 400         | Malformed request or invalid parameters        |
+| `UNAUTHORIZED`          | 401         | Missing or invalid JWT token                   |
+| `FORBIDDEN`             | 403         | Insufficient permissions for the resource      |
+| `NOT_FOUND`             | 404         | Requested resource does not exist              |
+| `CONFLICT`              | 409         | Duplicate resource conflict                    |
+| `VALIDATION_ERROR`      | 422         | Request body validation failures               |
+| `INTERNAL_SERVER_ERROR` | 500         | Unexpected server-side error                   |
+
+For validation errors, the `errors` field contains a map of field names to error message arrays:
+
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "error_code": "VALIDATION_ERROR",
+  "errors": {
+    "field_name": ["Error message 1", "Error message 2"]
+  }
+}
+```
