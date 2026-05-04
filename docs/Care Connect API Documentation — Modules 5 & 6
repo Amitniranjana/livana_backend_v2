@@ -1,0 +1,243 @@
+# Care Connect API Documentation — Modules 5 & 6
+
+---
+
+## Module 5: Saved Property API
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 5.1 Save Property
+
+**Endpoint:** `POST /api/v1/properties/{id}/save`
+
+| Parameter | In   | Type | Description                |
+| --------- | ---- | ---- | -------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the property to save |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Property saved successfully",
+  "data": {
+    "property_id": "b3f2c5a1-7e4d-4a89-9c12-3d5e6f7a8b9c",
+    "is_saved": true
+  }
+}
+```
+
+> **Note:** If the property is already saved, the endpoint returns the same success response (idempotent).
+
+---
+
+### 5.2 Remove Saved Property
+
+**Endpoint:** `DELETE /api/v1/properties/{id}/save`
+
+| Parameter | In   | Type | Description                           |
+| --------- | ---- | ---- | ------------------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the property to remove from saved |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Property removed from saved list",
+  "data": {
+    "property_id": "b3f2c5a1-7e4d-4a89-9c12-3d5e6f7a8b9c",
+    "is_saved": false
+  }
+}
+```
+
+> **Note:** If the property was not previously saved, the endpoint still returns success (graceful handling).
+
+---
+
+### 5.3 Get Saved Properties
+
+**Endpoint:** `GET /api/v1/users/me/saved-properties`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Saved properties fetched successfully",
+  "data": [
+    {
+      "id": "b3f2c5a1-7e4d-4a89-9c12-3d5e6f7a8b9c",
+      "title": "Luxury 3BHK Apartment in Bandra West",
+      "price": 8500000,
+      "location": "Mumbai",
+      "created_at": "2026-02-15T10:30:00Z"
+    },
+    {
+      "id": "a1d4e7b2-6c3f-4e91-8b0a-2c4d5e6f7a8b",
+      "title": "Modern Studio in Koramangala",
+      "price": 3200000,
+      "location": "Bangalore",
+      "created_at": "2026-01-20T14:45:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## Module 6: Notification API
+
+All endpoints require authentication via `Authorization: Bearer <jwt_token>` header.  
+Access: Any authenticated role (USER, ASSOCIATE, ADMIN).
+
+---
+
+### 6.1 Get Notifications
+
+**Endpoint:** `GET /api/v1/notifications`
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Notifications fetched successfully",
+  "data": [
+    {
+      "id": "e5f6a7b8-1c2d-4e3f-9a0b-1c2d3e4f5a6b",
+      "title": "Booking Confirmed",
+      "message": "Your booking for 'Luxury 3BHK Apartment' has been confirmed by the owner.",
+      "type": "BOOKING",
+      "is_read": false,
+      "created_at": "2026-03-07T18:30:00Z"
+    },
+    {
+      "id": "d4e5f6a7-0b1c-4d2e-8f9a-0b1c2d3e4f5a",
+      "title": "New Message",
+      "message": "You have a new message from Rahul Sharma.",
+      "type": "MESSAGE",
+      "is_read": true,
+      "created_at": "2026-03-06T09:15:00Z"
+    },
+    {
+      "id": "c3d4e5f6-9a0b-4c1d-7e8f-9a0b1c2d3e4f",
+      "title": "System Maintenance",
+      "message": "Scheduled maintenance on March 10, 2026 from 2:00 AM to 4:00 AM IST.",
+      "type": "SYSTEM",
+      "is_read": false,
+      "created_at": "2026-03-05T12:00:00Z"
+    }
+  ]
+}
+```
+
+> Notifications are returned sorted by `created_at` in descending order (most recent first).
+
+---
+
+### 6.2 Mark Notification as Read
+
+**Endpoint:** `PATCH /api/v1/notifications/{id}/read`
+
+| Parameter | In   | Type | Description                      |
+| --------- | ---- | ---- | -------------------------------- |
+| [id](file:///c:/Users/yamit/Downloads/Desktop/livanaFinalbackend/backend-services/src/handlers/listing.rs#301-372)      | path | UUID | ID of the notification to update |
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:** _None_
+
+**Success Response** `200 OK`:
+
+```json
+{
+  "success": true,
+  "message": "Notification marked as read",
+  "data": {
+    "notification_id": "e5f6a7b8-1c2d-4e3f-9a0b-1c2d3e4f5a6b",
+    "is_read": true
+  }
+}
+```
+
+> **Security:** The endpoint verifies that the notification belongs to the authenticated user.  
+> Attempting to mark another user's notification returns `403 Forbidden`.
+
+---
+
+## Standard Error Format
+
+All endpoints follow the global error response structure:
+
+```json
+{
+  "success": false,
+  "message": "A human-readable description of the error",
+  "error_code": "NOT_FOUND",
+  "errors": null
+}
+```
+
+| Error Code              | HTTP Status | Description                                    |
+| ----------------------- | ----------- | ---------------------------------------------- |
+| `BAD_REQUEST`           | 400         | Malformed request or invalid parameters        |
+| `UNAUTHORIZED`          | 401         | Missing or invalid JWT token                   |
+| `FORBIDDEN`             | 403         | Insufficient permissions for the resource      |
+| `NOT_FOUND`             | 404         | Requested resource does not exist              |
+| `CONFLICT`              | 409         | Duplicate resource conflict                    |
+| `VALIDATION_ERROR`      | 422         | Request body validation failures               |
+| `INTERNAL_SERVER_ERROR` | 500         | Unexpected server-side error                   |
+
+For validation errors, the `errors` field contains a map of field names to error message arrays:
+
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "error_code": "VALIDATION_ERROR",
+  "errors": {
+    "field_name": ["Error message 1", "Error message 2"]
+  }
+}
+```
