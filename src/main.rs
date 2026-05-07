@@ -158,6 +158,7 @@ async fn main() {
         storage_service: s3_storage.clone(),
         public_storage_service: public_storage.clone(),
         redis_pool,
+        active_sockets: Arc::new(dashmap::DashMap::new()),
     };
 
     let app = Router::new()

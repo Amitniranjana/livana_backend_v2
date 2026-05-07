@@ -386,7 +386,18 @@ pub async fn send_message(
                 .bind(&payload.content)
                 .execute(&app_state.db)
                 .await {
-                    Ok(_) => { db_message_id = Some(local_msg_id.to_string()); }
+                    Ok(_) => { 
+                        db_message_id = Some(local_msg_id.to_string()); 
+                        push_message_and_notification(
+                            &app_state,
+                            chat_uuid,
+                            sender_uuid,
+                            local_msg_id,
+                            payload.content.clone(),
+                            "text".to_string(),
+                        )
+                        .await;
+                    }
                     Err(e) => { eprintln!("Failed to insert message to db: {}", e); }
                 }
 
@@ -448,6 +459,7 @@ pub struct MessageRow {
     pub sender_id: Uuid,
     pub content: String,
     pub message_type: String,
+    pub status: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -661,23 +673,183 @@ pub async fn upload_chat_media(
     .execute(&app_state.db)
     .await
     {
-        Ok(_) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "success": true,
-                "message": "Media uploaded and message created",
-                "file_url": file_url,
-                "file_type": message_type,
-                "message_id": message_id
-            })),
-        )
-            .into_response(),
+        Ok(_) => {
+            push_message_and_notification(
+                &app_state,
+                chat_uuid,
+                sender_uuid,
+                message_id,
+                file_url.clone(),
+                message_type.to_string(),
+            )
+            .await;
+
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "success": true,
+                    "message": "Media uploaded and message created",
+                    "file_url": file_url,
+                    "file_type": message_type,
+                    "message_id": message_id
+                })),
+            ).into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({"success": false, "message": format!("Failed to save message: {}", e)})),
         )
             .into_response(),
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper to push WebSocket updates or Database notifications after a message is sent
+// ─────────────────────────────────────────────────────────────────────────────
+async fn push_message_and_notification(
+    app_state: &AppState,
+    chat_uuid: Uuid,
+    sender_uuid: Uuid,
+    message_id: Uuid,
+    content: String,
+    message_type: String,
+) {
+    let receiver_id_opt: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2 LIMIT 1",
+    )
+    .bind(chat_uuid)
+    .bind(sender_uuid)
+    .fetch_optional(&app_state.db)
+    .await
+    .unwrap_or(None);
+
+    if let Some(receiver_id) = receiver_id_opt {
+        if let Some(socket) = app_state.active_sockets.get(&receiver_id) {
+            // Receiver is connected, send via WebSocket
+            let ws_msg = crate::models::chat::WsMessage::NewMessage {
+                message_id,
+                chat_id: chat_uuid,
+                sender_id: sender_uuid,
+                content: content.clone(),
+                message_type,
+                created_at: chrono::Utc::now(),
+            };
+            if let Ok(json_str) = serde_json::to_string(&ws_msg) {
+                let _ = socket.send(json_str).await;
+            }
+
+            // Mark as delivered
+            let _ = sqlx::query("UPDATE messages SET status = 'delivered' WHERE id = $1")
+                .bind(message_id)
+                .execute(&app_state.db)
+                .await;
+
+            // Push delivery receipt to sender
+            if let Some(sender_socket) = app_state.active_sockets.get(&sender_uuid) {
+                let receipt = crate::models::chat::WsMessage::MessageDelivered {
+                    message_id,
+                    delivered_at: chrono::Utc::now(),
+                };
+                if let Ok(receipt_str) = serde_json::to_string(&receipt) {
+                    let _ = sender_socket.send(receipt_str).await;
+                }
+            }
+        } else {
+            // Receiver is NOT connected, insert notification
+            let sender_name_opt: Option<String> = sqlx::query_scalar(
+                "SELECT first_name || ' ' || last_name FROM users WHERE id = $1",
+            )
+            .bind(sender_uuid)
+            .fetch_optional(&app_state.db)
+            .await
+            .unwrap_or(Some("Someone".to_string()));
+
+            let sender_name = sender_name_opt.unwrap_or("Someone".to_string());
+            let preview = if content.len() > 50 {
+                format!("{}...", &content[..47])
+            } else {
+                content.clone()
+            };
+
+            let _ = sqlx::query(
+                "INSERT INTO notifications (user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at) VALUES ($1, $2, $3, 'MESSAGE', false, $4, 'chat', NOW())"
+            )
+            .bind(receiver_id)
+            .bind(&sender_name)
+            .bind(&preview)
+            .bind(chat_uuid)
+            .execute(&app_state.db)
+            .await;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+/// PATCH /api/v1/chats/{chat_id}/seen
+///
+/// Mark all unread messages in a chat as seen, clear notifications, and send WS receipt.
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn mark_chat_seen(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path(chat_id_str): Path<String>,
+) -> impl IntoResponse {
+    let chat_uuid = match Uuid::parse_str(&chat_id_str) {
+        Ok(id) => id,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid chat_id"}))).into_response(),
+    };
+
+    let user_uuid = match Uuid::parse_str(&auth.user_id) {
+        Ok(id) => id,
+        Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid token"}))).into_response(),
+    };
+
+    // 1. Update message status
+    // All messages in this chat where sender is NOT the current user and status is NOT seen
+    let _ = sqlx::query(
+        "UPDATE messages SET status = 'seen' WHERE chat_id = $1 AND sender_id != $2 AND status != 'seen'"
+    )
+    .bind(chat_uuid)
+    .bind(user_uuid)
+    .execute(&app_state.db)
+    .await;
+
+    // 2. Clear notifications for this chat
+    let _ = sqlx::query(
+        "UPDATE notifications SET is_read = true WHERE user_id = $1 AND related_entity_id = $2 AND type = 'MESSAGE'"
+    )
+    .bind(user_uuid)
+    .bind(chat_uuid)
+    .execute(&app_state.db)
+    .await;
+
+    // 3. Notify the OTHER participant via WebSocket that their messages were seen
+    let sender_id_opt: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2 LIMIT 1",
+    )
+    .bind(chat_uuid)
+    .bind(user_uuid)
+    .fetch_optional(&app_state.db)
+    .await
+    .unwrap_or(None);
+
+    if let Some(sender_id) = sender_id_opt {
+        if let Some(socket) = app_state.active_sockets.get(&sender_id) {
+            let receipt = crate::models::chat::WsMessage::MessageSeen {
+                conversation_id: chat_uuid,
+                seen_by: user_uuid,
+                seen_at: chrono::Utc::now(),
+            };
+            if let Ok(receipt_str) = serde_json::to_string(&receipt) {
+                let _ = socket.send(receipt_str).await;
+            }
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!({"success": true, "message": "Chat marked as seen"})),
+    ).into_response()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -760,6 +932,7 @@ pub async fn get_chat_messages(
         r#"
         SELECT id, chat_id, sender_id, content,
                COALESCE(message_type, 'text') AS message_type,
+               status,
                created_at
         FROM messages
         WHERE chat_id = $1

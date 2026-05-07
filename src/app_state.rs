@@ -24,4 +24,6 @@ pub struct AppState {
     pub public_storage_service: Arc<crate::services::storage::S3Storage>,
     /// Redis connection manager for caching (optional — gracefully degrades if absent)
     pub redis_pool: Option<redis::aio::ConnectionManager>,
+    /// Active WebSocket connections for chat receipts and notifications
+    pub active_sockets: Arc<dashmap::DashMap<uuid::Uuid, tokio::sync::mpsc::Sender<String>>>,
 }
