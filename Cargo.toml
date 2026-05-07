@@ -6,7 +6,7 @@ default-run = "livana-backend-v2"
 
 [dependencies]
 # Web framework
-axum = "0.8.6"
+axum = { version = "0.8.6", features = ["ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "fs"] }
 axum-extra = { version = "0.10.0", features = ["typed-header", "multipart"] }
@@ -83,6 +83,10 @@ validator = { version = "0.20.0", features = ["derive"] }
 # Redis (caching)
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 bytes = "1"
+
+# WebSockets state
+dashmap = "5.5"
+futures = "0.3.32"
 
 [[bin]]
 name = "gen_jwt"

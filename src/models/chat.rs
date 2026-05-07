@@ -61,6 +61,37 @@ pub struct ChatRow {
     pub unread_count: i32,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum WsMessage {
+    #[serde(rename = "new_message")]
+    NewMessage {
+        message_id: Uuid,
+        chat_id: Uuid,
+        sender_id: Uuid,
+        content: String,
+        message_type: String,
+        created_at: DateTime<Utc>,
+    },
+    #[serde(rename = "message_delivered")]
+    MessageDelivered {
+        message_id: Uuid,
+        delivered_at: DateTime<Utc>,
+    },
+    #[serde(rename = "message_seen")]
+    MessageSeen {
+        conversation_id: Uuid,
+        seen_by: Uuid,
+        seen_at: DateTime<Utc>,
+    },
+    #[serde(rename = "notification")]
+    Notification {
+        title: String,
+        body: String,
+        conversation_id: Uuid,
+    },
+}
+
 // Final JSON response structs
 #[derive(Debug, Serialize)]
 pub struct ParticipantInfo {
