@@ -1,6 +1,7 @@
 use crate::app_state::AppState;
 use crate::handlers::unified_listing::{
     create_listing, get_listing_by_id, list_listings, upload_listing_images_v2,
+    save_listing_draft, get_listing_drafts,
 };
 use axum::{
     Router,
@@ -13,6 +14,8 @@ pub fn unified_listing_routes() -> Router<AppState> {
         .route("/api/listings", post(create_listing).get(list_listings))
         // Get single listing with images
         .route("/api/listings/{id}", get(get_listing_by_id))
+        // Drafts
+        .route("/api/listings/drafts", post(save_listing_draft).get(get_listing_drafts))
         // Image upload (S3 multipart) — uses /v2/ path to avoid conflict with legacy upload endpoint
         .route(
             "/api/listings/v2/upload/images",

@@ -11,10 +11,11 @@ pub struct CreateListingPayload {
 
     /// Residential | Commercial | Land
     pub property_type: String,
-    /// Rent | Sell | PG | Space Sharing
     pub listing_type: String,
-    /// User | Broker | Associate
+    /// user | broker | associate
     pub user_type: String,
+    /// User | Broker
+    pub host: Option<String>,
 
     pub price: i32,
     pub deposit: i32,
@@ -43,6 +44,9 @@ pub struct CreateListingPayload {
     pub commercial_type: Option<String>,
     pub land_type: Option<String>,
 
+    pub lease_years: Option<i32>,
+    pub bathroom_type: Option<String>,
+
     pub gender_preference: Option<String>,
     pub roommates: Option<i32>,
 
@@ -53,7 +57,21 @@ pub struct CreateListingPayload {
     pub age_years: Option<i32>,
 
     /// Image URLs returned from the upload endpoint
-    pub image_urls: Option<Vec<String>>,
+    pub images: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListingDraftPayload {
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListingDraftResponse {
+    pub id: String,
+    pub user_id: String,
+    pub data: serde_json::Value,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +113,7 @@ pub struct ListingDetail {
     pub property_type: String,
     pub listing_type: String,
     pub user_type: String,
+    pub host: Option<String>,
 
     pub price: i32,
     pub deposit: i32,
@@ -122,6 +141,9 @@ pub struct ListingDetail {
 
     pub commercial_type: Option<String>,
     pub land_type: Option<String>,
+
+    pub lease_years: Option<i32>,
+    pub bathroom_type: Option<String>,
 
     pub gender_preference: Option<String>,
     pub roommates: Option<i32>,
