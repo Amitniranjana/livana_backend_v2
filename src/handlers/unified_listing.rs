@@ -14,7 +14,7 @@ use axum_extra::extract::Multipart;
 use crate::{
     app_state::AppState,
     dtos::unified_listing::{
-        CreateListingPayload, ListingDetail, ListingFilters, ListingImageRow, ListingSummary,
+        CreateListingPayload, ListingDetail, ListingFilters, ListingImageRow, ListingSummary, ListingDraftPayload, ListingDraftResponse
     },
     handlers::listing_validator::{auto_derive_parking, validate_listing},
     services::storage::StorageService,
@@ -65,7 +65,7 @@ pub async fn create_listing(
         r#"
         INSERT INTO listings_v2 (
             id, title, description,
-            property_type, listing_type, user_type,
+            property_type, listing_type, user_type, host,
             price, deposit,
             location, area, city, pincode,
             latitude, longitude,
@@ -74,25 +74,27 @@ pub async fn create_listing(
             furnishing, facing,
             floor, total_floors,
             commercial_type, land_type,
+            lease_years, bathroom_type,
             gender_preference, roommates,
             amenities, parking, broker_contact_allowed,
             age_years,
             created_by, created_at, updated_at
         ) VALUES (
             $1, $2, $3,
-            $4, $5, $6,
-            $7, $8,
-            $9, $10, $11, $12,
-            $13, $14,
-            $15,
-            $16, $17, $18, $19,
-            $20, $21,
-            $22, $23,
-            $24, $25,
-            $26, $27,
-            $28, $29, $30,
-            $31,
-            $32, $33, $33
+            $4, $5, $6, $7,
+            $8, $9,
+            $10, $11, $12, $13,
+            $14, $15,
+            $16,
+            $17, $18, $19, $20,
+            $21, $22,
+            $23, $24,
+            $25, $26,
+            $27, $28,
+            $29, $30,
+            $31, $32, $33,
+            $34,
+            $35, $36, $36
         )
         RETURNING id
         "#,
@@ -103,33 +105,36 @@ pub async fn create_listing(
     .bind(&payload.property_type)              // $4
     .bind(&payload.listing_type)               // $5
     .bind(&payload.user_type)                  // $6
-    .bind(payload.price)                       // $7
-    .bind(payload.deposit)                     // $8
-    .bind(&payload.location)                   // $9
-    .bind(&payload.area)                       // $10
-    .bind(&payload.city)                       // $11
-    .bind(&payload.pincode)                    // $12
-    .bind(payload.latitude)                    // $13
-    .bind(payload.longitude)                   // $14
-    .bind(payload.area_sqft)                   // $15
-    .bind(payload.bedrooms)                    // $16
-    .bind(payload.bathrooms)                   // $17
-    .bind(payload.no_of_toilets)               // $18
-    .bind(payload.no_of_balconies)             // $19
-    .bind(&payload.furnishing)                 // $20
-    .bind(&payload.facing)                     // $21
-    .bind(payload.floor)                       // $22
-    .bind(payload.total_floors)                // $23
-    .bind(&payload.commercial_type)            // $24
-    .bind(&payload.land_type)                  // $25
-    .bind(&payload.gender_preference)          // $26
-    .bind(payload.roommates)                   // $27
-    .bind(&amenities)                          // $28
-    .bind(parking)                             // $29
-    .bind(payload.broker_contact_allowed.unwrap_or(true))  // $30
-    .bind(payload.age_years)                   // $31
-    .bind(user_id)                             // $32  created_by from JWT
-    .bind(now)                                 // $33  created_at & updated_at
+    .bind(&payload.host)                       // $7
+    .bind(payload.price)                       // $8
+    .bind(payload.deposit)                     // $9
+    .bind(&payload.location)                   // $10
+    .bind(&payload.area)                       // $11
+    .bind(&payload.city)                       // $12
+    .bind(&payload.pincode)                    // $13
+    .bind(payload.latitude)                    // $14
+    .bind(payload.longitude)                   // $15
+    .bind(payload.area_sqft)                   // $16
+    .bind(payload.bedrooms)                    // $17
+    .bind(payload.bathrooms)                   // $18
+    .bind(payload.no_of_toilets)               // $19
+    .bind(payload.no_of_balconies)             // $20
+    .bind(&payload.furnishing)                 // $21
+    .bind(&payload.facing)                     // $22
+    .bind(payload.floor)                       // $23
+    .bind(payload.total_floors)                // $24
+    .bind(&payload.commercial_type)            // $25
+    .bind(&payload.land_type)                  // $26
+    .bind(payload.lease_years)                 // $27
+    .bind(&payload.bathroom_type)              // $28
+    .bind(&payload.gender_preference)          // $29
+    .bind(payload.roommates)                   // $30
+    .bind(&amenities)                          // $31
+    .bind(parking)                             // $32
+    .bind(payload.broker_contact_allowed.unwrap_or(true))  // $33
+    .bind(payload.age_years)                   // $34
+    .bind(user_id)                             // $35  created_by from JWT
+    .bind(now)                                 // $36  created_at & updated_at
     .fetch_one(&app_state.db)
     .await;
 
@@ -137,8 +142,8 @@ pub async fn create_listing(
         Ok(row) => {
             let id: Uuid = row.get("id");
 
-            // ── If image_urls provided, insert them into listing_images_v2 ──
-            if let Some(ref urls) = payload.image_urls {
+            // ── If images provided, insert them into listing_images_v2 ──
+            if let Some(ref urls) = payload.images {
                 for (i, url) in urls.iter().enumerate() {
                     if url.trim().is_empty() || !url.starts_with("https://") {
                         continue;
@@ -225,7 +230,7 @@ pub async fn get_listing_by_id(
         r#"
         SELECT
             id, title, description,
-            property_type, listing_type, user_type,
+            property_type, listing_type, user_type, host,
             price, deposit,
             location, area, city, pincode,
             latitude, longitude,
@@ -234,6 +239,7 @@ pub async fn get_listing_by_id(
             furnishing, facing,
             floor, total_floors,
             commercial_type, land_type,
+            lease_years, bathroom_type,
             gender_preference, roommates,
             amenities, parking, broker_contact_allowed,
             age_years,
@@ -304,6 +310,7 @@ pub async fn get_listing_by_id(
         property_type: row.try_get("property_type").unwrap_or_default(),
         listing_type: row.try_get("listing_type").unwrap_or_default(),
         user_type: row.try_get("user_type").unwrap_or_default(),
+        host: row.try_get("host").ok(),
         price: row.try_get("price").unwrap_or_default(),
         deposit: row.try_get("deposit").unwrap_or_default(),
         location: row.try_get("location").unwrap_or_default(),
@@ -323,6 +330,8 @@ pub async fn get_listing_by_id(
         total_floors: row.try_get("total_floors").ok(),
         commercial_type: row.try_get("commercial_type").ok(),
         land_type: row.try_get("land_type").ok(),
+        lease_years: row.try_get("lease_years").ok(),
+        bathroom_type: row.try_get("bathroom_type").ok(),
         gender_preference: row.try_get("gender_preference").ok(),
         roommates: row.try_get("roommates").ok(),
         amenities: Some(amenities_raw),
@@ -731,3 +740,132 @@ pub async fn upload_listing_images_v2(
     )
         .into_response()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. POST /api/listings/drafts — Save Listing Draft
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn save_listing_draft(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Json(payload): Json<ListingDraftPayload>,
+) -> impl IntoResponse {
+    let user_id = match Uuid::parse_str(&auth.user_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid user ID in token"})),
+            );
+        }
+    };
+
+    let draft_id = Uuid::new_v4();
+    let data_json = payload.data;
+
+    let result = sqlx::query(
+        r#"
+        INSERT INTO listing_drafts (id, user_id, data)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        "#,
+    )
+    .bind(draft_id)
+    .bind(user_id)
+    .bind(&data_json)
+    .fetch_one(&app_state.db)
+    .await;
+
+    match result {
+        Ok(row) => {
+            let id: Uuid = row.get("id");
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "success": true,
+                    "data": {
+                        "draft_id": id.to_string()
+                    }
+                })),
+            )
+        }
+        Err(e) => {
+            log::error!("Failed to save listing draft: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": format!("Database error: {}", e)
+                })),
+            )
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. GET /api/listings/drafts — Get Listing Drafts
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub async fn get_listing_drafts(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+) -> impl IntoResponse {
+    let user_id = match Uuid::parse_str(&auth.user_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({"success": false, "message": "Invalid user ID in token"})),
+            );
+        }
+    };
+
+    let rows = match sqlx::query(
+        r#"
+        SELECT id, user_id, data, created_at, updated_at
+        FROM listing_drafts
+        WHERE user_id = $1
+        ORDER BY updated_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(&app_state.db)
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": format!("Database error: {}", e)})),
+            );
+        }
+    };
+
+    let drafts: Vec<ListingDraftResponse> = rows
+        .iter()
+        .map(|r| ListingDraftResponse {
+            id: r.try_get::<Uuid, _>("id").unwrap_or_default().to_string(),
+            user_id: r.try_get::<Uuid, _>("user_id").unwrap_or_default().to_string(),
+            data: r.try_get("data").unwrap_or_else(|_| json!({})),
+            created_at: r
+                .try_get::<Option<chrono::DateTime<Utc>>, _>("created_at")
+                .ok()
+                .flatten()
+                .map(|d| d.to_rfc3339()),
+            updated_at: r
+                .try_get::<Option<chrono::DateTime<Utc>>, _>("updated_at")
+                .ok()
+                .flatten()
+                .map(|d| d.to_rfc3339()),
+        })
+        .collect();
+
+    (
+        StatusCode::OK,
+        Json(json!({
+            "success": true,
+            "data": drafts
+        })),
+    )
+}
+

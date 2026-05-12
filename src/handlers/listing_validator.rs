@@ -4,11 +4,20 @@ use crate::dtos::unified_listing::CreateListingPayload;
 // Valid enum values
 // ─────────────────────────────────────────────────────────────────────────────
 
-const VALID_PROPERTY_TYPES: &[&str] = &["Residential", "Commercial", "Land"];
-const VALID_LISTING_TYPES: &[&str] = &["Rent", "Sell", "PG", "Space Sharing"];
-const VALID_USER_TYPES: &[&str] = &["User", "Broker", "Associate"];
-const VALID_FURNISHING: &[&str] = &["Unfurnished", "Semi-Furnished", "Fully-Furnished"];
-const VALID_FACING: &[&str] = &["North", "South", "East", "West", "North-East", "North-West", "South-East", "South-West"];
+const VALID_LISTING_TYPES: &[&str] = &["Rent", "Sell", "Lease", "PG", "Space Sharing"];
+const VALID_USER_TYPES: &[&str] = &["user", "broker", "associate"];
+const VALID_HOSTS: &[&str] = &["User", "Broker"];
+const VALID_FURNISHING: &[&str] = &["Unfurnished", "Semi-Furnished", "Furnished", "Fully-Furnished"];
+const VALID_FACING: &[&str] = &["North", "South", "East", "West", "NE", "NW", "SE", "SW", "North-East", "North-West", "South-East", "South-West"];
+const VALID_BATHROOM_TYPES: &[&str] = &["Attached", "Common"];
+
+fn is_valid_property_type(pt: &str) -> bool {
+    pt == "Commercial" || pt == "Land" || pt == "Studio" || pt.ends_with("BHK")
+}
+
+fn is_residential(pt: &str) -> bool {
+    pt == "Studio" || pt.ends_with("BHK")
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -20,10 +29,10 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
     let mut errors: Vec<String> = Vec::new();
 
     // ── 1. Enum validation ──────────────────────────────────────────────────
-    if !VALID_PROPERTY_TYPES.contains(&payload.property_type.as_str()) {
+    if !is_valid_property_type(&payload.property_type) {
         errors.push(format!(
-            "Invalid property_type '{}'. Must be one of: {:?}",
-            payload.property_type, VALID_PROPERTY_TYPES
+            "Invalid property_type '{}'. Must be 'Studio', '{{n}}BHK', 'Commercial', or 'Land'",
+            payload.property_type
         ));
     }
     if !VALID_LISTING_TYPES.contains(&payload.listing_type.as_str()) {
@@ -32,11 +41,19 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
             payload.listing_type, VALID_LISTING_TYPES
         ));
     }
-    if !VALID_USER_TYPES.contains(&payload.user_type.as_str()) {
+    if !VALID_USER_TYPES.contains(&payload.user_type.to_lowercase().as_str()) {
         errors.push(format!(
             "Invalid user_type '{}'. Must be one of: {:?}",
             payload.user_type, VALID_USER_TYPES
         ));
+    }
+    if let Some(ref h) = payload.host {
+        if !VALID_HOSTS.contains(&h.as_str()) {
+            errors.push(format!(
+                "Invalid host '{}'. Must be one of: {:?}",
+                h, VALID_HOSTS
+            ));
+        }
     }
     if let Some(ref f) = payload.furnishing {
         if !VALID_FURNISHING.contains(&f.as_str()) {
@@ -84,14 +101,17 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
     if payload.listing_type == "Sell" && payload.deposit != 0 {
         errors.push("deposit: must be 0 for Sell listings".to_string());
     }
+    if payload.property_type == "Land" && payload.deposit != 0 {
+        errors.push("deposit: must be 0 for Land listings".to_string());
+    }
 
     // ── 4. User type restriction: Users cannot create Sell listings ──────────
-    if payload.user_type == "User" && payload.listing_type == "Sell" {
+    if payload.user_type.to_lowercase() == "user" && payload.listing_type == "Sell" {
         errors.push("Users are not allowed to create Sell listings. Only Brokers and Associates can.".to_string());
     }
 
     // ── 5. Residential: require bedroom/bathroom fields ─────────────────────
-    if payload.property_type == "Residential" {
+    if is_residential(&payload.property_type) {
         if payload.bedrooms.is_none() {
             errors.push("bedrooms: required for Residential properties".to_string());
         }
@@ -122,6 +142,11 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
         }
         if payload.no_of_balconies.is_some() {
             errors.push("no_of_balconies: not allowed for Commercial properties".to_string());
+        }
+        if let Some(ref bt) = payload.bathroom_type {
+            if !VALID_BATHROOM_TYPES.contains(&bt.as_str()) {
+                errors.push(format!("bathroom_type: must be one of {:?}", VALID_BATHROOM_TYPES));
+            }
         }
     }
 
@@ -170,6 +195,13 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
         }
     }
 
+    // ── 10. Lease: lease_years required ─────────────────────────────────────
+    if payload.listing_type == "Lease" {
+        if payload.lease_years.is_none() {
+            errors.push("lease_years: required for Lease listings".to_string());
+        }
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -203,9 +235,10 @@ mod tests {
         CreateListingPayload {
             title: "Modern 2BHK Apartment".into(),
             description: "Beautiful apartment in city center".into(),
-            property_type: "Residential".into(),
+            property_type: "2BHK".into(),
             listing_type: "Rent".into(),
-            user_type: "User".into(),
+            user_type: "user".into(),
+            host: Some("User".into()),
             price: 25000,
             deposit: 50000,
             location: "Bandra West, Mumbai".into(),
@@ -225,13 +258,15 @@ mod tests {
             total_floors: Some(12),
             commercial_type: None,
             land_type: None,
+            lease_years: None,
+            bathroom_type: None,
             gender_preference: None,
             roommates: None,
             amenities: Some(vec!["Gym".into(), "Swimming Pool".into()]),
             parking: Some(true),
             broker_contact_allowed: Some(true),
             age_years: Some(3),
-            image_urls: None,
+            images: None,
         }
     }
 
@@ -245,7 +280,7 @@ mod tests {
     fn test_sell_deposit_must_be_zero() {
         let mut payload = base_residential_rent();
         payload.listing_type = "Sell".into();
-        payload.user_type = "Broker".into();
+        payload.user_type = "broker".into();
         payload.deposit = 10000;
         let result = validate_listing(&payload);
         assert!(result.is_err());
