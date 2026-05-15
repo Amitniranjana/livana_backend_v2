@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 mod app_state;
 mod dtos;
 mod handlers;

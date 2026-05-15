@@ -153,6 +153,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "title": row.try_get::<Option<String>, _>("title").ok().flatten(),
         "description": row.try_get::<Option<String>, _>("description").ok().flatten(),
         "property_type": row.try_get::<Option<String>, _>("property_type").ok().flatten(),
+        "listing_type": row.try_get::<Option<String>, _>("property_type").ok().flatten(),
         "price": row.try_get::<Option<i64>, _>("price").ok().flatten(),
         "deposit": row.try_get::<Option<i64>, _>("deposit").ok().flatten(),
         "location": row.try_get::<Option<String>, _>("location").ok().flatten(),
