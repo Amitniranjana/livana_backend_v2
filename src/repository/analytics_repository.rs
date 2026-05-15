@@ -33,11 +33,11 @@ pub async fn get_rent_trend_data(
                AVG(price)::FLOAT8 AS avg_rent,
                COUNT(*)           AS listing_count
         FROM properties
-        WHERE city ILIKE $1
+        WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($2 || ' days')::INTERVAL
+          AND created_at >= NOW() - ($2::INT * INTERVAL '1 day')
         "#,
     );
 
@@ -56,7 +56,7 @@ pub async fn get_rent_trend_data(
     query.push_str(" GROUP BY d ORDER BY d ASC");
 
     // Build the sqlx query and bind params in order
-    let mut q = sqlx::query(&query).bind(city).bind(days.to_string()); // cast to TEXT for interval concat
+    let mut q = sqlx::query(&query).bind(city).bind(days);
 
     if let Some(loc) = locality {
         q = q.bind(format!("%{}%", loc));
@@ -88,21 +88,20 @@ pub async fn get_overall_average_rent(
     city: &str,
     locality: Option<&str>,
     property_type: Option<&str>,
-    days: i32,
+    _days: i32,
 ) -> Result<Option<f64>, sqlx::Error> {
     let mut query = String::from(
         r#"
         SELECT AVG(price)::FLOAT8 AS avg_rent
         FROM properties
-        WHERE city ILIKE $1
+        WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($2 || ' days')::INTERVAL
         "#,
     );
 
-    let mut bind_idx = 3;
+    let mut bind_idx = 2;
 
     if locality.is_some() {
         query.push_str(&format!(" AND locality ILIKE ${}", bind_idx));
@@ -112,7 +111,7 @@ pub async fn get_overall_average_rent(
         query.push_str(&format!(" AND property_type ILIKE ${}", bind_idx));
     }
 
-    let mut q = sqlx::query(&query).bind(city).bind(days.to_string());
+    let mut q = sqlx::query(&query).bind(city);
 
     if let Some(loc) = locality {
         q = q.bind(format!("%{}%", loc));
@@ -156,11 +155,11 @@ pub async fn get_rent_heatmap_data(
                MIN(price)::FLOAT8             AS min_rent,
                MAX(price)::FLOAT8             AS max_rent
         FROM properties
-        WHERE city ILIKE $1
+        WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($2 || ' days')::INTERVAL
+          AND created_at >= NOW() - ($2::INT * INTERVAL '1 day')
         "#,
     );
 
@@ -170,7 +169,7 @@ pub async fn get_rent_heatmap_data(
 
     query.push_str(" GROUP BY loc ORDER BY avg_rent DESC");
 
-    let mut q = sqlx::query(&query).bind(city).bind(days.to_string());
+    let mut q = sqlx::query(&query).bind(city).bind(days);
 
     if let Some(pt) = property_type {
         q = q.bind(pt);
@@ -231,7 +230,7 @@ pub async fn get_city_rent_summary(
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($1 || ' days')::INTERVAL
+          AND created_at >= NOW() - ($1::INT * INTERVAL '1 day')
         "#,
         city_placeholders
             .iter()
@@ -246,7 +245,7 @@ pub async fn get_city_rent_summary(
 
     query.push_str(" GROUP BY city ORDER BY avg_rent DESC");
 
-    let mut q = sqlx::query(&query).bind(days.to_string());
+    let mut q = sqlx::query(&query).bind(days);
     for city in cities {
         q = q.bind(city.to_lowercase());
     }
