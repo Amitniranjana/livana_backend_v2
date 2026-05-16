@@ -15,6 +15,8 @@ pub struct CreateExpoRequest {
     pub organizer_id: String, // UUID as string
     pub banner_image: Option<String>,
     pub max_participants: i32,
+    pub lat: Option<f64>,
+    pub lng: Option<f64>,
 }
 
 /// Partial update for an expo event.
@@ -29,6 +31,8 @@ pub struct UpdateExpoRequest {
     pub end_time: Option<String>,
     pub banner_image: Option<String>,
     pub max_participants: Option<i32>,
+    pub lat: Option<f64>,
+    pub lng: Option<f64>,
 }
 
 // ── POST /api/expo — Response data ──────────────────────────────────────────
@@ -70,6 +74,8 @@ pub struct ExpoEventListItem {
     pub location: String,
     pub event_date: String,
     pub registered_count: i32,
+    pub lat: Option<f64>,
+    pub lng: Option<f64>,
 }
 
 #[allow(dead_code)]
@@ -96,6 +102,8 @@ pub struct ExpoDetailData {
     pub participants_count: i64,
     pub services_available: Vec<String>,
     pub created_at: String,
+    pub lat: Option<f64>,
+    pub lng: Option<f64>,
 }
 
 // ── POST /api/expo/{expo_id}/register — Request (API 4) ─────────────────────

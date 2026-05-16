@@ -82,8 +82,8 @@ pub async fn create_expo(
         r#"
         INSERT INTO expo_events
             (id, title, description, location, event_date, start_time, end_time,
-             organizer_id, banner_image, max_participants, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+             organizer_id, banner_image, max_participants, created_at, lat, lng)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#,
     )
     .bind(expo_id)
@@ -97,9 +97,49 @@ pub async fn create_expo(
     .bind(&banner_image)
     .bind(payload.max_participants)
     .bind(now)
+    .bind(payload.lat)
+    .bind(payload.lng)
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create expo event: {}", e)))?;
+
+    // ── Notify nearby users (within 50km) ──
+    if let (Some(lat), Some(lng)) = (payload.lat, payload.lng) {
+        let nearby_users: Vec<Uuid> = sqlx::query_scalar(
+            r#"
+            SELECT id FROM users
+            WHERE last_known_lat IS NOT NULL AND last_known_lng IS NOT NULL
+            AND (6371 * acos(cos(radians($1)) * cos(radians(last_known_lat))
+                 * cos(radians(last_known_lng) - radians($2))
+                 + sin(radians($1)) * sin(radians(last_known_lat)))) < 50
+            "#,
+        )
+        .bind(lat)
+        .bind(lng)
+        .fetch_all(&app_state.db)
+        .await
+        .unwrap_or_default();
+
+        if !nearby_users.is_empty() {
+            let title = format!("New Expo Event Nearby: {}", payload.title);
+            let message = format!("An exciting new property expo '{}' is happening near you on {}!", payload.title, event_date.format("%Y-%m-%d"));
+            
+            for user_id in nearby_users {
+                let _ = sqlx::query(
+                    r#"
+                    INSERT INTO notifications (user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at)
+                    VALUES ($1, $2, $3, 'EXPO', false, $4, 'expo_events', NOW())
+                    "#,
+                )
+                .bind(user_id)
+                .bind(&title)
+                .bind(&message)
+                .bind(expo_id)
+                .execute(&app_state.db)
+                .await;
+            }
+        }
+    }
 
     let response = ApiResponse {
         success: true,
@@ -128,12 +168,12 @@ pub async fn get_all_expos(
     let offset = params.offset.max(0);
 
     // Build the query dynamically based on whether city filter is provided
-    let rows: Vec<(Uuid, String, String, chrono::NaiveDate, i32)> =
+    let rows: Vec<(Uuid, String, String, chrono::NaiveDate, i32, Option<f64>, Option<f64>)> =
         if let Some(ref city) = params.city {
             let pattern = format!("%{}%", city);
             sqlx::query_as(
                 r#"
-                SELECT id, title, location, event_date, registered_count
+                SELECT id, title, location, event_date, registered_count, lat, lng
                 FROM expo_events
                 WHERE location ILIKE $1
                 ORDER BY event_date ASC
@@ -149,7 +189,7 @@ pub async fn get_all_expos(
         } else {
             sqlx::query_as(
                 r#"
-                SELECT id, title, location, event_date, registered_count
+                SELECT id, title, location, event_date, registered_count, lat, lng
                 FROM expo_events
                 ORDER BY event_date ASC
                 LIMIT $1 OFFSET $2
@@ -165,12 +205,14 @@ pub async fn get_all_expos(
     let events: Vec<ExpoEventListItem> = rows
         .into_iter()
         .map(
-            |(id, title, location, event_date, registered_count)| ExpoEventListItem {
+            |(id, title, location, event_date, registered_count, lat, lng)| ExpoEventListItem {
                 expo_id: id,
                 title,
                 location,
                 event_date: event_date.to_string(),
                 registered_count,
+                lat,
+                lng,
             },
         )
         .collect();
@@ -206,11 +248,13 @@ pub async fn get_expo_details(
         String,                        // banner_image
         i32,                           // max_participants
         chrono::DateTime<chrono::Utc>, // created_at
+        Option<f64>,                   // lat
+        Option<f64>,                   // lng
     )> = sqlx::query_as(
         r#"
         SELECT id, title, description, location, event_date,
                start_time, end_time, organizer_id, banner_image,
-               max_participants, created_at
+               max_participants, created_at, lat, lng
         FROM expo_events
         WHERE id = $1
         "#,
@@ -232,6 +276,8 @@ pub async fn get_expo_details(
         banner_image,
         max_participants,
         created_at,
+        lat,
+        lng,
     ) = row.ok_or_else(|| ApiError::NotFound("Expo event not found".to_string()))?;
 
     // Get live participants count from expo_registrations
@@ -266,6 +312,8 @@ pub async fn get_expo_details(
             participants_count,
             services_available,
             created_at: created_at.to_rfc3339(),
+            lat,
+            lng,
         },
     };
 
@@ -549,6 +597,8 @@ pub async fn edit_expo(
             end_time         = COALESCE($7, end_time),
             banner_image     = COALESCE($8, banner_image),
             max_participants = COALESCE($9, max_participants),
+            lat              = COALESCE($10, lat),
+            lng              = COALESCE($11, lng),
             updated_at       = NOW()
         WHERE id = $1
         "#,
@@ -562,6 +612,8 @@ pub async fn edit_expo(
     .bind(end_time)
     .bind(&payload.banner_image)
     .bind(payload.max_participants)
+    .bind(payload.lat)
+    .bind(payload.lng)
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to update expo: {}", e)))?;
@@ -570,6 +622,61 @@ pub async fn edit_expo(
         success: true,
         message: "Expo event updated successfully".to_string(),
         data: serde_json::json!({ "expo_id": expo_id }),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/expo/mine — Get Expos created by the authenticated user
+// ---------------------------------------------------------------------------
+
+pub async fn get_my_expos(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Query(params): Query<ExpoListQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let organizer_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user UUID".to_string()))?;
+
+    let limit = params.limit.clamp(1, 100);
+    let offset = params.offset.max(0);
+
+    let rows: Vec<(Uuid, String, String, chrono::NaiveDate, i32, Option<f64>, Option<f64>)> = sqlx::query_as(
+        r#"
+        SELECT id, title, location, event_date, registered_count, lat, lng
+        FROM expo_events
+        WHERE organizer_id = $1
+        ORDER BY event_date ASC
+        LIMIT $2 OFFSET $3
+        "#,
+    )
+    .bind(organizer_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let events: Vec<ExpoEventListItem> = rows
+        .into_iter()
+        .map(
+            |(id, title, location, event_date, registered_count, lat, lng)| ExpoEventListItem {
+                expo_id: id,
+                title,
+                location,
+                event_date: event_date.to_string(),
+                registered_count,
+                lat,
+                lng,
+            },
+        )
+        .collect();
+
+    let response = ApiResponse {
+        success: true,
+        message: "My expo events fetched successfully".to_string(),
+        data: ExpoEventsData { events },
     };
 
     Ok((StatusCode::OK, Json(response)))
