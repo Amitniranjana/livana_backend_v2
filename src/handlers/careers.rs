@@ -12,7 +12,7 @@ use crate::{
     dtos::{
         careers::{
             ApplicantDto, ApplyJobDto, CreateJobDto, CreateJobResponseDto, JobDetailDto,
-            JobListDto, JobListQuery, UpdateJobDto,
+            JobListDto, JobListQuery, UpdateApplicationStatusDto, UpdateJobDto,
         },
         response::ApiResponse,
     },
@@ -50,6 +50,18 @@ pub async fn post_job(
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create job: {}", e)))?;
+
+    // Create notification
+    let _ = crate::utils::notification_chat_helper::create_notification(
+        &app_state.db,
+        auth_user_id_uuid,
+        "Job Posted Successfully",
+        &format!("Your job '{}' has been posted.", payload.title),
+        "JOB",
+        Some(job_id),
+        Some("jobs"),
+    )
+    .await;
 
     let response = ApiResponse {
         success: true,
@@ -437,6 +449,26 @@ pub async fn apply_job(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to submit application: {}", e)))?;
 
+    // Get job details for notification
+    let job_info: Option<(Uuid, String)> = sqlx::query_as("SELECT created_by, title FROM jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if let Some((owner_id, title)) = job_info {
+        let _ = crate::utils::notification_chat_helper::create_notification(
+            &app_state.db,
+            owner_id,
+            "New Job Application",
+            &format!("Someone applied to your job: {}", title),
+            "JOB",
+            Some(job_id),
+            Some("jobs"),
+        )
+        .await;
+    }
+
     let response = ApiResponse {
         success: true,
         message: "Application submitted successfully".to_string(),
@@ -489,11 +521,11 @@ pub async fn get_applicants(
 
     // 3. Fetch applicants
     let applicants_result: Result<
-        Vec<(Uuid, Uuid, String, String, chrono::DateTime<chrono::Utc>)>,
+        Vec<(Uuid, Uuid, String, String, String, chrono::DateTime<chrono::Utc>)>,
         _,
     > = sqlx::query_as(
         r#"
-        SELECT id, user_id, resume_url, cover_letter, applied_at
+        SELECT id, user_id, resume_url, cover_letter, status, applied_at
         FROM job_applications
         WHERE job_id = $1
         "#,
@@ -510,7 +542,8 @@ pub async fn get_applicants(
                 user_id: record.1,
                 resume_url: record.2,
                 cover_letter: record.3,
-                applied_at: record.4,
+                status: record.4,
+                applied_at: record.5,
             });
         }
     }
@@ -519,6 +552,221 @@ pub async fn get_applicants(
         success: true,
         message: "Applicants retrieved successfully".to_string(),
         data: applicants,
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+/// Get My Posted Jobs (GET /api/v1/jobs/mine)
+pub async fn my_posted_jobs(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Query(q): Query<JobListQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    let auth_user_id_uuid = Uuid::parse_str(&auth.user_id).unwrap_or_default();
+    let page = q.page.unwrap_or(1).max(1);
+    let limit = q.limit.unwrap_or(10).clamp(1, 50);
+    let offset = (page - 1) * limit;
+
+    let mut count_sql = String::from("SELECT COUNT(*) FROM jobs WHERE created_by = $1");
+    let mut query_sql = String::from(
+        r#"SELECT id, title, company_name, location, salary, job_type, status, created_at
+           FROM jobs WHERE created_by = $1"#,
+    );
+
+    let mut conditions = Vec::new();
+    let mut bind_idx = 2u32;
+
+    if let Some(ref loc) = q.location {
+        if !loc.is_empty() {
+            conditions.push(format!(" AND LOWER(location) LIKE LOWER(${})", bind_idx));
+            bind_idx += 1;
+        }
+    }
+    if let Some(ref jt) = q.job_type {
+        if !jt.is_empty() {
+            conditions.push(format!(" AND LOWER(job_type) = LOWER(${})", bind_idx));
+            bind_idx += 1;
+        }
+    }
+
+    let status_filter = q.status.as_deref().unwrap_or("ACTIVE");
+    conditions.push(format!(" AND status = ${}", bind_idx));
+    bind_idx += 1;
+
+    let conditions_str: String = conditions.join("");
+    count_sql.push_str(&conditions_str);
+    query_sql.push_str(&conditions_str);
+    query_sql.push_str(&format!(
+        " ORDER BY created_at DESC LIMIT ${} OFFSET ${}",
+        bind_idx,
+        bind_idx + 1
+    ));
+
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql).bind(auth_user_id_uuid);
+    if let Some(ref loc) = q.location {
+        if !loc.is_empty() {
+            count_query = count_query.bind(format!("%{}%", loc));
+        }
+    }
+    if let Some(ref jt) = q.job_type {
+        if !jt.is_empty() {
+            count_query = count_query.bind(jt.as_str());
+        }
+    }
+    count_query = count_query.bind(status_filter);
+
+    let total_count = count_query
+        .fetch_one(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Count query error: {}", e)))?;
+
+    let mut data_query = sqlx::query_as::<
+        _,
+        (
+            Uuid,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            String,
+            chrono::DateTime<chrono::Utc>,
+        ),
+    >(&query_sql).bind(auth_user_id_uuid);
+
+    if let Some(ref loc) = q.location {
+        if !loc.is_empty() {
+            data_query = data_query.bind(format!("%{}%", loc));
+        }
+    }
+    if let Some(ref jt) = q.job_type {
+        if !jt.is_empty() {
+            data_query = data_query.bind(jt.as_str());
+        }
+    }
+    data_query = data_query.bind(status_filter);
+    data_query = data_query.bind(limit);
+    data_query = data_query.bind(offset);
+
+    let rows = data_query
+        .fetch_all(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("List query error: {}", e)))?;
+
+    let jobs: Vec<JobListDto> = rows
+        .into_iter()
+        .map(
+            |(id, title, company_name, location, salary, job_type, status, created_at)| {
+                JobListDto {
+                    id,
+                    title,
+                    company_name,
+                    location,
+                    salary_range: salary,
+                    job_type,
+                    status,
+                    created_at,
+                }
+            },
+        )
+        .collect();
+
+    let total_pages = ((total_count as f64) / (limit as f64)).ceil() as i64;
+
+    let response = json!({
+        "success": true,
+        "message": "My jobs retrieved successfully",
+        "data": {
+            "jobs": jobs,
+            "pagination": {
+                "total_count": total_count,
+                "current_page": page,
+                "total_pages": total_pages.max(1),
+                "limit": limit
+            }
+        }
+    });
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+/// Update Application Status (PATCH /api/v1/jobs/{job_id}/applications/{application_id}/status)
+pub async fn update_application_status(
+    State(app_state): State<AppState>,
+    Path((job_id, application_id)): Path<(Uuid, Uuid)>,
+    auth: AuthenticationUser,
+    Json(payload): Json<UpdateApplicationStatusDto>,
+) -> Result<impl IntoResponse, ApiError> {
+    let auth_user_id_uuid = Uuid::parse_str(&auth.user_id).unwrap_or_default();
+
+    // Verify job ownership
+    let job_owner: Option<(Uuid, String)> = sqlx::query_as("SELECT created_by, title FROM jobs WHERE id = $1")
+        .bind(job_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|_| ApiError::InternalServerError("Database error".to_string()))?;
+
+    let (owner_id, job_title) = match job_owner {
+        Some((o, t)) => {
+            if o != auth_user_id_uuid {
+                return Err(ApiError::Forbidden("Only the job creator can update application status".to_string()));
+            }
+            (o, t)
+        }
+        None => return Err(ApiError::NotFound("Job not found".to_string())),
+    };
+
+    // Verify application exists and get applicant's user_id
+    let application: Option<(Uuid,)> = sqlx::query_as("SELECT user_id FROM job_applications WHERE id = $1 AND job_id = $2")
+        .bind(application_id)
+        .bind(job_id)
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(|_| ApiError::InternalServerError("Database error".to_string()))?;
+
+    let applicant_user_id = match application {
+        Some((uid,)) => uid,
+        None => return Err(ApiError::NotFound("Application not found".to_string())),
+    };
+
+    let new_status = payload.status.to_uppercase();
+
+    // Update status
+    sqlx::query("UPDATE job_applications SET status = $1 WHERE id = $2")
+        .bind(&new_status)
+        .bind(application_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to update status: {}", e)))?;
+
+    // Auto-initiate chat if ACCEPTED
+    if new_status == "ACCEPTED" {
+        let initial_message = format!("Congratulations! Your application for '{}' has been accepted. Let's chat.", job_title);
+        let _ = crate::utils::notification_chat_helper::create_chat_if_not_exists(
+            &app_state.db,
+            owner_id, // sender
+            applicant_user_id, // receiver
+            &initial_message,
+        )
+        .await;
+
+        let _ = crate::utils::notification_chat_helper::create_notification(
+            &app_state.db,
+            applicant_user_id,
+            "Application Accepted",
+            &initial_message,
+            "JOB",
+            Some(job_id),
+            Some("jobs"),
+        )
+        .await;
+    }
+
+    let response = ApiResponse {
+        success: true,
+        message: format!("Application status updated to {}", new_status),
+        data: json!({ "status": new_status }),
     };
 
     Ok((StatusCode::OK, Json(response)))

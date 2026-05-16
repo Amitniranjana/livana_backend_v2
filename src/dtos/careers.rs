@@ -35,7 +35,15 @@ pub struct ApplicantDto {
     pub user_id: Uuid,
     pub resume_url: String,
     pub cover_letter: String,
+    pub status: String,
     pub applied_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// DTO for updating application status
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub struct UpdateApplicationStatusDto {
+    pub status: String,
 }
 
 /// DTO for job list items (lightweight — no full description)
