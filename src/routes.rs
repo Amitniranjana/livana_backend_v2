@@ -108,12 +108,16 @@ pub fn career_routes() -> Router<AppState> {
 pub fn careers_routes() -> Router<AppState> {
     use crate::handlers::careers::{
         apply_job, edit_job, get_applicants, get_job_detail, list_jobs, post_job,
+        my_posted_jobs, update_application_status,
     };
+    use axum::routing::patch;
     Router::new()
         .route("/api/v1/jobs", post(post_job).get(list_jobs))
+        .route("/api/v1/jobs/mine", get(my_posted_jobs))
         .route("/api/v1/jobs/{job_id}", get(get_job_detail).put(edit_job))
         .route("/api/v1/jobs/{job_id}/apply", post(apply_job))
         .route("/api/v1/jobs/{job_id}/applicants", get(get_applicants))
+        .route("/api/v1/jobs/{job_id}/applications/{application_id}/status", patch(update_application_status))
 }
 
 pub fn reviews_routes() -> Router<AppState> {

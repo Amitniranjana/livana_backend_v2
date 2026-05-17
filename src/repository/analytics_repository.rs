@@ -37,7 +37,7 @@ pub async fn get_rent_trend_data(
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($2::INT * INTERVAL '1 day')
+          AND created_at >= NOW() - make_interval(days => $2::INT)
         "#,
     );
 
@@ -159,7 +159,7 @@ pub async fn get_rent_heatmap_data(
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($2::INT * INTERVAL '1 day')
+          AND created_at >= NOW() - make_interval(days => $2::INT)
         "#,
     );
 
@@ -230,7 +230,7 @@ pub async fn get_city_rent_summary(
           AND status = 'active'
           AND price IS NOT NULL
           AND price > 0
-          AND created_at >= NOW() - ($1::INT * INTERVAL '1 day')
+          AND created_at >= NOW() - make_interval(days => $1::INT)
         "#,
         city_placeholders
             .iter()
