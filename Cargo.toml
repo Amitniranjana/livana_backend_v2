@@ -83,6 +83,7 @@ validator = { version = "0.20.0", features = ["derive"] }
 # Redis (caching)
 redis = { version = "0.25", features = ["tokio-comp", "connection-manager"] }
 bytes = "1"
+urlencoding = "2"
 
 # WebSockets state
 dashmap = "5.5"
