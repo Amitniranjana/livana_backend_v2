@@ -14,11 +14,18 @@ const VALID_BATHROOM_TYPES: &[&str] = &["Attached", "Common"];
 const VALID_GENDER_PREFERENCE: &[&str] = &["Male", "Female", "Any"];
 
 fn is_valid_property_type(pt: &str) -> bool {
-    VALID_PROPERTY_TYPES.contains(&pt)
+    matches!(pt,
+        "House" | "Apartment" | "PG" | "Hostel" |
+        "Commercial" | "Land" |
+        "Studio" | "1BHK" | "2BHK" | "3BHK" | "4BHK"
+    )
 }
 
 fn is_residential(pt: &str) -> bool {
-    pt == "House" || pt == "Apartment" || pt == "PG" || pt == "Hostel"
+    matches!(pt,
+        "House" | "Apartment" | "PG" | "Hostel" |
+        "Studio" | "1BHK" | "2BHK" | "3BHK" | "4BHK"
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

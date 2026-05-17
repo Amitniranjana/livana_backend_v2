@@ -153,7 +153,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "title": row.try_get::<Option<String>, _>("title").ok().flatten(),
         "description": row.try_get::<Option<String>, _>("description").ok().flatten(),
         "property_type": row.try_get::<Option<String>, _>("property_type").ok().flatten(),
-        "listing_type": row.try_get::<Option<String>, _>("property_type").ok().flatten(),
+        "listing_type": row.try_get::<Option<String>, _>("listing_type").ok().flatten(),
         "price": row.try_get::<Option<i64>, _>("price").ok().flatten(),
         "deposit": row.try_get::<Option<i64>, _>("deposit").ok().flatten(),
         "location": row.try_get::<Option<String>, _>("location").ok().flatten(),
@@ -204,7 +204,7 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
     format!(
         r#"
         SELECT
-            p.id, p.title, p.description, p.property_type, p.price,
+            p.id, p.title, p.description, p.property_type, p.listing_type, p.price,
             p.city AS location, p.locality, p.area_sqft, p.bhk AS bedrooms, p.bathrooms,
             p.no_of_toilets, p.no_of_balconies, p.furnishing,
             p.images, p.primary_image, p.amenities,
@@ -453,19 +453,19 @@ pub async fn create_property(
     let result = sqlx::query(
         r#"
         INSERT INTO properties (
-            id, title, description, property_type, price,
+            id, title, description, property_type, listing_type, price,
             city, area_sqft, bhk, bathrooms, no_of_toilets, no_of_balconies, furnishing,
             images, amenities, lat, lng,
             deposit, floor, total_floors, age_years, facing, parking, parking_count, video_url, user_type, broker_contact_allowed,
             is_featured, is_verified,
             status, user_id, created_at, updated_at
         ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16,
-            $17, $18, $19, $20, $21, $22, $23, $24, $25, $26,
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, $9, $10, $11, $12, $13,
+            $14, $15, $16, $17,
+            $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
             false, false,
-            'active', $27, $28, $28
+            'active', $28, $29, $29
         )
         RETURNING id
         "#,
@@ -474,6 +474,7 @@ pub async fn create_property(
     .bind(&payload.title)
     .bind(&payload.description)
     .bind(&payload.property_type)
+    .bind(payload.listing_type.as_deref().unwrap_or("Rent"))
     .bind(payload.price)
     .bind(&payload.location)   // city
     .bind(payload.area_sqft)
