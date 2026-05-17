@@ -4,19 +4,28 @@ use crate::dtos::unified_listing::CreateListingPayload;
 // Valid enum values
 // ─────────────────────────────────────────────────────────────────────────────
 
+const VALID_PROPERTY_TYPES: &[&str] = &["House", "Apartment", "PG", "Hostel", "Commercial", "Land"];
 const VALID_LISTING_TYPES: &[&str] = &["Rent", "Sell", "Lease", "PG", "Space Sharing"];
 const VALID_USER_TYPES: &[&str] = &["user", "broker", "associate"];
 const VALID_HOSTS: &[&str] = &["User", "Broker"];
-const VALID_FURNISHING: &[&str] = &["Unfurnished", "Semi-Furnished", "Furnished", "Fully-Furnished"];
-const VALID_FACING: &[&str] = &["North", "South", "East", "West", "NE", "NW", "SE", "SW", "North-East", "North-West", "South-East", "South-West"];
+const VALID_FURNISHING: &[&str] = &["Unfurnished", "Semi-Furnished", "Furnished"];
+const VALID_FACING: &[&str] = &["North", "South", "East", "West", "NE", "NW", "SE", "SW"];
 const VALID_BATHROOM_TYPES: &[&str] = &["Attached", "Common"];
+const VALID_GENDER_PREFERENCE: &[&str] = &["Male", "Female", "Any"];
 
 fn is_valid_property_type(pt: &str) -> bool {
-    pt == "Commercial" || pt == "Land" || pt == "Studio" || pt.ends_with("BHK")
+    matches!(pt,
+        "House" | "Apartment" | "PG" | "Hostel" |
+        "Commercial" | "Land" |
+        "Studio" | "1BHK" | "2BHK" | "3BHK" | "4BHK"
+    )
 }
 
 fn is_residential(pt: &str) -> bool {
-    pt == "Studio" || pt.ends_with("BHK")
+    matches!(pt,
+        "House" | "Apartment" | "PG" | "Hostel" |
+        "Studio" | "1BHK" | "2BHK" | "3BHK" | "4BHK"
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,8 +40,8 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
     // ── 1. Enum validation ──────────────────────────────────────────────────
     if !is_valid_property_type(&payload.property_type) {
         errors.push(format!(
-            "Invalid property_type '{}'. Must be 'Studio', '{{n}}BHK', 'Commercial', or 'Land'",
-            payload.property_type
+            "Invalid property_type '{}'. Must be one of: {:?}",
+            payload.property_type, VALID_PROPERTY_TYPES
         ));
     }
     if !VALID_LISTING_TYPES.contains(&payload.listing_type.as_str()) {
@@ -68,6 +77,14 @@ pub fn validate_listing(payload: &CreateListingPayload) -> Result<(), Vec<String
             errors.push(format!(
                 "Invalid facing '{}'. Must be one of: {:?}",
                 f, VALID_FACING
+            ));
+        }
+    }
+    if let Some(ref gp) = payload.gender_preference {
+        if !VALID_GENDER_PREFERENCE.contains(&gp.as_str()) {
+            errors.push(format!(
+                "Invalid gender_preference '{}'. Must be one of: {:?}",
+                gp, VALID_GENDER_PREFERENCE
             ));
         }
     }
@@ -235,7 +252,7 @@ mod tests {
         CreateListingPayload {
             title: "Modern 2BHK Apartment".into(),
             description: "Beautiful apartment in city center".into(),
-            property_type: "2BHK".into(),
+            property_type: "Apartment".into(),
             listing_type: "Rent".into(),
             user_type: "user".into(),
             host: Some("User".into()),

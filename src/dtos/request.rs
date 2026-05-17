@@ -138,9 +138,10 @@ pub struct CreatePropertyRequest {
     pub title: String,
     #[schema(example = "Beautiful 2BHK apartment with modern amenities.")]
     pub description: Option<String>,
-    /// "rent" | "sale" | "pg"
     #[schema(example = "rent")]
     pub property_type: String,
+    #[schema(example = "Rent")]
+    pub listing_type: Option<String>,
     #[schema(example = 25000)]
     pub price: i64,
     #[schema(example = 50000)]
