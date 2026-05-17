@@ -27,8 +27,8 @@ use crate::{
         careers_routes, community_routes, expo_routes, health_routes, language_routes,
         listing_routes, moderation_routes, notifications_routes, property_filter_routes,
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
-        saved_properties_routes, service_listing_routes, suggestions_routes, user_routes,
-        unified_listing_routes, vibes_routes,
+        saved_properties_routes, service_listing_routes, share_routes, suggestions_routes,
+        user_routes, unified_listing_routes, vibes_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -209,6 +209,8 @@ async fn main() {
         .merge(analytics_routes())
         // ── Unified Listings API (new) ──────────────────────────────────────────
         .merge(unified_listing_routes())
+        // ── Property Share (public, no auth) ────────────────────────────────────
+        .merge(share_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

@@ -311,3 +311,11 @@ pub mod visit;
 
 pub mod unified_listing;
 pub use unified_listing::unified_listing_routes;
+
+/// Property Share (public, no auth)
+pub fn share_routes() -> Router<AppState> {
+    Router::new().route(
+        "/share/property/{id}",
+        get(crate::handlers::share::share_property),
+    )
+}
