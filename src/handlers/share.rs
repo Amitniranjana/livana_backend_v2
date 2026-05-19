@@ -1,30 +1,21 @@
+use crate::app_state::AppState;
 use axum::{
-    extract::Path,
-    http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Redirect},
+    extract::{Path, State},
+    http::StatusCode,
+    response::{Html, IntoResponse},
 };
+use uuid::Uuid;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// HTML Escaping Helper
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PLAY_STORE_URL: &str =
-    "https://play.google.com/store/apps/details?id=com.LiveInBuddy.livein";
-const APP_STORE_URL: &str =
-    "https://apps.apple.com/in/app/livana-eco/id6742744565";
-const CUSTOM_SCHEME: &str = "livanaeco";
-const ANDROID_PACKAGE: &str = "com.LiveInBuddy.livein";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ID Sanitisation
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Only allow alphanumeric, hyphens, and underscores.
-fn is_valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+fn escape_html(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,63 +23,102 @@ fn is_valid_id(id: &str) -> bool {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub async fn share_property(
+    State(state): State<AppState>,
     Path(id): Path<String>,
-    headers: HeaderMap,
 ) -> impl IntoResponse {
-    // 1. Sanitise
-    if !is_valid_id(&id) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Html("Invalid property id".to_string()),
-        )
-            .into_response();
+    // 1. Validate ID
+    let parsed_id = match Uuid::parse_str(&id) {
+        Ok(uuid) => uuid,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Invalid property id".to_string(),
+            )
+                .into_response();
+        }
+    };
+
+    // 2. Query the database
+    let query = r#"
+SELECT
+    p.title,
+    p.city,
+    p.price,
+    p.deposit,
+    p.listing_type,
+    p.bhk,
+    p.bathrooms,
+    p.images
+FROM properties p
+WHERE p.id = $1
+  AND p.status != 'deleted'
+LIMIT 1
+"#;
+
+    let row = sqlx::query(query)
+        .bind(parsed_id)
+        .fetch_optional(&state.db)
+        .await;
+
+    // Fallback values if DB query fails or property is not found
+    let mut og_title = "View Property on Livana Eco".to_string();
+    let mut og_desc = "Check out this property on the Livana Eco app".to_string();
+    let mut og_image = "https://livanaeco.com/default-share-image.png".to_string();
+
+    if let Ok(Some(db_row)) = row {
+        use sqlx::Row;
+
+        let title: Option<String> = db_row.try_get("title").unwrap_or(None);
+        let city: Option<String> = db_row.try_get("city").unwrap_or(None);
+        let price: Option<i64> = db_row.try_get("price").unwrap_or(None);
+
+        if let Some(t) = title {
+            if !t.trim().is_empty() {
+                og_title = t;
+            }
+        }
+
+        let price_val = price.unwrap_or(0);
+        if let Some(c) = city {
+            if !c.trim().is_empty() {
+                og_desc = format!("₹{} — {}", price_val, c);
+            } else {
+                og_desc = format!("₹{}", price_val);
+            }
+        } else {
+            og_desc = format!("₹{}", price_val);
+        }
+
+        // 3. Extract first image
+        if let Ok(images) = db_row.try_get::<serde_json::Value, _>("images") {
+            if let Some(arr) = images.as_array() {
+                for img in arr {
+                    if let Some(s) = img.as_str() {
+                        if s.starts_with("https://") {
+                            og_image = s.to_string();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    // 2. Detect platform from User-Agent
-    let ua = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-
-    if ua.contains("android") {
-        android_redirect(&id).into_response()
-    } else if ua.contains("iphone") || ua.contains("ipad") {
-        ios_page(&id).into_response()
-    } else {
-        desktop_page().into_response()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Android — 302 redirect to intent URI
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn android_redirect(id: &str) -> impl IntoResponse {
-    let fallback = urlencoding::encode(PLAY_STORE_URL);
-    let intent_uri = format!(
-        "intent://property/{id}#Intent;scheme={scheme};package={package};S.browser_fallback_url={fallback};end",
-        id = id,
-        scheme = CUSTOM_SCHEME,
-        package = ANDROID_PACKAGE,
-        fallback = fallback,
-    );
-    Redirect::to(&intent_uri)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// iOS — HTML page with iframe deep-link + App Store fallback
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn ios_page(id: &str) -> Html<String> {
-    let deep_link = format!("{CUSTOM_SCHEME}:///property/{id}");
-    Html(format!(
+    // 4. Return HTML response (handles Android, iOS, Desktop automatically on load)
+    let html = format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Open in Livana</title>
+<title>{escaped_title} | Livana Eco</title>
+
+<!-- OG Tags -->
+<meta property="og:title"       content="{escaped_title}" />
+<meta property="og:description" content="{escaped_desc}" />
+<meta property="og:image"       content="{escaped_image}" />
+<meta property="og:type"        content="website" />
+
 <style>
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body {{
@@ -111,128 +141,83 @@ fn ios_page(id: &str) -> Html<String> {
     max-width: 380px;
     width: 100%;
   }}
-  .logo {{ font-size: 48px; margin-bottom: 12px; }}
+  .spinner {{
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 24px;
+  }}
+  @keyframes spin {{ 100% {{ transform: rotate(360deg); }} }}
   h1 {{ font-size: 22px; font-weight: 700; margin-bottom: 8px; }}
-  p {{ font-size: 14px; color: rgba(255,255,255,0.65); margin-bottom: 28px; }}
-  .btn {{
-    display: block;
-    width: 100%;
-    padding: 14px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    text-decoration: none;
-    margin-bottom: 12px;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }}
-  .btn:active {{ transform: scale(0.97); }}
-  .btn-primary {{
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: #fff;
-    box-shadow: 0 4px 20px rgba(99,102,241,0.4);
-  }}
-  .btn-secondary {{
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,0.2);
-  }}
+  p {{ font-size: 15px; color: rgba(255,255,255,0.7); line-height: 1.5; }}
 </style>
 </head>
 <body>
+
 <div class="card">
-  <div class="logo">🏠</div>
-  <h1>View Property on Livana</h1>
-  <p>Tap the button below to open this property in the Livana app.</p>
-  <a class="btn btn-primary" id="open-app" href="{deep_link}">Open in Livana</a>
-  <a class="btn btn-secondary" href="{app_store}">Download on the App Store</a>
+  <div class="spinner" id="spinner"></div>
+  <h1 id="main-text">Opening Livana Eco…</h1>
+  <p id="sub-text">Taking you to the property</p>
 </div>
-<iframe id="launcher" style="display:none;" width="0" height="0"></iframe>
+
 <script>
-  document.addEventListener('DOMContentLoaded', function() {{
-    document.getElementById('launcher').src = '{deep_link}';
-  }});
+  const ANDROID_PACKAGE = 'com.LiveInBuddy.livein';
+  const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=' + ANDROID_PACKAGE;
+  const APP_STORE_URL = 'https://apps.apple.com/in/app/livana-eco/id6742744565';
+  const PROPERTY_ID = '{id}';
+  const DEEP_LINK = 'livanaeco://property/' + PROPERTY_ID;
+
+  const ua = navigator.userAgent.toLowerCase();
+  const isAndroid = ua.indexOf('android') > -1;
+  const isIOS = /ipad|iphone|ipod/.test(ua);
+
+  window.onload = function() {{
+    if (isAndroid) {{
+        const fallback = encodeURIComponent(PLAY_STORE_URL);
+        const intentUri = 'intent://property/' + PROPERTY_ID + '#Intent;scheme=livanaeco;package=' + ANDROID_PACKAGE + ';S.browser_fallback_url=' + fallback + ';end';
+        window.location.href = intentUri;
+    }} else if (isIOS) {{
+        window.location.href = DEEP_LINK;
+        let timeoutCleared = false;
+
+        const clearFallback = function() {{
+            timeoutCleared = true;
+        }};
+
+        document.addEventListener('visibilitychange', function() {{
+            if (document.hidden) clearFallback();
+        }});
+        window.addEventListener('pagehide', clearFallback);
+        window.addEventListener('blur', clearFallback);
+
+        setTimeout(function() {{
+            if (!timeoutCleared && !document.hidden) {{
+                document.getElementById('sub-text').innerText = 'App not found — redirecting to store…';
+                setTimeout(function() {{
+                    window.location.href = APP_STORE_URL;
+                }}, 500);
+            }}
+        }}, 1500);
+    }} else {{
+        // Desktop or other
+        document.getElementById('spinner').style.display = 'none';
+        document.getElementById('main-text').innerText = 'Livana Eco';
+        document.getElementById('sub-text').innerText = 'Open this link on your mobile device to view the property in the app.';
+    }}
+  }};
 </script>
+
 </body>
 </html>"#,
-        deep_link = deep_link,
-        app_store = APP_STORE_URL,
-    ))
+        escaped_title = escape_html(&og_title),
+        escaped_desc = escape_html(&og_desc),
+        escaped_image = escape_html(&og_image),
+        id = escape_html(&id)
+    );
+
+    (StatusCode::OK, Html(html)).into_response()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Desktop / Other — HTML page with store buttons
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn desktop_page() -> Html<String> {
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Livana Eco — Download the App</title>
-<style>
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-    color: #fff;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 24px;
-  }}
-  .card {{
-    background: rgba(255,255,255,0.08);
-    backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 20px;
-    padding: 48px 40px;
-    max-width: 440px;
-    width: 100%;
-  }}
-  .logo {{ font-size: 56px; margin-bottom: 16px; }}
-  h1 {{ font-size: 26px; font-weight: 700; margin-bottom: 8px; }}
-  p {{ font-size: 15px; color: rgba(255,255,255,0.65); margin-bottom: 32px; line-height: 1.5; }}
-  .buttons {{ display: flex; flex-direction: column; gap: 12px; }}
-  .btn {{
-    display: block;
-    width: 100%;
-    padding: 16px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    text-decoration: none;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-  }}
-  .btn:active {{ transform: scale(0.97); }}
-  .btn-android {{
-    background: linear-gradient(135deg, #34d399, #059669);
-    color: #fff;
-    box-shadow: 0 4px 20px rgba(5,150,105,0.4);
-  }}
-  .btn-ios {{
-    background: rgba(255,255,255,0.1);
-    color: #fff;
-    border: 1px solid rgba(255,255,255,0.2);
-  }}
-</style>
-</head>
-<body>
-<div class="card">
-  <div class="logo">🏠</div>
-  <h1>Livana Eco</h1>
-  <p>Download the app to view this property and discover thousands more listings near you.</p>
-  <div class="buttons">
-    <a class="btn btn-android" href="{play_store}">Get it on Google Play</a>
-    <a class="btn btn-ios" href="{app_store}">Download on the App Store</a>
-  </div>
-</div>
-</body>
-</html>"#,
-        play_store = PLAY_STORE_URL,
-        app_store = APP_STORE_URL,
-    ))
-}
