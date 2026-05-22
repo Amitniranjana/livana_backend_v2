@@ -164,6 +164,41 @@ pub async fn create_listing(
                 }
             }
 
+            // ── Area-Based Notifications ──
+            let db_clone = app_state.db.clone();
+            let listing_title = payload.title.clone();
+            let listing_id_str = id.to_string();
+            let city_clone = payload.city.clone().unwrap_or_default();
+            let location_clone = payload.location.clone();
+
+            tokio::spawn(async move {
+                let matching_users: Vec<Uuid> = sqlx::query_scalar(
+                    r#"
+                    SELECT id FROM users 
+                    WHERE selected_area IS NOT NULL 
+                    AND (selected_area ILIKE $1 OR selected_area ILIKE $2)
+                    "#,
+                )
+                .bind(format!("%{}%", city_clone))
+                .bind(format!("%{}%", location_clone))
+                .fetch_all(&db_clone)
+                .await
+                .unwrap_or_default();
+
+                for uid in matching_users {
+                    let _ = crate::utils::notification_chat_helper::create_notification(
+                        &db_clone,
+                        uid,
+                        "New Listing in Your Area",
+                        &format!("A new listing '{}' has been added in your area.", listing_title),
+                        "SYSTEM",
+                        Uuid::parse_str(&listing_id_str).ok(),
+                        Some("Listing"),
+                    )
+                    .await;
+                }
+            });
+
             (
                 StatusCode::CREATED,
                 Json(json!({

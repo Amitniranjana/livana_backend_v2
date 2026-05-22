@@ -208,6 +208,39 @@ pub async fn create_community_post(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create post: {}", e)))?;
 
+    // ── Notify Community Members ──
+    let db_clone = app_state.db.clone();
+    let community_id_str = community_id.to_string();
+    let content_snippet = if payload.content.len() > 50 {
+        format!("{}...", &payload.content[0..50])
+    } else {
+        payload.content.clone()
+    };
+    
+    tokio::spawn(async move {
+        let members: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT user_id FROM community_members WHERE community_id = $1 AND user_id != $2"
+        )
+        .bind(community_id)
+        .bind(user_id)
+        .fetch_all(&db_clone)
+        .await
+        .unwrap_or_default();
+
+        for uid in members {
+            let _ = crate::utils::notification_chat_helper::create_notification(
+                &db_clone,
+                uid,
+                "New Community Post",
+                &format!("A new post was added in your community: {}", content_snippet),
+                "SYSTEM",
+                Uuid::parse_str(&community_id_str).ok(),
+                Some("Community"),
+            )
+            .await;
+        }
+    });
+
     let response = ApiResponse {
         success: true,
         message: "Post created successfully".to_string(),
@@ -320,6 +353,35 @@ pub async fn edit_community(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to update community: {}", e)))?;
 
+    // ── Notify Community Members ──
+    let db_clone = app_state.db.clone();
+    let community_id_str = community_id.to_string();
+    let comm_name = row.name.clone();
+
+    tokio::spawn(async move {
+        let members: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT user_id FROM community_members WHERE community_id = $1 AND user_id != $2"
+        )
+        .bind(community_id)
+        .bind(user_id)
+        .fetch_all(&db_clone)
+        .await
+        .unwrap_or_default();
+
+        for uid in members {
+            let _ = crate::utils::notification_chat_helper::create_notification(
+                &db_clone,
+                uid,
+                "Community Update",
+                &format!("The community '{}' has been updated.", comm_name),
+                "SYSTEM",
+                Uuid::parse_str(&community_id_str).ok(),
+                Some("Community"),
+            )
+            .await;
+        }
+    });
+
     let response = ApiResponse {
         success: true,
         message: "Community updated successfully".to_string(),
@@ -349,9 +411,14 @@ pub async fn edit_community_post(
         ));
     }
 
-    // 1. Ownership check — must be the post author AND belong to the community
-    let author: Option<Uuid> = sqlx::query_scalar(
-        "SELECT author_id FROM community_posts WHERE id = $1 AND community_id = $2",
+    // 1. Ownership check — must be the post author OR community creator
+    let auth_check: Option<(Uuid, Uuid)> = sqlx::query_as(
+        r#"
+        SELECT cp.author_id, c.created_by
+        FROM community_posts cp
+        JOIN communities c ON cp.community_id = c.id
+        WHERE cp.id = $1 AND cp.community_id = $2
+        "#,
     )
     .bind(post_id)
     .bind(community_id)
@@ -359,10 +426,13 @@ pub async fn edit_community_post(
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
-    match author {
+    match auth_check {
         None => return Err(ApiError::NotFound("Post not found".to_string())),
-        Some(aid) if aid != user_id => return Err(ApiError::access_denied()),
-        _ => {}
+        Some((author_id, creator_id)) => {
+            if author_id != user_id && creator_id != user_id {
+                return Err(ApiError::access_denied());
+            }
+        }
     }
 
     // 2. Update
@@ -392,6 +462,100 @@ pub async fn edit_community_post(
             content: payload.content,
             created_at: now,
         },
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/v1/communities/{community_id}/posts/{post_id} — Delete a post
+// ---------------------------------------------------------------------------
+
+pub async fn delete_community_post(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+    Path((community_id, post_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    // 1. Ownership check — must be the post author OR community creator
+    let auth_check: Option<(Uuid, Uuid)> = sqlx::query_as(
+        r#"
+        SELECT cp.author_id, c.created_by
+        FROM community_posts cp
+        JOIN communities c ON cp.community_id = c.id
+        WHERE cp.id = $1 AND cp.community_id = $2
+        "#,
+    )
+    .bind(post_id)
+    .bind(community_id)
+    .fetch_optional(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    match auth_check {
+        None => return Err(ApiError::NotFound("Post not found".to_string())),
+        Some((author_id, creator_id)) => {
+            if author_id != user_id && creator_id != user_id {
+                return Err(ApiError::access_denied());
+            }
+        }
+    }
+
+    // 2. Delete
+    sqlx::query("DELETE FROM community_posts WHERE id = $1 AND community_id = $2")
+        .bind(post_id)
+        .bind(community_id)
+        .execute(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Failed to delete post: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Post deleted successfully".to_string(),
+        data: serde_json::json!({}),
+    };
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/communities/feed — Get Feed of Posts from Joined Communities
+// ---------------------------------------------------------------------------
+
+pub async fn get_community_feed(
+    State(app_state): State<AppState>,
+    auth: AuthenticationUser,
+) -> Result<impl IntoResponse, ApiError> {
+    let user_id = Uuid::parse_str(&auth.user_id)
+        .map_err(|_| ApiError::Unauthorized("Invalid user".to_string()))?;
+
+    let posts = sqlx::query_as!(
+        CommunityPostResponseDto,
+        r#"
+        SELECT 
+            cp.id as "post_id!",
+            cp.community_id as "community_id!",
+            cp.author_id as "author_id!",
+            cp.content as "content!",
+            cp.created_at as "created_at!"
+        FROM community_posts cp
+        JOIN community_members cm ON cp.community_id = cm.community_id
+        WHERE cm.user_id = $1
+        ORDER BY cp.created_at DESC
+        LIMIT 50
+        "#,
+        user_id
+    )
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        message: "Community feed fetched successfully".to_string(),
+        data: posts,
     };
 
     Ok((StatusCode::OK, Json(response)))

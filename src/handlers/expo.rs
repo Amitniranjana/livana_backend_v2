@@ -141,6 +141,40 @@ pub async fn create_expo(
         }
     }
 
+    // ── Area-Based Notifications (match selected_area) ──
+    let db_clone = app_state.db.clone();
+    let expo_title = payload.title.clone();
+    let location_clone = payload.location.clone();
+    let expo_id_str = expo_id.to_string();
+    let event_date_str = event_date.format("%Y-%m-%d").to_string();
+
+    tokio::spawn(async move {
+        let matching_users: Vec<Uuid> = sqlx::query_scalar(
+            r#"
+            SELECT id FROM users 
+            WHERE selected_area IS NOT NULL 
+            AND selected_area ILIKE $1
+            "#,
+        )
+        .bind(format!("%{}%", location_clone))
+        .fetch_all(&db_clone)
+        .await
+        .unwrap_or_default();
+
+        for uid in matching_users {
+            let _ = crate::utils::notification_chat_helper::create_notification(
+                &db_clone,
+                uid,
+                &format!("New Expo in Your Area: {}", expo_title),
+                &format!("An exciting new property expo '{}' is happening in your area on {}!", expo_title, event_date_str),
+                "SYSTEM",
+                Uuid::parse_str(&expo_id_str).ok(),
+                Some("ExpoEvent"),
+            )
+            .await;
+        }
+    });
+
     let response = ApiResponse {
         success: true,
         message: "Expo event created successfully".to_string(),
