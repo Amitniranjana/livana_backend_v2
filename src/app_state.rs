@@ -26,4 +26,6 @@ pub struct AppState {
     pub redis_pool: Option<redis::aio::ConnectionManager>,
     /// Active WebSocket connections for chat receipts and notifications
     pub active_sockets: Arc<dashmap::DashMap<uuid::Uuid, tokio::sync::mpsc::Sender<String>>>,
+    /// News service for managing news items and trending notifications
+    pub news_service: Arc<crate::services::news_service::NewsService>,
 }

@@ -32,3 +32,4 @@ pub mod unified_listing;
 pub mod listing_validator;
 pub mod vibes;
 pub mod ws_handler;
+pub mod news;

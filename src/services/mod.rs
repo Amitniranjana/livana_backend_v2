@@ -9,3 +9,4 @@ pub mod ocr;
 pub mod property_search_service;
 pub mod storage;
 pub mod user_service;
+pub mod news_service;

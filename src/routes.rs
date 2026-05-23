@@ -319,3 +319,18 @@ pub fn share_routes() -> Router<AppState> {
         get(crate::handlers::share::share_property),
     )
 }
+
+pub fn news_routes() -> Router<AppState> {
+    use crate::handlers::news::{
+        admin_action_news, create_news, get_news, track_news_action, update_news,
+    };
+    use axum::routing::patch;
+    Router::new()
+        // Public endpoints
+        .route("/api/v1/news", get(get_news))
+        .route("/api/v1/news/{id}/action", post(track_news_action))
+        // Admin endpoints (in real app should have admin auth layer)
+        .route("/api/v1/admin/news", post(create_news))
+        .route("/api/v1/admin/news/{id}", put(update_news))
+        .route("/api/v1/admin/news/{id}/action", patch(admin_action_news))
+}
