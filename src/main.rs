@@ -158,8 +158,12 @@ async fn main() {
         google_client_id,
         storage_service: s3_storage.clone(),
         public_storage_service: public_storage.clone(),
-        redis_pool,
+        redis_pool: redis_pool.clone(),
         active_sockets: Arc::new(dashmap::DashMap::new()),
+        news_service: Arc::new(crate::services::news_service::NewsService::new(
+            pool.clone(),
+            redis_pool,
+        )),
     };
 
     let app = Router::new()
@@ -211,6 +215,8 @@ async fn main() {
         .merge(unified_listing_routes())
         // ── Property Share (public, no auth) ────────────────────────────────────
         .merge(share_routes())
+        // ── News API ────────────────────────────────────────────────────────────
+        .merge(crate::routes::news_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 
