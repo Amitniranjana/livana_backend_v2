@@ -148,6 +148,13 @@ pub struct CreatePropertyRequest {
     pub deposit: Option<i64>,
     #[schema(example = "Bandra West, Mumbai")]
     pub location: Option<String>,
+    pub bathroom_type: Option<String>,
+    pub lease_years: Option<i32>,
+    pub gender_preference: Option<String>,
+    pub roommates: Option<i32>,
+    pub area: Option<String>,
+    pub city: Option<String>,
+    pub pincode: Option<String>,
     #[schema(example = 1200)]
     pub area_sqft: Option<i32>,
     #[schema(example = 2)]
@@ -202,6 +209,13 @@ pub struct UpdatePropertyRequest {
     pub price: Option<i64>,
     pub deposit: Option<i64>,
     pub location: Option<String>,
+    pub bathroom_type: Option<String>,
+    pub lease_years: Option<i32>,
+    pub gender_preference: Option<String>,
+    pub roommates: Option<i32>,
+    pub area: Option<String>,
+    pub city: Option<String>,
+    pub pincode: Option<String>,
     pub area_sqft: Option<i32>,
     pub bedrooms: Option<i32>,
     pub bathrooms: Option<i32>,
