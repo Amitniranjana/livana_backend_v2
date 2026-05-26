@@ -169,6 +169,13 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
         "facing": row.try_get::<Option<String>, _>("facing").ok().flatten(),
         "parking": row.try_get::<Option<bool>, _>("parking").ok().flatten().unwrap_or(false),
         "parking_count": row.try_get::<Option<i32>, _>("parking_count").ok().flatten(),
+        "bathroom_type": row.try_get::<Option<String>, _>("bathroom_type").ok().flatten(),
+        "lease_years": row.try_get::<Option<i32>, _>("lease_years").ok().flatten(),
+        "gender_preference": row.try_get::<Option<String>, _>("gender_preference").ok().flatten(),
+        "roommates": row.try_get::<Option<i32>, _>("roommates").ok().flatten(),
+        "area": row.try_get::<Option<String>, _>("area").ok().flatten(),
+        "city": row.try_get::<Option<String>, _>("actual_city").ok().flatten(),
+        "pincode": row.try_get::<Option<String>, _>("pincode").ok().flatten(),
         "images": images,
         "video_url": row.try_get::<Option<String>, _>("video_url").ok().flatten(),
         "amenities": amenities,
@@ -205,11 +212,12 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
         r#"
         SELECT
             p.id, p.title, p.description, p.property_type, p.listing_type, p.price,
-            p.city AS location, p.locality, p.area_sqft, p.bhk AS bedrooms, p.bathrooms,
+            p.city AS location, p.city AS actual_city, p.locality, p.area_sqft, p.bhk AS bedrooms, p.bathrooms,
             p.no_of_toilets, p.no_of_balconies, p.furnishing,
             p.images, p.primary_image, p.amenities,
             p.lat AS latitude, p.lng AS longitude,
             p.deposit, p.floor, p.total_floors, p.age_years, p.facing, p.parking, p.parking_count, p.video_url, p.user_type, p.broker_contact_allowed,
+            p.bathroom_type, p.lease_years, p.gender_preference, p.roommates, p.area, p.pincode,
             p.is_featured, p.is_verified,
             p.views_count, p.likes_count,
             p.status, p.user_id, p.created_at, p.updated_at,
@@ -457,6 +465,7 @@ pub async fn create_property(
             city, area_sqft, bhk, bathrooms, no_of_toilets, no_of_balconies, furnishing,
             images, amenities, lat, lng,
             deposit, floor, total_floors, age_years, facing, parking, parking_count, video_url, user_type, broker_contact_allowed,
+            bathroom_type, lease_years, gender_preference, roommates, area, pincode,
             is_featured, is_verified,
             status, user_id, created_at, updated_at
         ) VALUES (
@@ -464,8 +473,9 @@ pub async fn create_property(
             $7, $8, $9, $10, $11, $12, $13,
             $14, $15, $16, $17,
             $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+            $28, $29, $30, $31, $32, $33,
             false, false,
-            'active', $28, $29, $29
+            'active', $34, $35, $35
         )
         RETURNING id
         "#,
@@ -476,7 +486,7 @@ pub async fn create_property(
     .bind(&payload.property_type)
     .bind(payload.listing_type.as_deref().unwrap_or("Rent"))
     .bind(payload.price)
-    .bind(&payload.location)   // city
+    .bind(payload.city.as_ref().or(payload.location.as_ref()))
     .bind(payload.area_sqft)
     .bind(payload.bedrooms)    // bhk
     .bind(payload.bathrooms)
@@ -497,6 +507,12 @@ pub async fn create_property(
     .bind(&payload.video_url)
     .bind(&payload.user_type)
     .bind(payload.broker_contact_allowed)
+    .bind(&payload.bathroom_type)
+    .bind(payload.lease_years)
+    .bind(&payload.gender_preference)
+    .bind(payload.roommates)
+    .bind(&payload.area)
+    .bind(&payload.pincode)
     .bind(user_id)
     .bind(now)
     .fetch_one(&app_state.db)
@@ -601,6 +617,34 @@ pub async fn update_property(
     }
     if let Some(v) = &payload.location {
         qb.push(", city = "); // location maps to city
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.city {
+        qb.push(", city = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.area {
+        qb.push(", area = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.pincode {
+        qb.push(", pincode = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.bathroom_type {
+        qb.push(", bathroom_type = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.lease_years {
+        qb.push(", lease_years = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.gender_preference {
+        qb.push(", gender_preference = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = payload.roommates {
+        qb.push(", roommates = ");
         qb.push_bind(v);
     }
     if let Some(v) = payload.area_sqft {
