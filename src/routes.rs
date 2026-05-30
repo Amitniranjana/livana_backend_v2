@@ -326,7 +326,7 @@ pub fn news_routes() -> Router<AppState> {
         admin_action_news, create_news, get_news, track_news_action, update_news,
         user_create_news, like_news, unlike_news, save_news, unsave_news, report_news, add_comment, get_comments
     };
-    use axum::routing::{patch, delete};
+    use axum::routing::patch;
     Router::new()
         // Public endpoints
         .route("/api/v1/news", get(get_news))
