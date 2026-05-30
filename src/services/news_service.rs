@@ -1,10 +1,9 @@
 use crate::dtos::news::{AdminNewsActionRequest, NewsActionRequest, NewsCreateRequest, NewsUpdateRequest, NewsCommentRequest, NewsReportRequest, NewsCommentResponse};
 use crate::models::news::NewsItem;
 use crate::utils::api_error::ApiError;
-use sqlx::{PgPool, QueryBuilder, Postgres};
+use sqlx::{PgPool, Postgres};
 use uuid::Uuid;
 use redis::AsyncCommands;
-use std::sync::Arc;
 
 pub struct NewsService {
     db: PgPool,
