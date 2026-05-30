@@ -314,21 +314,31 @@ pub use unified_listing::unified_listing_routes;
 
 /// Property Share (public, no auth)
 pub fn share_routes() -> Router<AppState> {
-    Router::new().route(
-        "/share/property/{id}",
-        get(crate::handlers::share::share_property),
-    )
+    Router::new()
+        .route("/share/property/{id}", get(crate::handlers::share::share_property))
+        .route("/share/news/{id}", get(crate::handlers::share::share_news))
+        .route("/share/expo/{id}", get(crate::handlers::share::share_expo))
+        .route("/share/carecrew/{id}", get(crate::handlers::share::share_carecrew))
 }
 
 pub fn news_routes() -> Router<AppState> {
     use crate::handlers::news::{
         admin_action_news, create_news, get_news, track_news_action, update_news,
+        user_create_news, like_news, unlike_news, save_news, unsave_news, report_news, add_comment, get_comments
     };
-    use axum::routing::patch;
+    use axum::routing::{patch, delete};
     Router::new()
         // Public endpoints
         .route("/api/v1/news", get(get_news))
+        .route("/api/v1/news", post(user_create_news))
         .route("/api/v1/news/{id}/action", post(track_news_action))
+        // Interactions
+        .route("/api/v1/news/{id}/like", post(like_news).delete(unlike_news))
+        .route("/api/v1/news/{id}/save", post(save_news).delete(unsave_news))
+        .route("/api/v1/news/{id}/report", post(report_news))
+        .route("/api/v1/news/{id}/comments", post(add_comment).get(get_comments))
+        // Image Upload
+        .route("/api/v1/news/upload/images", post(crate::handlers::listing_image::upload_listing_images).layer(axum::extract::DefaultBodyLimit::disable()))
         // Admin endpoints (in real app should have admin auth layer)
         .route("/api/v1/admin/news", post(create_news))
         .route("/api/v1/admin/news/{id}", put(update_news))

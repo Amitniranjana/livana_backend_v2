@@ -26,6 +26,7 @@ pub struct CommunityResponseDto {
 #[derive(Debug, Deserialize)]
 pub struct CreateCommunityPostDto {
     pub content: String,
+    pub images: Option<serde_json::Value>,
 }
 
 /// Response after creating a community post.
@@ -36,6 +37,7 @@ pub struct CommunityPostResponseDto {
     pub community_id: Uuid,
     pub author_id: Uuid,
     pub content: String,
+    pub images: Option<serde_json::Value>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 

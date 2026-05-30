@@ -1,4 +1,4 @@
-use crate::dtos::news::{AdminNewsActionRequest, NewsActionRequest, NewsCreateRequest, NewsUpdateRequest};
+use crate::dtos::news::{AdminNewsActionRequest, NewsActionRequest, NewsCreateRequest, NewsUpdateRequest, NewsCommentRequest, NewsReportRequest, NewsCommentResponse};
 use crate::models::news::NewsItem;
 use crate::utils::api_error::ApiError;
 use sqlx::{PgPool, QueryBuilder, Postgres};
@@ -37,10 +37,10 @@ impl NewsService {
             }
         }
 
-        let mut query = sqlx::QueryBuilder::<'_, Postgres>::new("SELECT * FROM news_items ");
+        let mut query = sqlx::QueryBuilder::<'_, Postgres>::new("SELECT * FROM news_items WHERE status = 'approved' ");
 
         if let Some(cat) = &category {
-            query.push("WHERE category = ");
+            query.push(" AND category = ");
             query.push_bind(cat);
         }
 
@@ -62,14 +62,15 @@ impl NewsService {
         Ok(news)
     }
 
-    pub async fn create_news(&self, req: NewsCreateRequest) -> Result<NewsItem, ApiError> {
+    pub async fn create_news(&self, req: NewsCreateRequest, author_id: Uuid, is_admin: bool) -> Result<NewsItem, ApiError> {
         let id = Uuid::new_v4();
         let summary = Self::truncate_summary(&req.short_summary);
+        let status = if is_admin { "approved" } else { "pending" };
 
         let news = sqlx::query_as::<_, NewsItem>(
             r#"
-            INSERT INTO news_items (id, headline, short_summary, source, category, published_at, thumbnail_url)
-            VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7)
+            INSERT INTO news_items (id, headline, short_summary, source, category, published_at, thumbnail_url, images, author_id, status)
+            VALUES ($1, $2, $3, $4, $5, COALESCE($6, NOW()), $7, $8, $9, $10)
             RETURNING *
             "#,
         )
@@ -80,6 +81,9 @@ impl NewsService {
         .bind(req.category)
         .bind(req.published_at)
         .bind(req.thumbnail_url)
+        .bind(req.images)
+        .bind(author_id)
+        .bind(status)
         .fetch_one(&self.db)
         .await
         .map_err(|e| {
@@ -135,6 +139,12 @@ impl NewsService {
             builder.push_bind(t);
             has_updates = true;
         }
+        if let Some(img) = req.images {
+            if has_updates { builder.push(", "); }
+            builder.push("images = ");
+            builder.push_bind(img);
+            has_updates = true;
+        }
 
         if !has_updates {
             return Err(ApiError::BadRequest("No updates provided".to_string()));
@@ -170,6 +180,12 @@ impl NewsService {
             if has_updates { builder.push(", "); }
             builder.push("notifications_disabled = ");
             builder.push_bind(nd);
+            has_updates = true;
+        }
+        if let Some(st) = req.status {
+            if has_updates { builder.push(", "); }
+            builder.push("status = ");
+            builder.push_bind(st);
             has_updates = true;
         }
 
@@ -277,13 +293,93 @@ impl NewsService {
 
     async fn invalidate_cache(&self) {
         if let Some(mut redis_mgr) = self.redis_pool.clone() {
-            // A simple approach is to delete all news cache keys. 
-            // `KEYS news_items:*` -> `DEL`
             if let Ok(keys) = redis_mgr.keys::<_, Vec<String>>("news_items:*").await {
                 if !keys.is_empty() {
                     let _ = redis_mgr.del::<_, ()>(&keys).await;
                 }
             }
         }
+    }
+
+    pub async fn like_news(&self, news_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+        sqlx::query("INSERT INTO news_likes (id, news_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+            .bind(Uuid::new_v4())
+            .bind(news_id)
+            .bind(user_id)
+            .execute(&self.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn unlike_news(&self, news_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+        sqlx::query("DELETE FROM news_likes WHERE news_id = $1 AND user_id = $2")
+            .bind(news_id)
+            .bind(user_id)
+            .execute(&self.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn save_news(&self, news_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+        sqlx::query("INSERT INTO news_saves (id, news_id, user_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+            .bind(Uuid::new_v4())
+            .bind(news_id)
+            .bind(user_id)
+            .execute(&self.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn unsave_news(&self, news_id: Uuid, user_id: Uuid) -> Result<(), ApiError> {
+        sqlx::query("DELETE FROM news_saves WHERE news_id = $1 AND user_id = $2")
+            .bind(news_id)
+            .bind(user_id)
+            .execute(&self.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn report_news(&self, news_id: Uuid, user_id: Uuid, req: NewsReportRequest) -> Result<(), ApiError> {
+        sqlx::query("INSERT INTO news_reports (id, news_id, user_id, reason) VALUES ($1, $2, $3, $4)")
+            .bind(Uuid::new_v4())
+            .bind(news_id)
+            .bind(user_id)
+            .bind(req.reason)
+            .execute(&self.db)
+            .await
+            .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(())
+    }
+
+    pub async fn add_comment(&self, news_id: Uuid, user_id: Uuid, req: NewsCommentRequest) -> Result<NewsCommentResponse, ApiError> {
+        let id = Uuid::new_v4();
+        let comment = sqlx::query_as!(
+            NewsCommentResponse,
+            "INSERT INTO news_comments (id, news_id, user_id, content) VALUES ($1, $2, $3, $4) RETURNING id, news_id, user_id, content, created_at, updated_at",
+            id,
+            news_id,
+            user_id,
+            req.content
+        )
+        .fetch_one(&self.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(comment)
+    }
+
+    pub async fn get_comments(&self, news_id: Uuid) -> Result<Vec<NewsCommentResponse>, ApiError> {
+        let comments = sqlx::query_as!(
+            NewsCommentResponse,
+            "SELECT id, news_id, user_id, content, created_at, updated_at FROM news_comments WHERE news_id = $1 ORDER BY created_at DESC",
+            news_id
+        )
+        .fetch_all(&self.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("DB error: {}", e)))?;
+        Ok(comments)
     }
 }

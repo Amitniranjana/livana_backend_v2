@@ -104,8 +104,153 @@ LIMIT 1
         }
     }
 
-    // 4. Return HTML response (handles Android, iOS, Desktop automatically on load)
-    let html = format!(
+    // 4. Return HTML response
+    let html = render_share_html(&og_title, &og_desc, &og_image, &id, "property", "property");
+    (StatusCode::OK, Html(html)).into_response()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: GET /share/news/:id
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn share_news(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let parsed_id = match Uuid::parse_str(&id) {
+        Ok(uuid) => uuid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid news id".to_string()).into_response(),
+    };
+
+    let query = r#"
+SELECT headline, short_summary, thumbnail_url, images
+FROM news_items
+WHERE id = $1
+LIMIT 1
+"#;
+
+    let mut og_title = "Livana Eco News".to_string();
+    let mut og_desc = "Check out the latest news on Livana Eco".to_string();
+    let mut og_image = "https://livanaeco.com/default-share-image.png".to_string();
+
+    if let Ok(Some(row)) = sqlx::query(query).bind(parsed_id).fetch_optional(&state.db).await {
+        use sqlx::Row;
+        if let Ok(title) = row.try_get::<String, _>("headline") {
+            if !title.trim().is_empty() { og_title = title; }
+        }
+        if let Ok(desc) = row.try_get::<String, _>("short_summary") {
+            if !desc.trim().is_empty() { og_desc = desc; }
+        }
+        if let Ok(Some(thumb)) = row.try_get::<Option<String>, _>("thumbnail_url") {
+            if thumb.starts_with("https://") { og_image = thumb; }
+        } else if let Ok(images) = row.try_get::<serde_json::Value, _>("images") {
+            if let Some(arr) = images.as_array() {
+                for img in arr {
+                    if let Some(s) = img.as_str() {
+                        if s.starts_with("https://") { og_image = s.to_string(); break; }
+                    }
+                }
+            }
+        }
+    }
+
+    let html = render_share_html(&og_title, &og_desc, &og_image, &id, "news", "news article");
+    (StatusCode::OK, Html(html)).into_response()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: GET /share/expo/:id
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn share_expo(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let parsed_id = match Uuid::parse_str(&id) {
+        Ok(uuid) => uuid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid expo id".to_string()).into_response(),
+    };
+
+    let query = "SELECT title, description, images FROM expo_events WHERE id = $1 LIMIT 1";
+
+    let mut og_title = "Livana Eco Expo".to_string();
+    let mut og_desc = "Check out this expo event on Livana Eco".to_string();
+    let mut og_image = "https://livanaeco.com/default-share-image.png".to_string();
+
+    if let Ok(Some(row)) = sqlx::query(query).bind(parsed_id).fetch_optional(&state.db).await {
+        use sqlx::Row;
+        if let Ok(title) = row.try_get::<String, _>("title") {
+            if !title.trim().is_empty() { og_title = title; }
+        }
+        if let Ok(desc) = row.try_get::<Option<String>, _>("description") {
+            if let Some(d) = desc { if !d.trim().is_empty() { og_desc = d; } }
+        }
+        if let Ok(images) = row.try_get::<serde_json::Value, _>("images") {
+            if let Some(arr) = images.as_array() {
+                for img in arr {
+                    if let Some(s) = img.as_str() {
+                        if s.starts_with("https://") { og_image = s.to_string(); break; }
+                    }
+                }
+            }
+        }
+    }
+
+    let html = render_share_html(&og_title, &og_desc, &og_image, &id, "expo", "expo event");
+    (StatusCode::OK, Html(html)).into_response()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Handler: GET /share/carecrew/:id
+// ─────────────────────────────────────────────────────────────────────────────
+pub async fn share_carecrew(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let parsed_id = match Uuid::parse_str(&id) {
+        Ok(uuid) => uuid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid carecrew id".to_string()).into_response(),
+    };
+
+    let query = "SELECT name, service_type, images FROM carecrew WHERE id = $1 LIMIT 1";
+
+    let mut og_title = "Livana CareCrew".to_string();
+    let mut og_desc = "Check out this CareCrew service on Livana Eco".to_string();
+    let mut og_image = "https://livanaeco.com/default-share-image.png".to_string();
+
+    if let Ok(Some(row)) = sqlx::query(query).bind(parsed_id).fetch_optional(&state.db).await {
+        use sqlx::Row;
+        if let Ok(name) = row.try_get::<String, _>("name") {
+            if !name.trim().is_empty() { og_title = name; }
+        }
+        if let Ok(service_type) = row.try_get::<String, _>("service_type") {
+            if !service_type.trim().is_empty() { og_desc = service_type; }
+        }
+        if let Ok(images) = row.try_get::<serde_json::Value, _>("images") {
+            if let Some(arr) = images.as_array() {
+                for img in arr {
+                    if let Some(s) = img.as_str() {
+                        if s.starts_with("https://") { og_image = s.to_string(); break; }
+                    }
+                }
+            }
+        }
+    }
+
+    let html = render_share_html(&og_title, &og_desc, &og_image, &id, "carecrew", "CareCrew provider");
+    (StatusCode::OK, Html(html)).into_response()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared HTML Renderer
+// ─────────────────────────────────────────────────────────────────────────────
+fn render_share_html(
+    og_title: &str,
+    og_desc: &str,
+    og_image: &str,
+    id: &str,
+    scheme: &str,
+    entity_name: &str,
+) -> String {
+    format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,15 +305,15 @@ LIMIT 1
 <div class="card">
   <div class="spinner" id="spinner"></div>
   <h1 id="main-text">Opening Livana Eco…</h1>
-  <p id="sub-text">Taking you to the property</p>
+  <p id="sub-text">Taking you to the {entity_name}</p>
 </div>
 
 <script>
   const ANDROID_PACKAGE = 'com.LiveInBuddy.livein';
   const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=' + ANDROID_PACKAGE;
   const APP_STORE_URL = 'https://apps.apple.com/in/app/livana-eco/id6742744565';
-  const PROPERTY_ID = '{id}';
-  const DEEP_LINK = 'livanaeco://property/' + PROPERTY_ID;
+  const ENTITY_ID = '{id}';
+  const DEEP_LINK = 'livanaeco://{scheme}/' + ENTITY_ID;
 
   const ua = navigator.userAgent.toLowerCase();
   const isAndroid = ua.indexOf('android') > -1;
@@ -177,7 +322,7 @@ LIMIT 1
   window.onload = function() {{
     if (isAndroid) {{
         const fallback = encodeURIComponent(PLAY_STORE_URL);
-        const intentUri = 'intent://property/' + PROPERTY_ID + '#Intent;scheme=livanaeco;package=' + ANDROID_PACKAGE + ';S.browser_fallback_url=' + fallback + ';end';
+        const intentUri = 'intent://{scheme}/' + ENTITY_ID + '#Intent;scheme=livanaeco;package=' + ANDROID_PACKAGE + ';S.browser_fallback_url=' + fallback + ';end';
         window.location.href = intentUri;
     }} else if (isIOS) {{
         window.location.href = DEEP_LINK;
@@ -205,19 +350,19 @@ LIMIT 1
         // Desktop or other
         document.getElementById('spinner').style.display = 'none';
         document.getElementById('main-text').innerText = 'Livana Eco';
-        document.getElementById('sub-text').innerText = 'Open this link on your mobile device to view the property in the app.';
+        document.getElementById('sub-text').innerText = 'Open this link on your mobile device to view the {entity_name} in the app.';
     }}
   }};
 </script>
 
 </body>
 </html>"#,
-        escaped_title = escape_html(&og_title),
-        escaped_desc = escape_html(&og_desc),
-        escaped_image = escape_html(&og_image),
-        id = escape_html(&id)
-    );
-
-    (StatusCode::OK, Html(html)).into_response()
+        escaped_title = escape_html(og_title),
+        escaped_desc = escape_html(og_desc),
+        escaped_image = escape_html(og_image),
+        id = escape_html(id),
+        scheme = scheme,
+        entity_name = entity_name
+    )
 }
 

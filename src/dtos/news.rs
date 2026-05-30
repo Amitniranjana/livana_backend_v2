@@ -10,6 +10,7 @@ pub struct NewsCreateRequest {
     pub category: Option<String>,
     pub published_at: Option<DateTime<Utc>>,
     pub thumbnail_url: Option<String>,
+    pub images: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,6 +21,7 @@ pub struct NewsUpdateRequest {
     pub category: Option<String>,
     pub published_at: Option<DateTime<Utc>>,
     pub thumbnail_url: Option<String>,
+    pub images: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,4 +38,25 @@ pub struct NewsActionRequest {
 pub struct AdminNewsActionRequest {
     pub force_trending: Option<bool>,
     pub notifications_disabled: Option<bool>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewsCommentRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewsReportRequest {
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NewsCommentResponse {
+    pub id: Uuid,
+    pub news_id: Uuid,
+    pub user_id: Uuid,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
