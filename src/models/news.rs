@@ -21,4 +21,7 @@ pub struct NewsItem {
     pub notifications_disabled: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub author_id: Option<Uuid>,
+    pub status: String,
+    pub images: Option<serde_json::Value>,
 }

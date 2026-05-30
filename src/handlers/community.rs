@@ -195,8 +195,8 @@ pub async fn create_community_post(
 
     sqlx::query(
         r#"
-        INSERT INTO community_posts (id, community_id, author_id, content, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO community_posts (id, community_id, author_id, content, created_at, images)
+        VALUES ($1, $2, $3, $4, $5, $6)
         "#,
     )
     .bind(post_id)
@@ -204,6 +204,7 @@ pub async fn create_community_post(
     .bind(user_id)
     .bind(&payload.content)
     .bind(now)
+    .bind(&payload.images)
     .execute(&app_state.db)
     .await
     .map_err(|e| ApiError::InternalServerError(format!("Failed to create post: {}", e)))?;
@@ -249,6 +250,7 @@ pub async fn create_community_post(
             community_id,
             author_id: user_id,
             content: payload.content,
+            images: payload.images,
             created_at: now,
         },
     };
@@ -460,6 +462,7 @@ pub async fn edit_community_post(
             community_id,
             author_id: user_id,
             content: payload.content,
+            images: None,
             created_at: now,
         },
     };
@@ -539,6 +542,7 @@ pub async fn get_community_feed(
             cp.community_id as "community_id!",
             cp.author_id as "author_id!",
             cp.content as "content!",
+            cp.images as "images",
             cp.created_at as "created_at!"
         FROM community_posts cp
         JOIN community_members cm ON cp.community_id = cm.community_id

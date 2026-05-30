@@ -26,4 +26,9 @@ pub fn community_routes() -> Router<AppState> {
             "/api/v1/communities/{community_id}/posts/{post_id}",
             put(edit_community_post).delete(delete_community_post),
         )
+        .route(
+            "/api/v1/communities/upload/images",
+            post(crate::handlers::listing_image::upload_listing_images)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
 }
