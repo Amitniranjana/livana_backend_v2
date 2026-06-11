@@ -724,7 +724,7 @@ pub async fn upload_listing_images_v2(
         let bucket_name = std::env::var("PUBLIC_BUCKET_NAME")
             .unwrap_or_else(|_| "livana-public-listings".to_string());
         let aws_region =
-            std::env::var("AWS_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+            std::env::var("AWS_REGION").unwrap_or_else(|_| "ap-south-1".to_string());
         let url = format!(
             "https://{}.s3.{}.amazonaws.com/{}",
             bucket_name, aws_region, key
