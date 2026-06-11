@@ -22,7 +22,7 @@ use crate::{
     repository::chat_repository::ChatRepository,
     repository::user_repository::UserRepository,
     routes::{
-        analytics_routes, associate_routes, auth_routes, bookings_routes, broker_routes,
+        analytics_routes, admin_analytics_routes, admin_auth_routes, admin_stats_routes, associate_routes, auth_routes, bookings_routes, broker_routes,
         carecrew_review_routes, carecrew_routes, carecrew_ticket_routes, career_routes,
         careers_routes, community_routes, expo_routes, health_routes, language_routes,
         listing_routes, moderation_routes, notifications_routes, property_filter_routes,
@@ -169,6 +169,9 @@ async fn main() {
     let app = Router::new()
         .merge(health_routes())
         .merge(auth_routes())
+        .merge(admin_auth_routes())
+        .merge(admin_stats_routes())
+        .merge(admin_analytics_routes())
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())

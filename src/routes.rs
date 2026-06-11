@@ -39,6 +39,15 @@ pub fn auth_routes() -> Router<AppState> {
         )
 }
 
+pub fn admin_auth_routes() -> Router<AppState> {
+    use crate::handlers::admin_auth::{admin_login, admin_logout, admin_me};
+    use axum::routing::{get, post};
+    Router::new()
+        .route("/api/admin/auth/login", post(admin_login))
+        .route("/api/admin/auth/logout", post(admin_logout))
+        .route("/api/admin/auth/me", get(admin_me))
+}
+
 pub fn user_routes() -> Router<AppState> {
     use crate::handlers::user::{get_profile, update_profile, upload_profile_image};
     Router::new()
@@ -343,4 +352,22 @@ pub fn news_routes() -> Router<AppState> {
         .route("/api/v1/admin/news", post(create_news))
         .route("/api/v1/admin/news/{id}", put(update_news))
         .route("/api/v1/admin/news/{id}/action", patch(admin_action_news))
+}
+
+pub fn admin_stats_routes() -> Router<AppState> {
+    use crate::handlers::admin_stats::{get_stats, get_stats_location, get_stats_trend};
+    use axum::routing::get;
+    Router::new()
+        .route("/api/admin/stats", get(get_stats))
+        .route("/api/admin/stats/trend", get(get_stats_trend))
+        .route("/api/admin/stats/location", get(get_stats_location))
+}
+
+pub fn admin_analytics_routes() -> Router<AppState> {
+    use crate::handlers::admin_analytics::{get_engagement, get_kyc_funnel, get_rent_trends};
+    use axum::routing::get;
+    Router::new()
+        .route("/api/admin/analytics/rent-trends", get(get_rent_trends))
+        .route("/api/admin/analytics/engagement", get(get_engagement))
+        .route("/api/admin/analytics/kyc", get(get_kyc_funnel))
 }
