@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM carecrew_reviews WHERE reviewer_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "448e681064a706d912d182f3f7af444afd14daa00f9e85e726d278ffd9724553"
+}
