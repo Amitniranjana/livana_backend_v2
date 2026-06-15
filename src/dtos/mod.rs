@@ -18,4 +18,6 @@ pub mod saved_properties;
 pub mod service;
 pub mod unified_listing;
 pub mod vibes;
+pub mod admin_user;
+
 pub mod news;

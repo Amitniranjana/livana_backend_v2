@@ -12,6 +12,7 @@ pub struct AppState {
     pub user_service: Arc<UserService>,
     pub db: Pool<Postgres>,
     pub jwt_secret: String,
+    pub admin_jwt_secret: String,
     pub chat_service: Arc<ChatService>,
     pub kyc_service: Arc<crate::services::kyc_service::KycService>,
     /// PostgreSQL-backed chat service (chats/messages tables, distinct from Chime).

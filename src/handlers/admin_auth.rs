@@ -31,7 +31,7 @@ pub struct AdminMeResponse {
     pub role: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AdminClaims {
     pub sub: String,
     pub role: String,
