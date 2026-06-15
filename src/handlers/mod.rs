@@ -36,3 +36,4 @@ pub mod news;
 pub mod admin_auth;
 pub mod admin_stats;
 pub mod admin_analytics;
+pub mod admin_users;

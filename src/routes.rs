@@ -371,3 +371,7 @@ pub fn admin_analytics_routes() -> Router<AppState> {
         .route("/api/admin/analytics/engagement", get(get_engagement))
         .route("/api/admin/analytics/kyc", get(get_kyc_funnel))
 }
+
+pub mod admin_users;
+pub use admin_users::admin_users_routes;
+

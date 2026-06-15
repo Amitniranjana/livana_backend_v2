@@ -28,7 +28,7 @@ use crate::{
         listing_routes, moderation_routes, notifications_routes, property_filter_routes,
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
         saved_properties_routes, service_listing_routes, share_routes, suggestions_routes,
-        user_routes, unified_listing_routes, vibes_routes,
+        user_routes, unified_listing_routes, vibes_routes, admin_users_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -48,6 +48,7 @@ async fn main() {
     // default back to 8080 if you forgot HTTP_PORT
     let http_port = env::var("HTTP_PORT").unwrap_or_else(|_| "8080".into());
     let jwt_secret = env::var("JWT_SECRET_KEY").unwrap_or_else(|_| "supersecret".into());
+    let admin_jwt_secret = env::var("ADMIN_JWT_SECRET").unwrap_or_else(|_| jwt_secret.clone());
 
     // Google OAuth — needed to verify `aud` in tokeninfo responses.
     // Set GOOGLE_CLIENT_ID in your .env file.
@@ -152,6 +153,7 @@ async fn main() {
         user_service: Arc::from(user_svc),
         db: pool.clone(),
         jwt_secret: jwt_secret.clone(),
+        admin_jwt_secret: admin_jwt_secret.clone(),
         chat_service: Arc::new(chat_svc),
         kyc_service: Arc::new(kyc_svc),
         chat_db_service: Arc::new(chat_db_svc),
@@ -172,6 +174,7 @@ async fn main() {
         .merge(admin_auth_routes())
         .merge(admin_stats_routes())
         .merge(admin_analytics_routes())
+        .merge(admin_users_routes(app_state.clone()))
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())
