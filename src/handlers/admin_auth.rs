@@ -1,7 +1,6 @@
 use axum::{
-    extract::{State, Request},
-    http::{header, StatusCode, HeaderMap},
-    response::IntoResponse,
+    extract::State,
+    http::{StatusCode, HeaderMap},
     Json,
 };
 use bcrypt::verify;
@@ -9,7 +8,6 @@ use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey}
 use serde::{Deserialize, Serialize};
 use std::{env, time::{SystemTime, UNIX_EPOCH}};
 use axum_extra::extract::cookie::{Cookie, SameSite, CookieJar};
-use std::str::FromStr;
 
 use crate::app_state::AppState;
 
