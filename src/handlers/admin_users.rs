@@ -1,7 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
     Json,
 };
 use serde_json::json;
@@ -52,7 +51,7 @@ pub async fn get_users(
         let clause = format!(" AND (u.email ILIKE ${} OR u.first_name ILIKE ${} OR u.last_name ILIKE ${} OR u.phone_no ILIKE ${})", param_index, param_index, param_index, param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(pattern);
+        let _ = binds.add(pattern);
         param_index += 1;
     }
 
@@ -60,7 +59,7 @@ pub async fn get_users(
         let clause = format!(" AND u.user_role = ${}", param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(role);
+        let _ = binds.add(role);
         param_index += 1;
     }
 
@@ -68,7 +67,7 @@ pub async fn get_users(
         let clause = format!(" AND u.associate_type = ${}", param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(assoc_type);
+        let _ = binds.add(assoc_type);
         param_index += 1;
     }
 
@@ -76,7 +75,7 @@ pub async fn get_users(
         let clause = format!(" AND u.status = ${}", param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(status);
+        let _ = binds.add(status);
         param_index += 1;
     }
 
@@ -84,7 +83,7 @@ pub async fn get_users(
         let clause = format!(" AND u.verified = ${}", param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(is_verified);
+        let _ = binds.add(is_verified);
         param_index += 1;
     }
 
@@ -92,8 +91,7 @@ pub async fn get_users(
         let clause = format!(" AND k.status::text = ${}", param_index);
         query.push_str(&clause);
         count_query.push_str(&clause);
-        binds.add(kyc_status);
-        param_index += 1;
+        let _ = binds.add(kyc_status);
     }
 
     let sort_by = filter.sort_by.clone().unwrap_or_else(|| "created_at".to_string());
@@ -286,32 +284,32 @@ pub async fn update_user(
 
     if let Some(status) = &payload.status {
         query.push_str(&format!(", status = ${}", param_index));
-        binds.add(status);
+        let _ = binds.add(status);
         param_index += 1;
     }
     if let Some(role) = &payload.user_role {
         query.push_str(&format!(", user_role = ${}", param_index));
-        binds.add(role);
+        let _ = binds.add(role);
         param_index += 1;
     }
     if let Some(assoc) = &payload.associate_type {
         query.push_str(&format!(", associate_type = ${}", param_index));
-        binds.add(assoc);
+        let _ = binds.add(assoc);
         param_index += 1;
     }
     if let Some(is_vb) = payload.is_verified_broker {
         query.push_str(&format!(", is_verified_broker = ${}", param_index));
-        binds.add(is_vb);
+        let _ = binds.add(is_vb);
         param_index += 1;
     }
     if let Some(email) = &payload.email {
         query.push_str(&format!(", email = ${}", param_index));
-        binds.add(email);
+        let _ = binds.add(email);
         param_index += 1;
     }
 
     query.push_str(&format!(" WHERE id = ${}", param_index));
-    binds.add(id);
+    let _ = binds.add(id);
 
     let res = sqlx::query_with(&query, binds)
         .execute(&state.db)

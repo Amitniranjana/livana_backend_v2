@@ -1,6 +1,6 @@
 use axum::{
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Redirect, Response},
     Json,
