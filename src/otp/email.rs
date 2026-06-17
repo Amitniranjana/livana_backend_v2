@@ -10,7 +10,7 @@
 use crate::otp::error::OtpError;
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{Mailbox, header::ContentType},
+    message::{Mailbox, MultiPart, SinglePart},
     transport::smtp::authentication::Credentials,
 };
 use std::env;
@@ -44,8 +44,14 @@ pub async fn send_email_otp(email: &str, otp: &str, purpose: &str) -> Result<(),
         .from(from_mailbox)
         .to(to_mailbox)
         .subject(format!("Your Care Connect {} OTP", purpose))
-        .header(ContentType::TEXT_HTML)
-        .body(html_body)
+        .multipart(
+            MultiPart::alternative()
+                .singlepart(SinglePart::plain(format!(
+                    "Your Care Connect {} verification code is: {}\n\nThis code will expire in 10 minutes.\nIf you did not request this code, please ignore this email.",
+                    purpose, otp
+                )))
+                .singlepart(SinglePart::html(html_body)),
+        )
         .map_err(|e| OtpError::Internal(format!("Failed to build email message: {}", e)))?;
 
     // Build SMTP transport — STARTTLS on port 587
