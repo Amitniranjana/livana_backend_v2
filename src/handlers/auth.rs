@@ -368,7 +368,8 @@ pub async fn send_otp(
     let purpose = payload.purpose.as_deref().unwrap_or("signup");
 
     // Prefer email over phone when both are provided
-    if let Some(ref email) = payload.email {
+    if let Some(ref email_raw) = payload.email {
+        let email = email_raw.trim();
         if !email.is_empty() {
             // Validate email before sending OTP
             if !is_valid_email(email) {
@@ -607,7 +608,8 @@ pub async fn resend_otp(
     let purpose = payload.purpose.as_deref().unwrap_or("signup");
 
     // Prefer email over phone
-    if let Some(ref email) = payload.email {
+    if let Some(ref email_raw) = payload.email {
+        let email = email_raw.trim();
         if !email.is_empty() {
             // Validate email before resending OTP
             if !is_valid_email(email) {
@@ -798,7 +800,8 @@ pub async fn send_forgot_password_link(
     };
 
     // 1. Find user by email OR phone (auto-detect phone numbers in email field)
-    let user = if let Some(ref email_val) = payload.email {
+    let user = if let Some(ref email_val_raw) = payload.email {
+        let email_val = email_val_raw.trim();
         if !email_val.is_empty() {
             if looks_like_phone(email_val) {
                 // The "email" field actually contains a phone number
