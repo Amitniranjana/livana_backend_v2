@@ -55,10 +55,60 @@ WHERE p.id = $1
 LIMIT 1
 "#;
 
-    let row = sqlx::query(query)
+    let mut row = sqlx::query(query)
         .bind(parsed_id)
         .fetch_optional(&state.db)
         .await;
+
+    // Fallback to listings_v2 if not found in properties
+    if let Ok(None) = row {
+        let query_v2 = r#"
+SELECT
+    l.title,
+    l.city,
+    l.price,
+    l.deposit,
+    l.listing_type,
+    l.bedrooms AS bhk,
+    l.bathrooms,
+    (
+        SELECT COALESCE(jsonb_agg(image_url), '[]'::jsonb)
+        FROM listing_images_v2
+        WHERE listing_id = l.id
+    ) AS images
+FROM listings_v2 l
+WHERE l.id = $1
+LIMIT 1
+"#;
+        row = sqlx::query(query_v2)
+            .bind(parsed_id)
+            .fetch_optional(&state.db)
+            .await;
+    }
+    else if row.is_err() {
+        let query_v2 = r#"
+SELECT
+    l.title,
+    l.city,
+    l.price,
+    l.deposit,
+    l.listing_type,
+    l.bedrooms AS bhk,
+    l.bathrooms,
+    (
+        SELECT COALESCE(jsonb_agg(image_url), '[]'::jsonb)
+        FROM listing_images_v2
+        WHERE listing_id = l.id
+    ) AS images
+FROM listings_v2 l
+WHERE l.id = $1
+LIMIT 1
+"#;
+        row = sqlx::query(query_v2)
+            .bind(parsed_id)
+            .fetch_optional(&state.db)
+            .await;
+    }
 
     // Fallback values if DB query fails or property is not found
     let mut og_title = "View Property on Livana Eco".to_string();

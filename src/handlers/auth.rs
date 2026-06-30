@@ -94,6 +94,7 @@ pub async fn signup(
             &hashed_password,
             &payload.gender,
             &payload.user_role,
+            payload.ref_code.clone(),
         )
         .await;
 

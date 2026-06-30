@@ -31,6 +31,8 @@ pub struct SignupRequest {
     pub experience_years: Option<i32>,
     #[schema(example = 2.5)]
     pub commission_rate: Option<f64>,
+    #[schema(example = "ABC123XY")]
+    pub ref_code: Option<String>,
 }
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]

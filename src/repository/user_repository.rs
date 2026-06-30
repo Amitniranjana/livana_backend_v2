@@ -37,8 +37,10 @@ impl UserRepository {
             password,
             phone_no,
             user_role,
-            associate_type
-        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)",
+            associate_type,
+            referral_code,
+            referred_by_code
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         );
         let result = query
             .bind(&user.id)
@@ -49,6 +51,8 @@ impl UserRepository {
             .bind(&user.phone_no)
             .bind(&user.user_role)
             .bind(None::<String>)
+            .bind(&user.referral_code)
+            .bind(&user.referred_by_code)
             .execute(&self.pool)
             .await;
 
@@ -523,6 +527,98 @@ impl UserRepository {
 
         match result {
             Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Referral methods
+    // -------------------------------------------------------------------------
+
+    /// Check if a referral code exists and belongs to a user
+    pub async fn check_referral_code_exists(&self, code: &str) -> Result<bool, String> {
+        let result = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE referral_code = $1")
+            .bind(code)
+            .fetch_one(&self.pool)
+            .await;
+
+        match result {
+            Ok(count) => Ok(count > 0),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Insert a new referral record
+    pub async fn insert_referral(&self, referrer_code: &str, referred_user_id: &str) -> Result<(), String> {
+        // 1. Get the referrer's user ID
+        let referrer = sqlx::query_as::<_, User>("SELECT * FROM users WHERE referral_code = $1")
+            .bind(referrer_code)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let referrer_user = match referrer {
+            Some(u) => u,
+            None => return Ok(()), // Should not happen if validated, but safe fallback
+        };
+
+        let referred_uuid = uuid::Uuid::parse_str(referred_user_id).map_err(|e| e.to_string())?;
+
+        // Block self referral just in case
+        if referrer_user.id == referred_uuid {
+            return Ok(());
+        }
+
+        let referral_id = uuid::Uuid::new_v4();
+        let reward_amount = 1000; // As per requirements
+
+        let result = sqlx::query(
+            "INSERT INTO referrals (id, referrer_user_id, referred_user_id, status, reward_amount) 
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(referral_id)
+        .bind(referrer_user.id)
+        .bind(referred_uuid)
+        .bind("pending")
+        .bind(reward_amount)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Get referral statistics for a user
+    pub async fn get_referral_stats(&self, user_id: &str) -> Result<(i64, i64, i64), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        
+        #[derive(sqlx::FromRow)]
+        struct StatsRow {
+            total_referrals: Option<i64>,
+            total_rewards_earned: Option<i64>,
+            pending_referrals: Option<i64>,
+        }
+
+        let result = sqlx::query_as::<_, StatsRow>(
+            r#"SELECT 
+                 COUNT(CASE WHEN status = 'completed' THEN 1 END) as total_referrals,
+                 SUM(CASE WHEN status = 'completed' THEN reward_amount ELSE 0 END) as total_rewards_earned,
+                 COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_referrals
+               FROM referrals 
+               WHERE referrer_user_id = $1"#,
+        )
+        .bind(uuid)
+        .fetch_one(&self.pool)
+        .await;
+
+        match result {
+            Ok(row) => Ok((
+                row.total_referrals.unwrap_or(0),
+                row.total_rewards_earned.unwrap_or(0),
+                row.pending_referrals.unwrap_or(0)
+            )),
             Err(e) => Err(e.to_string()),
         }
     }

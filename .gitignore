@@ -1,6 +1,7 @@
 /target
 .idea
 .env
+imp.md
 
 # Terraform
 .terraform/

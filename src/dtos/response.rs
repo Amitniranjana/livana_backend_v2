@@ -172,3 +172,13 @@ pub struct ListingsResponse {
     pub listings: Vec<ListingResponse>,
     pub pagination: PaginationInfo,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReferralInfoData {
+    pub referral_code: String,
+    pub referral_link: String,
+    pub total_referrals: i64,
+    pub total_rewards_earned: i64,
+    pub pending_referrals: i64,
+}
