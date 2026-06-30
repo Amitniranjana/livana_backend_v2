@@ -13,7 +13,7 @@ resource "aws_apigatewayv2_api" "livana_api" {
 resource "aws_apigatewayv2_integration" "livana_integration" {
   api_id           = aws_apigatewayv2_api.livana_api.id
   integration_type = "HTTP_PROXY"
-  integration_uri  = "http://52.55.209.189:9090"
+  integration_uri  = "http://13.216.208.31:9090"
   integration_method = "ANY"
 }
 

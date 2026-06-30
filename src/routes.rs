@@ -215,6 +215,14 @@ pub fn property_filter_routes() -> Router<AppState> {
     Router::new().route("/api/v1/properties", get(filter_properties))
 }
 
+/// Referrals APIs (JWT-protected)
+pub fn referrals_routes() -> Router<AppState> {
+    use crate::handlers::referrals::{get_referrals_me, get_referrals_rewards};
+    Router::new()
+        .route("/api/v1/referrals/me", get(get_referrals_me))
+        .route("/api/v1/referrals/rewards", get(get_referrals_rewards))
+}
+
 /// Community APIs (JWT-protected)
 pub mod community;
 pub use community::community_routes;

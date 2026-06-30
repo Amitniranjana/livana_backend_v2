@@ -94,6 +94,7 @@ pub async fn signup(
             &hashed_password,
             &payload.gender,
             &payload.user_role,
+            payload.ref_code.clone(),
         )
         .await;
 
@@ -495,6 +496,12 @@ pub async fn verify_otp(
                 .set_phone_verified(&user.id.to_string())
                 .await;
 
+            // Process referral reward if applicable
+            let _ = app_state
+                .user_service
+                .process_referral_reward(&user.id.to_string())
+                .await;
+
             let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
                 Ok(token) => token,
                 Err(e) => {
@@ -559,6 +566,12 @@ pub async fn verify_otp(
                 let response = json!({ "success": false, "message": format!("Failed to update verification status: {}", e), "data": null });
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
             }
+
+            // Process referral reward if applicable
+            let _ = app_state
+                .user_service
+                .process_referral_reward(&user.id.to_string())
+                .await;
 
             let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
                 Ok(token) => token,

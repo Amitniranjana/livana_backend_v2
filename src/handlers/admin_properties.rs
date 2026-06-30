@@ -112,17 +112,17 @@ pub async fn get_properties(
             let filter = format!(" AND (p.title ILIKE ${} OR p.city ILIKE ${} OR p.locality ILIKE ${} OR u.first_name ILIKE ${} OR u.last_name ILIKE ${})", bindings_idx, bindings_idx, bindings_idx, bindings_idx, bindings_idx);
             query_str.push_str(&filter);
             count_query_str.push_str(&filter);
-            sqlx::Arguments::add(&mut args, s.clone());
-            sqlx::Arguments::add(&mut args, s.clone());
-            sqlx::Arguments::add(&mut args, s.clone());
-            sqlx::Arguments::add(&mut args, s.clone());
-            sqlx::Arguments::add(&mut args, s.clone());
+            let _ = sqlx::Arguments::add(&mut args, s.clone());
+            let _ = sqlx::Arguments::add(&mut args, s.clone());
+            let _ = sqlx::Arguments::add(&mut args, s.clone());
+            let _ = sqlx::Arguments::add(&mut args, s.clone());
+            let _ = sqlx::Arguments::add(&mut args, s.clone());
             
-            sqlx::Arguments::add(&mut count_args, s.clone());
-            sqlx::Arguments::add(&mut count_args, s.clone());
-            sqlx::Arguments::add(&mut count_args, s.clone());
-            sqlx::Arguments::add(&mut count_args, s.clone());
-            sqlx::Arguments::add(&mut count_args, s);
+            let _ = sqlx::Arguments::add(&mut count_args, s.clone());
+            let _ = sqlx::Arguments::add(&mut count_args, s.clone());
+            let _ = sqlx::Arguments::add(&mut count_args, s.clone());
+            let _ = sqlx::Arguments::add(&mut count_args, s.clone());
+            let _ = sqlx::Arguments::add(&mut count_args, s);
             bindings_idx += 1; // Actually in postgres we can reuse $1 with sqlx? Wait, no, sqlx does not support reusing bindings. Wait, if I do `ILIKE $1 OR ILIKE $1`, sqlx allows that! BUT I wrote ${} and incremented once. Ah! I need to use the exact index if I want to reuse.
             // Let me fix the bind string to reuse index.
         }
@@ -132,8 +132,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.status = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, status.clone());
-        sqlx::Arguments::add(&mut count_args, status.clone());
+        let _ = sqlx::Arguments::add(&mut args, status.clone());
+        let _ = sqlx::Arguments::add(&mut count_args, status.clone());
         bindings_idx += 1;
     }
 
@@ -141,8 +141,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.listing_type = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, listing_type.clone());
-        sqlx::Arguments::add(&mut count_args, listing_type.clone());
+        let _ = sqlx::Arguments::add(&mut args, listing_type.clone());
+        let _ = sqlx::Arguments::add(&mut count_args, listing_type.clone());
         bindings_idx += 1;
     }
 
@@ -150,8 +150,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.property_type = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, property_type.clone());
-        sqlx::Arguments::add(&mut count_args, property_type.clone());
+        let _ = sqlx::Arguments::add(&mut args, property_type.clone());
+        let _ = sqlx::Arguments::add(&mut count_args, property_type.clone());
         bindings_idx += 1;
     }
 
@@ -159,8 +159,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.city = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, city.clone());
-        sqlx::Arguments::add(&mut count_args, city.clone());
+        let _ = sqlx::Arguments::add(&mut args, city.clone());
+        let _ = sqlx::Arguments::add(&mut count_args, city.clone());
         bindings_idx += 1;
     }
 
@@ -168,8 +168,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.is_featured = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, is_featured);
-        sqlx::Arguments::add(&mut count_args, is_featured);
+        let _ = sqlx::Arguments::add(&mut args, is_featured);
+        let _ = sqlx::Arguments::add(&mut count_args, is_featured);
         bindings_idx += 1;
     }
 
@@ -178,8 +178,8 @@ pub async fn get_properties(
         // Wait, listing.rs has `user_type` from `properties` table? Let me check `row_to_admin_property_json`. Yes, `user_type` column maybe? I'll use `posted_by`.
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, user_type.clone());
-        sqlx::Arguments::add(&mut count_args, user_type.clone());
+        let _ = sqlx::Arguments::add(&mut args, user_type.clone());
+        let _ = sqlx::Arguments::add(&mut count_args, user_type.clone());
         bindings_idx += 1;
     }
 
@@ -187,8 +187,8 @@ pub async fn get_properties(
         let filter = format!(" AND p.user_id = ${}", bindings_idx);
         query_str.push_str(&filter);
         count_query_str.push_str(&filter);
-        sqlx::Arguments::add(&mut args, user_id);
-        sqlx::Arguments::add(&mut count_args, user_id);
+        let _ = sqlx::Arguments::add(&mut args, user_id);
+        let _ = sqlx::Arguments::add(&mut count_args, user_id);
         bindings_idx += 1;
     }
 
@@ -206,8 +206,8 @@ pub async fn get_properties(
     
     // Pagination
     query_str.push_str(&format!(" LIMIT ${} OFFSET ${}", bindings_idx, bindings_idx + 1));
-    sqlx::Arguments::add(&mut args, limit);
-    sqlx::Arguments::add(&mut args, offset);
+    let _ = sqlx::Arguments::add(&mut args, limit);
+    let _ = sqlx::Arguments::add(&mut args, offset);
 
     let count: (i64,) = sqlx::query_as_with(&count_query_str, count_args)
         .fetch_one(&app_state.db)
@@ -306,19 +306,19 @@ pub async fn update_property(
 
     if let Some(status) = &payload.status {
         query_parts.push(format!("status = ${}", bindings_idx));
-        sqlx::Arguments::add(&mut args, status.clone());
+        let _ = sqlx::Arguments::add(&mut args, status.clone());
         bindings_idx += 1;
     }
 
     if let Some(is_featured) = payload.is_featured {
         query_parts.push(format!("is_featured = ${}", bindings_idx));
-        sqlx::Arguments::add(&mut args, is_featured);
+        let _ = sqlx::Arguments::add(&mut args, is_featured);
         bindings_idx += 1;
     }
 
     if let Some(is_verified) = payload.is_verified {
         query_parts.push(format!("is_verified = ${}", bindings_idx));
-        sqlx::Arguments::add(&mut args, is_verified);
+        let _ = sqlx::Arguments::add(&mut args, is_verified);
         bindings_idx += 1;
     }
 
@@ -336,7 +336,7 @@ pub async fn update_property(
         query_parts.join(", "),
         bindings_idx
     );
-    sqlx::Arguments::add(&mut args, id);
+    let _ = sqlx::Arguments::add(&mut args, id);
 
     match sqlx::query_with(&query_str, args).fetch_optional(&app_state.db).await {
         Ok(Some(row)) => {

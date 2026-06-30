@@ -25,6 +25,7 @@ pub mod property_filter;
 pub mod property_reviews;
 pub mod property_search;
 pub mod recent_chats;
+pub mod referrals;
 pub mod saved_properties;
 pub mod service_listing;
 pub mod share;

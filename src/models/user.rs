@@ -81,4 +81,6 @@ pub struct User {
     pub associate_type: Option<String>,
     #[serde(default)]
     pub is_phone_verified: bool,
+    pub referral_code: String,
+    pub referred_by_code: Option<String>,
 }

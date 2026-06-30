@@ -35,6 +35,7 @@ pub async fn get_rent_trend_data(
         FROM properties
         WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
+          AND listing_type = 'Rent'
           AND price IS NOT NULL
           AND price > 0
           AND created_at >= NOW() - make_interval(days => $2::INT)
@@ -96,6 +97,7 @@ pub async fn get_overall_average_rent(
         FROM properties
         WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
+          AND listing_type = 'Rent'
           AND price IS NOT NULL
           AND price > 0
         "#,
@@ -157,6 +159,7 @@ pub async fn get_rent_heatmap_data(
         FROM properties
         WHERE city ILIKE '%' || $1 || '%'
           AND status = 'active'
+          AND listing_type = 'Rent'
           AND price IS NOT NULL
           AND price > 0
           AND created_at >= NOW() - make_interval(days => $2::INT)
@@ -228,6 +231,7 @@ pub async fn get_city_rent_summary(
         FROM properties
         WHERE LOWER(city) IN ({})
           AND status = 'active'
+          AND listing_type = 'Rent'
           AND price IS NOT NULL
           AND price > 0
           AND created_at >= NOW() - make_interval(days => $1::INT)

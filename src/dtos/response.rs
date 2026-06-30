@@ -172,3 +172,32 @@ pub struct ListingsResponse {
     pub listings: Vec<ListingResponse>,
     pub pagination: PaginationInfo,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReferralInfoData {
+    pub referral_code: String,
+    pub referral_link: String,
+    pub total_referrals: i64,
+    pub total_rewards_earned: i64,
+    pub pending_referrals: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct RewardItemData {
+    pub id: uuid::Uuid,
+    pub coupon_code: String,
+    pub amount: i32,
+    pub status: String,
+    pub referred_user_name: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReferralRewardsResponseData {
+    pub total_earned: i32,
+    pub rewards: Vec<RewardItemData>,
+}

@@ -37,8 +37,10 @@ impl UserRepository {
             password,
             phone_no,
             user_role,
-            associate_type
-        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)",
+            associate_type,
+            referral_code,
+            referred_by_code
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         );
         let result = query
             .bind(&user.id)
@@ -49,6 +51,8 @@ impl UserRepository {
             .bind(&user.phone_no)
             .bind(&user.user_role)
             .bind(None::<String>)
+            .bind(&user.referral_code)
+            .bind(&user.referred_by_code)
             .execute(&self.pool)
             .await;
 
@@ -525,5 +529,211 @@ impl UserRepository {
             Ok(_) => Ok(()),
             Err(e) => Err(e.to_string()),
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Referral methods
+    // -------------------------------------------------------------------------
+
+    /// Check if a referral code exists and belongs to a user
+    pub async fn check_referral_code_exists(&self, code: &str) -> Result<bool, String> {
+        let result = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE referral_code = $1")
+            .bind(code)
+            .fetch_one(&self.pool)
+            .await;
+
+        match result {
+            Ok(count) => Ok(count > 0),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Insert a new referral record
+    pub async fn insert_referral(&self, referrer_code: &str, referred_user_id: &str) -> Result<(), String> {
+        // 1. Get the referrer's user ID
+        let referrer = sqlx::query_as::<_, User>("SELECT * FROM users WHERE referral_code = $1")
+            .bind(referrer_code)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        let referrer_user = match referrer {
+            Some(u) => u,
+            None => return Ok(()), // Should not happen if validated, but safe fallback
+        };
+
+        let referred_uuid = uuid::Uuid::parse_str(referred_user_id).map_err(|e| e.to_string())?;
+
+        // Block self referral just in case
+        if referrer_user.id == referred_uuid {
+            return Ok(());
+        }
+
+        let referral_id = uuid::Uuid::new_v4();
+        let reward_amount = 1000; // As per requirements
+
+        let result = sqlx::query(
+            "INSERT INTO referrals (id, referrer_user_id, referred_user_id, status, reward_amount) 
+             VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(referral_id)
+        .bind(referrer_user.id)
+        .bind(referred_uuid)
+        .bind("pending")
+        .bind(reward_amount)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Get referral statistics for a user
+    pub async fn get_referral_stats(&self, user_id: &str) -> Result<(i64, i64, i64), String> {
+        let uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+        
+        #[derive(sqlx::FromRow)]
+        struct StatsRow {
+            total_referrals: Option<i64>,
+            total_rewards_earned: Option<i64>,
+            pending_referrals: Option<i64>,
+        }
+
+        let result = sqlx::query_as::<_, StatsRow>(
+            r#"SELECT 
+                 COUNT(CASE WHEN status IN ('completed', 'rewarded') THEN 1 END) as total_referrals,
+                 SUM(CASE WHEN status IN ('completed', 'rewarded') THEN reward_amount ELSE 0 END) as total_rewards_earned,
+                 COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_referrals
+               FROM referrals 
+               WHERE referrer_user_id = $1"#,
+        )
+        .bind(uuid)
+        .fetch_one(&self.pool)
+        .await;
+
+        match result {
+            Ok(row) => Ok((
+                row.total_referrals.unwrap_or(0),
+                row.total_rewards_earned.unwrap_or(0),
+                row.pending_referrals.unwrap_or(0)
+            )),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub async fn process_referral_reward(
+        &self,
+        referred_user_id: &str,
+        coupon_code: &str,
+        amount: i32,
+        expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<bool, String> {
+        let referred_uuid = match uuid::Uuid::parse_str(referred_user_id) {
+            Ok(id) => id,
+            Err(e) => return Err(e.to_string()),
+        };
+
+        // 1. Find pending referral
+        #[derive(sqlx::FromRow)]
+        struct PendingReferral {
+            id: uuid::Uuid,
+            referrer_user_id: uuid::Uuid,
+        }
+
+        let referral = sqlx::query_as::<_, PendingReferral>(
+            "SELECT id, referrer_user_id FROM referrals WHERE referred_user_id = $1 AND status = 'pending'"
+        )
+        .bind(referred_uuid)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let referral = match referral {
+            Some(r) => r,
+            None => return Ok(false), // No pending referral found, idempotent success
+        };
+
+        // 2. Update to completed
+        sqlx::query("UPDATE referrals SET status = 'completed', completed_at = NOW() WHERE id = $1")
+            .bind(referral.id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // 3. Insert into referral_rewards
+        let reward_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO referral_rewards (id, user_id, referral_id, coupon_code, amount, status, expires_at) 
+             VALUES ($1, $2, $3, $4, $5, 'active', $6)"
+        )
+        .bind(reward_id)
+        .bind(referral.referrer_user_id)
+        .bind(referral.id)
+        .bind(coupon_code)
+        .bind(amount)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // 4. Update to rewarded
+        sqlx::query("UPDATE referrals SET status = 'rewarded', rewarded_at = NOW() WHERE id = $1")
+            .bind(referral.id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(true)
+    }
+
+    pub async fn get_referral_rewards(&self, user_id: &str) -> Result<Vec<crate::dtos::response::RewardItemData>, String> {
+        let user_uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+
+        #[derive(sqlx::FromRow)]
+        struct RewardItemRow {
+            id: uuid::Uuid,
+            coupon_code: String,
+            amount: i32,
+            status: String,
+            referred_user_name: String,
+            created_at: chrono::DateTime<chrono::Utc>,
+            expires_at: Option<chrono::DateTime<chrono::Utc>>,
+        }
+        
+        let rows = sqlx::query_as::<_, RewardItemRow>(
+            r#"
+            SELECT 
+                rw.id, 
+                rw.coupon_code, 
+                rw.amount, 
+                rw.status, 
+                u.first_name || ' ' || SUBSTRING(u.last_name FROM 1 FOR 1) || '.' as referred_user_name,
+                rw.created_at, 
+                rw.expires_at
+            FROM referral_rewards rw
+            JOIN referrals r ON rw.referral_id = r.id
+            JOIN users u ON r.referred_user_id = u.id
+            WHERE rw.user_id = $1
+            ORDER BY rw.created_at DESC
+            "#
+        )
+        .bind(user_uuid)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let rewards = rows.into_iter().map(|row| crate::dtos::response::RewardItemData {
+            id: row.id,
+            coupon_code: row.coupon_code,
+            amount: row.amount,
+            status: row.status,
+            referred_user_name: row.referred_user_name,
+            created_at: row.created_at,
+            expires_at: row.expires_at,
+        }).collect();
+
+        Ok(rewards)
     }
 }

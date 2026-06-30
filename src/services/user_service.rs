@@ -6,6 +6,8 @@ use chrono::Utc;
 
 use uuid::Uuid;
 
+use rand::Rng;
+
 #[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub struct UserService {
@@ -27,9 +29,29 @@ impl UserService {
         password: &str,
         _gender: &str,
         user_role: &str,
+        ref_code: Option<String>,
     ) -> Result<User, String> {
+        // Validate referred_by_code
+        let mut final_referred_by_code = None;
+        if let Some(code) = ref_code {
+            if self.user_repository.check_referral_code_exists(&code).await.unwrap_or(false) {
+                final_referred_by_code = Some(code);
+            }
+        }
+
+        let user_id = Uuid::new_v4();
+
+        // Generate referral code (First 4 chars of UUID + 4 random digits)
+        let uuid_str = user_id.to_string();
+        let uuid_prefix = &uuid_str[..4].to_uppercase();
+        let random_digits: String = (0..4).map(|_| {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..10).to_string()
+        }).collect();
+        let generated_referral_code = format!("{}{}", uuid_prefix, random_digits);
+
         let user = User {
-            id: Uuid::new_v4(),
+            id: user_id,
             first_name: first_name.to_string(),
             phone_no: phone_no.to_string(),
             last_name: last_name.to_string(),
@@ -46,10 +68,18 @@ impl UserService {
             profile_picture: None,
             associate_type: None,
             is_phone_verified: false,
+            referral_code: generated_referral_code,
+            referred_by_code: final_referred_by_code.clone(),
         };
 
         match self.user_repository.create(user.clone()).await {
-            Ok(_) => Ok(user),
+            Ok(_) => {
+                // Insert into referrals table if there's a valid referred_by_code
+                if let Some(referrer_code) = final_referred_by_code {
+                    let _ = self.user_repository.insert_referral(&referrer_code, &user.id.to_string()).await;
+                }
+                Ok(user)
+            },
             Err(e) => Err(e),
         }
     }
@@ -231,5 +261,53 @@ impl UserService {
         self.user_repository
             .invalidate_email_otps(email, purpose)
             .await
+    }
+
+    pub async fn process_referral_reward(&self, referred_user_id: &str) -> Result<(), String> {
+        // Maximum 5 retries for coupon collision
+        for _ in 0..5 {
+            let coupon_code = {
+                let mut rng = rand::thread_rng();
+                let chars: String = (0..6)
+                    .map(|_| {
+                        let c = rng.gen_range(0..36);
+                        if c < 10 {
+                            (b'0' + c as u8) as char
+                        } else {
+                            (b'A' + (c - 10) as u8) as char
+                        }
+                    })
+                    .collect();
+                format!("EARN-{}", chars)
+            };
+
+            let amount = 1000;
+            // E.g., expire in 6 months
+            let expires_at = chrono::Utc::now().checked_add_signed(chrono::Duration::days(180));
+
+            let result = self.user_repository.process_referral_reward(
+                referred_user_id,
+                &coupon_code,
+                amount,
+                expires_at
+            ).await;
+
+            match result {
+                Ok(processed) => {
+                    if processed {
+                        log::info!("Successfully processed referral reward for user {}", referred_user_id);
+                    }
+                    return Ok(()); // Handled idempotently
+                }
+                Err(e) => {
+                    // Check if it's a unique constraint violation for coupon_code
+                    if e.contains("duplicate key value violates unique constraint") || e.contains("UNIQUE constraint failed") {
+                        continue; // Retry
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Err("Failed to generate unique coupon code after 5 retries".to_string())
     }
 }
