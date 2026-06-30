@@ -78,3 +78,49 @@ pub async fn get_referrals_me(
 
     (StatusCode::OK, Json(json!(response)))
 }
+
+/// Get referral rewards for the logged-in user
+#[utoipa::path(
+    get,
+    path = "/api/v1/referrals/rewards",
+    responses(
+        (status = 200, description = "Referral rewards fetched", body = ApiResponse<crate::dtos::response::ReferralRewardsResponseData>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Referrals",
+    security(("bearer_auth" = []))
+)]
+pub async fn get_referrals_rewards(
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
+) -> impl IntoResponse {
+    let user_id = auth_user.user_id;
+
+    let rewards = match app_state.user_service.user_repository.get_referral_rewards(&user_id).await {
+        Ok(rewards) => rewards,
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Error fetching rewards: {}", e),
+                "data": null
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        }
+    };
+
+    let total_earned: i32 = rewards.iter().map(|r| r.amount).sum();
+
+    let data = crate::dtos::response::ReferralRewardsResponseData {
+        total_earned,
+        rewards,
+    };
+
+    let response = ApiResponse {
+        success: true,
+        message: "Referral rewards fetched".to_string(),
+        data,
+    };
+
+    (StatusCode::OK, Json(json!(response)))
+}

@@ -262,4 +262,52 @@ impl UserService {
             .invalidate_email_otps(email, purpose)
             .await
     }
+
+    pub async fn process_referral_reward(&self, referred_user_id: &str) -> Result<(), String> {
+        // Maximum 5 retries for coupon collision
+        for _ in 0..5 {
+            let coupon_code = {
+                let mut rng = rand::thread_rng();
+                let chars: String = (0..6)
+                    .map(|_| {
+                        let c = rng.gen_range(0..36);
+                        if c < 10 {
+                            (b'0' + c as u8) as char
+                        } else {
+                            (b'A' + (c - 10) as u8) as char
+                        }
+                    })
+                    .collect();
+                format!("EARN-{}", chars)
+            };
+
+            let amount = 1000;
+            // E.g., expire in 6 months
+            let expires_at = chrono::Utc::now().checked_add_signed(chrono::Duration::days(180));
+
+            let result = self.user_repository.process_referral_reward(
+                referred_user_id,
+                &coupon_code,
+                amount,
+                expires_at
+            ).await;
+
+            match result {
+                Ok(processed) => {
+                    if processed {
+                        log::info!("Successfully processed referral reward for user {}", referred_user_id);
+                    }
+                    return Ok(()); // Handled idempotently
+                }
+                Err(e) => {
+                    // Check if it's a unique constraint violation for coupon_code
+                    if e.contains("duplicate key value violates unique constraint") || e.contains("UNIQUE constraint failed") {
+                        continue; // Retry
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Err("Failed to generate unique coupon code after 5 retries".to_string())
+    }
 }
