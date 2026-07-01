@@ -72,9 +72,9 @@ pub async fn get_dashboard_overview(
     
     let user_uuid = Uuid::parse_str(&auth_user.user_id).unwrap_or_default();
 
-    // 1. total_projects (count of distinct project_names for this builder)
+    // 1. total_projects
     let total_projects: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT project_name) FROM properties WHERE user_id = $1"
+        "SELECT COUNT(*) FROM builder_projects WHERE user_id = $1"
     )
     .bind(user_uuid)
     .fetch_one(&state.db)
@@ -90,11 +90,47 @@ pub async fn get_dashboard_overview(
     .await
     .unwrap_or(0);
 
-    // 3. total_visits
+    // 3. total_units
+    let total_units: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(total_units), 0) FROM builder_projects WHERE user_id = $1"
+    )
+    .bind(user_uuid)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+
+    // 4. units_sold
+    let units_sold: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM properties WHERE project_id IN (SELECT id FROM builder_projects WHERE user_id = $1)"
+    )
+    .bind(user_uuid)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+
+    // 5. total_visits
     let total_visits: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM site_visits sv
-         JOIN properties p ON sv.property_id = p.id
-         WHERE p.user_id = $1"
+         WHERE sv.property_id IN (SELECT id FROM properties WHERE user_id = $1)
+            OR sv.project_id IN (SELECT id FROM builder_projects WHERE user_id = $1)"
+    )
+    .bind(user_uuid)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+
+    // 6. total_leads
+    let total_leads: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM project_leads WHERE project_id IN (SELECT id FROM builder_projects WHERE user_id = $1)"
+    )
+    .bind(user_uuid)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+
+    // 7. total_views
+    let total_views: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(views_count), 0) FROM builder_projects WHERE user_id = $1"
     )
     .bind(user_uuid)
     .fetch_one(&state.db)
@@ -114,11 +150,11 @@ pub async fn get_dashboard_overview(
     let overview = DashboardOverview {
         total_projects,
         active_properties,
-        total_units: 0, // Mocked pending infrastructure
-        units_sold: 0,  // Mocked pending infrastructure
+        total_units,
+        units_sold,
         total_visits,
-        total_leads: 0, // Mocked pending infrastructure
-        total_views: 0, // Mocked pending infrastructure
+        total_leads,
+        total_views,
         profile_completion_pct: 100, // Profile functionality is out of scope for Module 7 Analytics
         kyc_status,
     };
@@ -168,12 +204,13 @@ pub async fn get_visits_trend(
             TO_CHAR(sv.created_at, 'YYYY-MM-DD') as date,
             COUNT(*) as visits
         FROM site_visits sv
-        JOIN properties p ON sv.property_id = p.id
-        WHERE p.user_id = $1
+        LEFT JOIN properties p ON sv.property_id = p.id
+        LEFT JOIN builder_projects bp ON sv.project_id = bp.id
+        WHERE (p.user_id = $1 OR bp.user_id = $1)
     ");
 
     if let Some(_proj) = &params.project_id {
-        query_str.push_str(" AND p.project_name = $2");
+        query_str.push_str(" AND (sv.project_id = $2 OR p.project_id = $2)");
     }
 
     query_str.push_str(" GROUP BY TO_CHAR(sv.created_at, 'YYYY-MM-DD') ORDER BY date ASC");
@@ -181,7 +218,12 @@ pub async fn get_visits_trend(
     let mut query = sqlx::query(&query_str).bind(user_uuid);
     
     if let Some(proj) = &params.project_id {
-        query = query.bind(proj);
+        if let Ok(proj_uuid) = Uuid::parse_str(proj) {
+            query = query.bind(proj_uuid);
+        } else {
+            // Invalid UUID passed, bind a dummy one
+            query = query.bind(Uuid::nil());
+        }
     }
 
     let mut results = Vec::new();
@@ -231,27 +273,29 @@ pub async fn get_project_performance(
 
     let query = "
         SELECT 
-            COALESCE(p.project_name, 'Unknown') as project_name,
-            COUNT(sv.id) as visits
-        FROM properties p
-        LEFT JOIN site_visits sv ON p.id = sv.property_id
-        WHERE p.user_id = $1
-        GROUP BY COALESCE(p.project_name, 'Unknown')
+            bp.id as project_id,
+            bp.project_name,
+            COALESCE(bp.views_count, 0) as views,
+            COALESCE(bp.total_units, 0) as units_total,
+            (SELECT COUNT(*) FROM properties p WHERE p.project_id = bp.id) as units_sold,
+            (SELECT COUNT(*) FROM site_visits sv WHERE sv.project_id = bp.id) as visits,
+            (SELECT COUNT(*) FROM project_leads pl WHERE pl.project_id = bp.id) as leads
+        FROM builder_projects bp
+        WHERE bp.user_id = $1
     ";
 
     let mut results = Vec::new();
     if let Ok(rows) = sqlx::query(query).bind(user_uuid).fetch_all(&state.db).await {
         for row in rows {
-            let project_name: String = row.get("project_name");
-            let visits: i64 = row.get("visits");
+            let project_id_uuid: Uuid = row.get("project_id");
             results.push(ProjectPerformanceItem {
-                project_id: project_name.clone(),
-                project_name,
-                views: 0, // Mocked
-                visits,
-                leads: 0, // Mocked
-                units_sold: 0, // Mocked
-                units_total: 0, // Mocked
+                project_id: project_id_uuid.to_string(),
+                project_name: row.get("project_name"),
+                views: row.get::<i64, _>("views"),
+                visits: row.get::<i64, _>("visits"),
+                leads: row.get::<i64, _>("leads"),
+                units_sold: row.get::<i64, _>("units_sold"),
+                units_total: row.get::<i32, _>("units_total") as i64,
             });
         }
     }
