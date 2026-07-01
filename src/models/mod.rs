@@ -9,3 +9,4 @@ pub mod user;
 pub mod visit;
 pub mod news;
 pub mod builder;
+pub mod project;

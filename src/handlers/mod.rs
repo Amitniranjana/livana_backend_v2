@@ -41,3 +41,5 @@ pub mod admin_users;
 pub mod admin_properties;
 pub mod builder_analytics;
 pub mod builder;
+pub mod project;
+pub mod builder_visits;

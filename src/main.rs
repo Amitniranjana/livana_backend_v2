@@ -181,6 +181,8 @@ async fn main() {
         .merge(listing_routes())
         .merge(broker_routes())
         .merge(crate::routes::builder_routes())
+        .merge(crate::routes::builder_projects_routes())
+        .merge(crate::routes::builder_visits_routes())
         .merge(crate::routes::chat_routes())
         .merge(crate::routes::kyc_routes())
         .merge(crate::routes::chat::api_chats_routes())

@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct BookVisitRequest {
-    pub property_id: Uuid,
+    pub property_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub provider_id: Uuid,
     pub scheduled_date_time: DateTime<Utc>,
     pub contact_number: String,
@@ -21,10 +22,11 @@ pub struct UpdateVisitStatusRequest {
 
 // ─── Database Row Structs ─────────────────────────────────
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Serialize)]
 pub struct SiteVisitRow {
     pub visit_id: Uuid,
-    pub property_id: Uuid,
+    pub property_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub property_title: Option<String>,
     pub property_location: Option<String>,
     #[allow(dead_code)]
@@ -44,7 +46,8 @@ pub struct SiteVisitRow {
 
 #[derive(Debug, Serialize)]
 pub struct PropertyInfo {
-    pub id: Uuid,
+    pub id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub title: Option<String>,
     pub location: Option<String>,
 }
