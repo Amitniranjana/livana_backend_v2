@@ -2,18 +2,45 @@
 
 ## Overview
 
-This documentation details the `GET /api/v1/referrals/history` endpoint, used to fetch the history of users who have signed up using the logged-in user's referral code. 
+This documentation outlines the endpoints for the Invite & Earn referral system.
 
-## 1. Get Referral History
+All endpoints require a valid JWT Bearer Token (`Authorization: Bearer <token>`).
 
-Retrieves a list of all referrals made by the currently authenticated user. Results are sorted from newest to oldest.
+---
+
+## 1. Get My Referral Info
+
+Retrieves the authenticated user's unique referral code, generated link, and high-level counters to display on the Referral Screen.
+
+- **Endpoint**: `GET /api/v1/referrals/me`
+- **Security**: Requires JWT
+
+### Success Response (200 OK)
+
+```json
+{
+  "success": true,
+  "message": "Referral info fetched",
+  "data": {
+    "referral_code": "4F921034",
+    "referral_link": "livana://referral?code=4F921034",
+    "total_referrals": 12,
+    "total_rewards_earned": 500,
+    "pending_referrals": 2
+  }
+}
+```
+
+---
+
+## 2. Get Referral History
+
+Retrieves a paginated list of all users referred by the currently authenticated user. Results are sorted from newest to oldest.
 
 - **Endpoint**: `GET /api/v1/referrals/history`
-- **Security**: Requires JWT Bearer Token (`Authentication: Bearer <token>`)
+- **Security**: Requires JWT
 
-### Responses
-
-#### 200 OK
+### Success Response (200 OK)
 
 Returns a list of referral records. The `referred_user_name` is automatically masked to protect user privacy (First Name + Last Initial).
 
@@ -39,28 +66,48 @@ Returns a list of referral records. The `referred_user_name` is automatically ma
   }
 }
 ```
-
 *Note: If no referrals exist, it will successfully return an empty `referrals` array `[]`.*
 
-#### 401 Unauthorized
+---
 
-Returned when the request is missing a valid JWT token.
+## 3. Get Referral Rewards
+
+Retrieves a list of all coupon codes earned by the user through successful referrals.
+
+- **Endpoint**: `GET /api/v1/referrals/rewards`
+- **Security**: Requires JWT
+
+### Success Response (200 OK)
 
 ```json
 {
-  "success": false,
-  "message": "Unauthorized",
-  "data": null
+  "success": true,
+  "message": "Referral rewards fetched",
+  "data": {
+    "total_earned": 500,
+    "rewards": [
+      {
+        "id": "871239b2-3c82-4113-90d5-7140f80bca12",
+        "coupon_code": "LIV-REF-89X2PL",
+        "amount": 500,
+        "status": "active",
+        "referred_user_name": "Arjun K.",
+        "created_at": "2026-06-10T08:00:00Z",
+        "expires_at": "2026-12-10T08:00:00Z"
+      }
+    ]
+  }
 }
 ```
 
 ---
 
-## Edge Cases Handled
+## Edge Cases & Validation Rules
 
-The backend inherently handles the following conditions related to referrals which your frontend workflow can rely on:
-- **Invalid Referral Code on Signup**: The code is silently ignored and sign-up proceeds normally.
-- **Self Referral**: The backend blocks users attempting to refer themselves during sign-up; the user sign-up succeeds but the referral is ignored.
-- **Duplicate Referral**: The backend uses database-level constraints to prevent duplicate referrals for the same user.
-- **OTP Not Verified**: Referrals created but unverified simply sit in a `"pending"` state until verification happens, never producing an unearned reward.
-- **Deleted Referrer**: If a referrer deletes their account before a reward is given, the platform handles it gracefully by continuing signup without producing a reward.
+The backend natively handles the following conditions related to referrals which your frontend workflow can rely on:
+- **Invalid Referral Code at Signup**: The code is silently ignored and sign-up proceeds normally. No errors are returned.
+- **Self Referral**: The backend rejects attempts to use one's own code silently; the user sign-up succeeds but the referral row is not created.
+- **Duplicate Referral**: The backend uses database-level unique constraints (`referred_user_id`) to prevent duplicate referrals for the same user.
+- **Referred User Never Verifies OTP**: Referrals created but unverified remain in a `"pending"` status. They never produce a reward. Referrers will see them in history as pending.
+- **Referrer Account Deleted**: If a referrer deletes their account, the referral row remains but no reward is issued, as the system handles it with a soft-delete mechanism on the users table.
+- **Coupon Code Collision**: If a generated coupon code happens to collide with an existing one, the backend will retry generation up to 5 times before falling back and logging an error.
