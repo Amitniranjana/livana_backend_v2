@@ -387,3 +387,15 @@ pub use admin_users::admin_users_routes;
 
 pub mod admin_properties;
 pub use admin_properties::admin_properties_routes;
+
+pub fn builder_analytics_routes() -> Router<AppState> {
+    use crate::handlers::builder_analytics::{
+        get_dashboard_overview, get_visits_trend, get_project_performance, get_top_properties
+    };
+    use axum::routing::get;
+    Router::new()
+        .route("/api/builder/dashboard/overview", get(get_dashboard_overview))
+        .route("/api/builder/dashboard/visits-trend", get(get_visits_trend))
+        .route("/api/builder/dashboard/project-performance", get(get_project_performance))
+        .route("/api/builder/dashboard/top-properties", get(get_top_properties))
+}
