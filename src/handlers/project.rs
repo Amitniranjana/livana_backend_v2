@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::models::project::{
-    BuilderProject, CreateProjectLeadRequest, CreateProjectRequest, UpdateProjectRequest,
+    BuilderProject, BuilderProjectWithStats, CreateProjectLeadRequest, CreateProjectRequest,
+    ProjectBuilderInfo, ProjectDetailResponse, ProjectReviewSummary, UpdateProjectRequest,
 };
 use crate::utils::auth_extractor::AuthenticationUser;
 
@@ -143,17 +144,34 @@ pub async fn get_builder_projects(
     let limit = params.limit.unwrap_or(20).min(100);
     let offset = params.offset.unwrap_or(0);
 
-    let mut query = "SELECT * FROM builder_projects WHERE user_id = $1".to_string();
+    let mut query = r#"
+        SELECT
+            bp.*,
+            (SELECT COUNT(*) FROM properties WHERE project_id = bp.id) AS units_sold,
+            (SELECT COUNT(*) FROM site_visits WHERE project_id = bp.id) AS visits_count,
+            (SELECT COUNT(*) FROM project_leads WHERE project_id = bp.id) AS leads_count
+        FROM builder_projects bp
+        WHERE bp.user_id = $1
+    "#.to_string();
     
     if let Some(ref s) = params.status {
         if s != "all" {
-            query.push_str(&format!(" AND status = '{}'", s));
+            query.push_str(&format!(" AND bp.status = '{}'", s));
         }
     }
     
-    query.push_str(" ORDER BY created_at DESC LIMIT $2 OFFSET $3");
+    query.push_str(" ORDER BY bp.created_at DESC LIMIT $2 OFFSET $3");
 
-    let projects = sqlx::query_as::<_, BuilderProject>(&query)
+    #[derive(sqlx::FromRow)]
+    struct RowWithStats {
+        #[sqlx(flatten)]
+        project: BuilderProject,
+        units_sold: Option<i64>,
+        visits_count: Option<i64>,
+        leads_count: Option<i64>,
+    }
+
+    let projects = sqlx::query_as::<_, RowWithStats>(&query)
         .bind(user_id)
         .bind(limit)
         .bind(offset)
@@ -168,12 +186,19 @@ pub async fn get_builder_projects(
                 .await
                 .unwrap_or(0);
                 
+            let stats_projs: Vec<BuilderProjectWithStats> = projs.into_iter().map(|p| BuilderProjectWithStats {
+                project: p.project,
+                units_sold: p.units_sold.unwrap_or(0),
+                visits_count: p.visits_count.unwrap_or(0),
+                leads_count: p.leads_count.unwrap_or(0),
+            }).collect();
+                
             (
                 StatusCode::OK,
                 Json(json!({
                     "success": true,
                     "data": {
-                        "projects": projs,
+                        "projects": stats_projs,
                         "pagination": { "total": total, "limit": limit, "offset": offset }
                     }
                 })),
@@ -206,11 +231,64 @@ pub async fn get_project_by_id(
                 .execute(&app_state.db)
                 .await;
                 
+            // Fetch Builder Info
+            #[derive(sqlx::FromRow)]
+            struct BInfo {
+                id: Uuid,
+                name: Option<String>,
+                logo: Option<String>,
+                is_verified: Option<bool>,
+            }
+            let b_info = sqlx::query_as::<_, BInfo>(
+                "SELECT u.id, (u.first_name || ' ' || u.last_name) AS name, bp.logo_url AS logo, bp.is_verified
+                 FROM users u
+                 LEFT JOIN builder_profiles bp ON u.id = bp.user_id
+                 WHERE u.id = $1"
+            ).bind(p.user_id).fetch_optional(&app_state.db).await.unwrap_or(None);
+            
+            let builder_info = if let Some(info) = b_info {
+                ProjectBuilderInfo {
+                    id: info.id,
+                    name: info.name.unwrap_or_else(|| "Unknown Builder".to_string()),
+                    logo: info.logo,
+                    is_verified: info.is_verified.unwrap_or(false),
+                }
+            } else {
+                ProjectBuilderInfo {
+                    id: p.user_id,
+                    name: "Unknown Builder".to_string(),
+                    logo: None,
+                    is_verified: false,
+                }
+            };
+            
+            // Fetch review summary
+            let review_summary: (Option<f64>, Option<i64>) = sqlx::query_as(
+                "SELECT AVG(rating), COUNT(*) FROM property_reviews WHERE project_id = $1"
+            ).bind(id).fetch_one(&app_state.db).await.unwrap_or((None, None));
+            
+            let review_summary = ProjectReviewSummary {
+                average_rating: review_summary.0.unwrap_or(0.0),
+                total_reviews: review_summary.1.unwrap_or(0),
+            };
+            
+            // Fetch related units (properties)
+            let units = sqlx::query_scalar::<_, serde_json::Value>(
+                "SELECT row_to_json(p) FROM properties p WHERE project_id = $1"
+            ).bind(id).fetch_all(&app_state.db).await.unwrap_or(vec![]);
+            
+            let response = ProjectDetailResponse {
+                project: p,
+                builder_info,
+                review_summary,
+                related_units: units,
+            };
+
             (
                 StatusCode::OK,
                 Json(json!({
                     "success": true,
-                    "data": p
+                    "data": response
                 }))
             ).into_response()
         },

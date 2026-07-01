@@ -98,14 +98,14 @@ pub async fn create_review(
     sqlx::query(
         r#"
         INSERT INTO property_reviews
-            (id, visit_id, property_id, reviewer_id, rating, comment,
-             location_rating, cleanliness_rating, value_rating, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-        "#,
+        (id, visit_id, property_id, project_id, reviewer_id, rating, comment, location_rating, cleanliness_rating, value_rating, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        "#
     )
     .bind(review_id)
     .bind(body.visit_id)
     .bind(body.property_id)
+    .bind(body.project_id)
     .bind(reviewer_id)
     .bind(body.rating)
     .bind(&body.comment)
@@ -113,25 +113,29 @@ pub async fn create_review(
     .bind(body.cleanliness_rating)
     .bind(body.value_rating)
     .bind(now)
+    .bind(now)
     .execute(&app_state.db)
     .await
-    .map_err(|e| ApiError::InternalServerError(format!("Failed to create review: {}", e)))?;
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    let response_data = CreatePropertyReviewData {
+        review_id,
+        visit_id: body.visit_id,
+        property_id: body.property_id,
+        project_id: body.project_id,
+        reviewer_id,
+        rating: body.rating,
+        comment: body.comment,
+        location_rating: body.location_rating,
+        cleanliness_rating: body.cleanliness_rating,
+        value_rating: body.value_rating,
+        created_at: now,
+    };
 
     let response = ApiResponse {
         success: true,
         message: "Review submitted successfully".to_string(),
-        data: CreatePropertyReviewData {
-            review_id,
-            visit_id: body.visit_id,
-            property_id: body.property_id,
-            reviewer_id,
-            rating: body.rating,
-            comment: body.comment,
-            location_rating: body.location_rating,
-            cleanliness_rating: body.cleanliness_rating,
-            value_rating: body.value_rating,
-            created_at: now,
-        },
+        data: response_data,
     };
 
     Ok((StatusCode::CREATED, Json(response)))

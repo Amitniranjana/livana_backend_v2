@@ -417,12 +417,17 @@ pub use admin_properties::admin_properties_routes;
 
 pub fn builder_analytics_routes() -> Router<AppState> {
     use crate::handlers::builder_analytics::{
-        get_dashboard_overview, get_visits_trend, get_project_performance, get_top_properties
+        get_dashboard_overview, get_visits_trend, get_project_performance, get_top_properties,
+        get_leads_trend, get_views_trend, get_leads, update_lead_status
     };
-    use axum::routing::get;
+    use axum::routing::{get, patch};
     Router::new()
         .route("/api/builder/dashboard/overview", get(get_dashboard_overview))
         .route("/api/builder/dashboard/visits-trend", get(get_visits_trend))
+        .route("/api/builder/dashboard/leads-trend", get(get_leads_trend))
+        .route("/api/builder/dashboard/views-trend", get(get_views_trend))
         .route("/api/builder/dashboard/project-performance", get(get_project_performance))
         .route("/api/builder/dashboard/top-properties", get(get_top_properties))
+        .route("/api/builder/dashboard/leads", get(get_leads))
+        .route("/api/builder/dashboard/leads/:id/status", patch(update_lead_status))
 }
