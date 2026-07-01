@@ -213,6 +213,14 @@ pub async fn get_visits_trend(
         query_str.push_str(" AND (sv.project_id = $2 OR p.project_id = $2)");
     }
 
+    let interval = match params.range.as_deref() {
+        Some("7d") => "7 days",
+        Some("30d") => "30 days",
+        Some("12m") => "12 months",
+        _ => "30 days",
+    };
+    query_str.push_str(&format!(" AND sv.created_at >= NOW() - INTERVAL '{}'", interval));
+    
     query_str.push_str(" GROUP BY TO_CHAR(sv.created_at, 'YYYY-MM-DD') ORDER BY date ASC");
 
     let mut query = sqlx::query(&query_str).bind(user_uuid);
@@ -363,4 +371,317 @@ pub async fn get_top_properties(
             data: results,
         })),
     ).into_response()
+}
+
+// -----------------------------------------------------------------------------
+// API 7.3: Leads Trend
+// -----------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct LeadTrendItem {
+    pub date: String,
+    pub leads: i64,
+}
+
+pub async fn get_leads_trend(
+    State(state): State<AppState>,
+    Query(params): Query<TrendQuery>,
+    auth_user: AuthenticationUser,
+) -> impl IntoResponse {
+    if let Err(err) = verify_builder_role(&state, &auth_user.user_id).await {
+        return err.into_response();
+    }
+    
+    let user_uuid = Uuid::parse_str(&auth_user.user_id).unwrap_or_default();
+    
+    let mut query_str = String::from("
+        SELECT 
+            TO_CHAR(pl.created_at, 'YYYY-MM-DD') as date,
+            COUNT(*) as leads
+        FROM project_leads pl
+        JOIN builder_projects bp ON pl.project_id = bp.id
+        WHERE bp.user_id = $1
+    ");
+
+    if let Some(_proj) = &params.project_id {
+        query_str.push_str(" AND pl.project_id = $2");
+    }
+
+    let interval = match params.range.as_deref() {
+        Some("7d") => "7 days",
+        Some("30d") => "30 days",
+        Some("12m") => "12 months",
+        _ => "30 days",
+    };
+    query_str.push_str(&format!(" AND pl.created_at >= NOW() - INTERVAL '{}'", interval));
+
+    query_str.push_str(" GROUP BY TO_CHAR(pl.created_at, 'YYYY-MM-DD') ORDER BY date ASC");
+
+    let mut query = sqlx::query(&query_str).bind(user_uuid);
+    
+    if let Some(proj) = &params.project_id {
+        if let Ok(proj_uuid) = Uuid::parse_str(proj) {
+            query = query.bind(proj_uuid);
+        } else {
+            query = query.bind(Uuid::nil());
+        }
+    }
+
+    let mut results = Vec::new();
+    if let Ok(rows) = query.fetch_all(&state.db).await {
+        for row in rows {
+            results.push(LeadTrendItem {
+                date: row.get("date"),
+                leads: row.get("leads"),
+            });
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!(ApiResponse {
+            success: true,
+            message: "Leads trend fetched".to_string(),
+            data: results,
+        })),
+    ).into_response()
+}
+
+// -----------------------------------------------------------------------------
+// API 7.4: Views Trend (Synthetic Data as per Plan)
+// -----------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct ViewTrendItem {
+    pub date: String,
+    pub views: i64,
+}
+
+pub async fn get_views_trend(
+    State(state): State<AppState>,
+    Query(params): Query<TrendQuery>,
+    auth_user: AuthenticationUser,
+) -> impl IntoResponse {
+    if let Err(err) = verify_builder_role(&state, &auth_user.user_id).await {
+        return err.into_response();
+    }
+    
+    let user_uuid = Uuid::parse_str(&auth_user.user_id).unwrap_or_default();
+    
+    // Get aggregate views
+    let mut query_str = String::from("
+        SELECT COALESCE(SUM(bp.views_count), 0)
+        FROM builder_projects bp
+        WHERE bp.user_id = $1
+    ");
+
+    if let Some(_proj) = &params.project_id {
+        query_str.push_str(" AND bp.id = $2");
+    }
+
+    let mut query = sqlx::query_scalar(&query_str).bind(user_uuid);
+    if let Some(proj) = &params.project_id {
+        if let Ok(proj_uuid) = Uuid::parse_str(proj) {
+            query = query.bind(proj_uuid);
+        } else {
+            query = query.bind(Uuid::nil());
+        }
+    }
+
+    let total_views: i64 = query.fetch_one(&state.db).await.unwrap_or(0);
+
+    let days = match params.range.as_deref() {
+        Some("7d") => 7,
+        Some("30d") => 30,
+        Some("12m") => 365,
+        _ => 30,
+    };
+    
+    // Spread views over days using simple math (as flat views_count doesn't hold history)
+    let avg_views = if days > 0 { total_views / days } else { 0 };
+    
+    let mut results = Vec::new();
+    let now = chrono::Utc::now();
+    for i in (0..days).rev() {
+        let d = now - chrono::Duration::days(i);
+        results.push(ViewTrendItem {
+            date: d.format("%Y-%m-%d").to_string(),
+            views: avg_views,
+        });
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!(ApiResponse {
+            success: true,
+            message: "Views trend fetched".to_string(),
+            data: results,
+        })),
+    ).into_response()
+}
+
+// -----------------------------------------------------------------------------
+// API 7.6: Leads List (Paginated)
+// -----------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct LeadsQuery {
+    pub project_id: Option<String>,
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct LeadItem {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub name: String,
+    pub phone: String,
+    pub message: Option<String>,
+    pub preferred_visit_date: Option<chrono::NaiveDate>,
+    pub status: String,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+pub async fn get_leads(
+    State(state): State<AppState>,
+    Query(params): Query<LeadsQuery>,
+    auth_user: AuthenticationUser,
+) -> impl IntoResponse {
+    if let Err(err) = verify_builder_role(&state, &auth_user.user_id).await {
+        return err.into_response();
+    }
+    
+    let user_uuid = Uuid::parse_str(&auth_user.user_id).unwrap_or_default();
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+    let offset = params.offset.unwrap_or(0);
+    
+    let mut query_str = String::from("
+        SELECT pl.* 
+        FROM project_leads pl
+        JOIN builder_projects bp ON pl.project_id = bp.id
+        WHERE bp.user_id = $1
+    ");
+
+    let mut bind_idx = 2;
+    if let Some(_proj) = &params.project_id {
+        query_str.push_str(&format!(" AND pl.project_id = ${}", bind_idx));
+        bind_idx += 1;
+    }
+    if let Some(_status) = &params.status {
+        query_str.push_str(&format!(" AND pl.status = ${}", bind_idx));
+        bind_idx += 1;
+    }
+
+    query_str.push_str(&format!(" ORDER BY pl.created_at DESC LIMIT ${} OFFSET ${}", bind_idx, bind_idx + 1));
+
+    let mut query = sqlx::query(&query_str).bind(user_uuid);
+    
+    if let Some(proj) = &params.project_id {
+        if let Ok(proj_uuid) = Uuid::parse_str(proj) {
+            query = query.bind(proj_uuid);
+        } else {
+            query = query.bind(Uuid::nil());
+        }
+    }
+    if let Some(status) = &params.status {
+        query = query.bind(status.clone());
+    }
+    
+    query = query.bind(limit).bind(offset);
+
+    let mut results = Vec::new();
+    if let Ok(rows) = query.fetch_all(&state.db).await {
+        for row in rows {
+            results.push(LeadItem {
+                id: row.get("id"),
+                project_id: row.get("project_id"),
+                name: row.get("name"),
+                phone: row.get("phone"),
+                message: row.try_get("message").unwrap_or(None),
+                preferred_visit_date: row.try_get("preferred_visit_date").unwrap_or(None),
+                status: row.get("status"),
+                created_at: row.get("created_at"),
+            });
+        }
+    }
+
+    (
+        StatusCode::OK,
+        Json(json!(ApiResponse {
+            success: true,
+            message: "Leads fetched".to_string(),
+            data: results,
+        })),
+    ).into_response()
+}
+
+// -----------------------------------------------------------------------------
+// API 7.7: Update Lead Status
+// -----------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct UpdateLeadStatusRequest {
+    pub status: String,
+}
+
+pub async fn update_lead_status(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    auth_user: AuthenticationUser,
+    Json(payload): Json<UpdateLeadStatusRequest>,
+) -> impl IntoResponse {
+    if let Err(err) = verify_builder_role(&state, &auth_user.user_id).await {
+        return err.into_response();
+    }
+    
+    let user_uuid = Uuid::parse_str(&auth_user.user_id).unwrap_or_default();
+    let lead_uuid = match Uuid::parse_str(&id) {
+        Ok(u) => u,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(json!(ApiResponse {
+            success: false, message: "Invalid lead ID".to_string(), data: json!(null)
+        }))).into_response(),
+    };
+
+    // Verify ownership
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM project_leads pl
+            JOIN builder_projects bp ON pl.project_id = bp.id
+            WHERE pl.id = $1 AND bp.user_id = $2
+        )"
+    )
+    .bind(lead_uuid)
+    .bind(user_uuid)
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(false);
+
+    if !exists {
+        return (StatusCode::NOT_FOUND, Json(json!(ApiResponse {
+            success: false, message: "Lead not found".to_string(), data: json!(null)
+        }))).into_response();
+    }
+
+    let update = sqlx::query(
+        "UPDATE project_leads SET status = $1, updated_at = NOW() WHERE id = $2"
+    )
+    .bind(&payload.status)
+    .bind(lead_uuid)
+    .execute(&state.db)
+    .await;
+
+    match update {
+        Ok(_) => (StatusCode::OK, Json(json!(ApiResponse {
+            success: true,
+            message: "Lead status updated".to_string(),
+            data: json!({ "id": lead_uuid, "status": payload.status }),
+        }))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(ApiResponse {
+            success: false,
+            message: e.to_string(),
+            data: json!(null),
+        }))).into_response(),
+    }
 }
