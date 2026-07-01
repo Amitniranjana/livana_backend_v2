@@ -124,3 +124,46 @@ pub async fn get_referrals_rewards(
 
     (StatusCode::OK, Json(json!(response)))
 }
+
+/// Get referral history for the logged-in user
+#[utoipa::path(
+    get,
+    path = "/api/v1/referrals/history",
+    responses(
+        (status = 200, description = "Referral history fetched", body = ApiResponse<crate::dtos::response::ReferralHistoryResponseData>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Internal server error")
+    ),
+    tag = "Referrals",
+    security(("bearer_auth" = []))
+)]
+pub async fn get_referrals_history(
+    State(app_state): State<AppState>,
+    auth_user: AuthenticationUser,
+) -> impl IntoResponse {
+    let user_id = auth_user.user_id;
+
+    let referrals = match app_state.user_service.user_repository.get_referral_history(&user_id).await {
+        Ok(history) => history,
+        Err(e) => {
+            let response = json!({
+                "success": false,
+                "message": format!("Error fetching history: {}", e),
+                "data": null
+            });
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+        }
+    };
+
+    let data = crate::dtos::response::ReferralHistoryResponseData {
+        referrals,
+    };
+
+    let response = ApiResponse {
+        success: true,
+        message: "Referral history fetched".to_string(),
+        data,
+    };
+
+    (StatusCode::OK, Json(json!(response)))
+}
