@@ -40,3 +40,4 @@ pub mod admin_analytics;
 pub mod admin_users;
 pub mod admin_properties;
 pub mod builder_analytics;
+pub mod builder;

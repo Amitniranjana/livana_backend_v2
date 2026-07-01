@@ -61,8 +61,9 @@ pub fn listing_routes() -> Router<AppState> {
         // Collection
         .route("/api/properties", get(get_properties))
         .route("/api/properties", post(create_property))
-        // Broker's own listings
+        // Broker's and Builder's own listings
         .route("/api/properties/broker", get(get_broker_properties))
+        .route("/api/properties/builder", get(get_broker_properties))
         // Search
         .route("/api/properties/search", get(search_properties))
         // Saved properties list
@@ -92,6 +93,13 @@ pub fn broker_routes() -> Router<AppState> {
     Router::new()
         .route("/api/broker/onboarding", post(onboarding))
         .route("/api/broker/profile", get(get_profile))
+}
+
+pub fn builder_routes() -> Router<AppState> {
+    use crate::handlers::builder::{get_profile, onboarding, update_profile};
+    Router::new()
+        .route("/api/builder/onboarding", post(onboarding))
+        .route("/api/builder/profile", get(get_profile).put(update_profile))
 }
 
 pub fn associate_routes() -> Router<AppState> {
