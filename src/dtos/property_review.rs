@@ -7,7 +7,8 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct CreatePropertyReviewRequest {
     pub visit_id: Uuid,
-    pub property_id: Uuid,
+    pub property_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub rating: f64,
     pub comment: Option<String>,
     pub location_rating: Option<f64>,
@@ -30,7 +31,8 @@ pub struct EditPropertyReviewRequest {
 pub struct CreatePropertyReviewData {
     pub review_id: Uuid,
     pub visit_id: Uuid,
-    pub property_id: Uuid,
+    pub property_id: Option<Uuid>,
+    pub project_id: Option<Uuid>,
     pub reviewer_id: Uuid,
     pub rating: f64,
     pub comment: Option<String>,

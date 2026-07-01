@@ -155,3 +155,35 @@ pub struct CreateProjectLeadRequest {
 pub struct AttachUnitRequest {
     pub property_id: Uuid,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct BuilderProjectWithStats {
+    #[serde(flatten)]
+    pub project: BuilderProject,
+    pub units_sold: i64,
+    pub visits_count: i64,
+    pub leads_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProjectBuilderInfo {
+    pub id: Uuid,
+    pub name: String,
+    pub logo: Option<String>,
+    pub is_verified: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProjectReviewSummary {
+    pub average_rating: f64,
+    pub total_reviews: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProjectDetailResponse {
+    #[serde(flatten)]
+    pub project: BuilderProject,
+    pub builder_info: ProjectBuilderInfo,
+    pub review_summary: ProjectReviewSummary,
+    pub related_units: Vec<serde_json::Value>, // Using generic JSON for related units
+}
