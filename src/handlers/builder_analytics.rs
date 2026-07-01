@@ -139,6 +139,7 @@ pub async fn get_dashboard_overview(
 
 #[derive(Deserialize)]
 pub struct TrendQuery {
+    #[allow(dead_code)]
     pub range: Option<String>,
     pub project_id: Option<String>,
 }
