@@ -217,10 +217,12 @@ pub fn property_filter_routes() -> Router<AppState> {
 
 /// Referrals APIs (JWT-protected)
 pub fn referrals_routes() -> Router<AppState> {
-    use crate::handlers::referrals::{get_referrals_me, get_referrals_rewards};
+    use crate::handlers::referrals::{get_referrals_me, get_referrals_rewards, get_referrals_history};
+
     Router::new()
         .route("/api/v1/referrals/me", get(get_referrals_me))
         .route("/api/v1/referrals/rewards", get(get_referrals_rewards))
+        .route("/api/v1/referrals/history", get(get_referrals_history))
 }
 
 /// Community APIs (JWT-protected)
@@ -385,3 +387,15 @@ pub use admin_users::admin_users_routes;
 
 pub mod admin_properties;
 pub use admin_properties::admin_properties_routes;
+
+pub fn builder_analytics_routes() -> Router<AppState> {
+    use crate::handlers::builder_analytics::{
+        get_dashboard_overview, get_visits_trend, get_project_performance, get_top_properties
+    };
+    use axum::routing::get;
+    Router::new()
+        .route("/api/builder/dashboard/overview", get(get_dashboard_overview))
+        .route("/api/builder/dashboard/visits-trend", get(get_visits_trend))
+        .route("/api/builder/dashboard/project-performance", get(get_project_performance))
+        .route("/api/builder/dashboard/top-properties", get(get_top_properties))
+}

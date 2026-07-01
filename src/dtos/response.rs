@@ -201,3 +201,18 @@ pub struct ReferralRewardsResponseData {
     pub total_earned: i32,
     pub rewards: Vec<RewardItemData>,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReferralHistoryItem {
+    pub id: uuid::Uuid,
+    pub referred_user_name: String,
+    pub status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[allow(dead_code)]
+pub struct ReferralHistoryResponseData {
+    pub referrals: Vec<ReferralHistoryItem>,
+}

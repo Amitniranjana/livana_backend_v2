@@ -664,7 +664,7 @@ impl UserRepository {
 
         // 3. Insert into referral_rewards
         let reward_id = uuid::Uuid::new_v4();
-        sqlx::query(
+        let insert_result = sqlx::query(
             "INSERT INTO referral_rewards (id, user_id, referral_id, coupon_code, amount, status, expires_at) 
              VALUES ($1, $2, $3, $4, $5, 'active', $6)"
         )
@@ -675,8 +675,17 @@ impl UserRepository {
         .bind(amount)
         .bind(expires_at)
         .execute(&self.pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        .await;
+
+        if let Err(e) = insert_result {
+            let err_str = e.to_string();
+            // Check if it's a foreign key constraint violation (e.g. referrer deleted)
+            if err_str.contains("foreign key constraint") || err_str.contains("violates foreign key") {
+                log::warn!("Referrer {} no longer exists. Skipping reward generation.", referral.referrer_user_id);
+                return Ok(true); // Return true so retries stop and it's treated as "handled gracefully"
+            }
+            return Err(err_str);
+        }
 
         // 4. Update to rewarded
         sqlx::query("UPDATE referrals SET status = 'rewarded', rewarded_at = NOW() WHERE id = $1")
@@ -735,5 +744,49 @@ impl UserRepository {
         }).collect();
 
         Ok(rewards)
+    }
+
+    pub async fn get_referral_history(&self, user_id: &str) -> Result<Vec<crate::dtos::response::ReferralHistoryItem>, String> {
+        let user_uuid = uuid::Uuid::parse_str(user_id).map_err(|e| e.to_string())?;
+
+        #[derive(sqlx::FromRow)]
+        struct HistoryRow {
+            id: uuid::Uuid,
+            status: String,
+            created_at: chrono::DateTime<chrono::Utc>,
+            first_name: String,
+            last_name: String,
+        }
+
+        let rows = sqlx::query_as::<_, HistoryRow>(
+            "SELECT r.id, r.status, r.created_at, u.first_name, u.last_name
+             FROM referrals r
+             JOIN users u ON r.referred_user_id = u.id
+             WHERE r.referrer_user_id = $1
+             ORDER BY r.created_at DESC"
+        )
+        .bind(user_uuid)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let history = rows.into_iter().map(|row| {
+            // Mask the user's name: First Name + Last Initial
+            let last_initial = row.last_name.chars().next().unwrap_or(' ');
+            let masked_name = if last_initial == ' ' || row.last_name.is_empty() {
+                row.first_name
+            } else {
+                format!("{} {}.", row.first_name, last_initial)
+            };
+
+            crate::dtos::response::ReferralHistoryItem {
+                id: row.id,
+                referred_user_name: masked_name,
+                status: row.status,
+                created_at: row.created_at,
+            }
+        }).collect();
+
+        Ok(history)
     }
 }

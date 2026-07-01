@@ -176,6 +176,7 @@ async fn main() {
         .merge(admin_analytics_routes())
         .merge(admin_users_routes(app_state.clone()))
         .merge(admin_properties_routes(app_state.clone()))
+        .merge(crate::routes::builder_analytics_routes())
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())

@@ -308,6 +308,8 @@ impl UserService {
                 }
             }
         }
-        Err("Failed to generate unique coupon code after 5 retries".to_string())
+        let error_msg = "Failed to generate unique coupon code after 5 retries".to_string();
+        log::error!("{} for user_id: {}", error_msg, referred_user_id);
+        Err(error_msg)
     }
 }
