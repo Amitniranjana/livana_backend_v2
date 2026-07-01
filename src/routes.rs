@@ -61,8 +61,9 @@ pub fn listing_routes() -> Router<AppState> {
         // Collection
         .route("/api/properties", get(get_properties))
         .route("/api/properties", post(create_property))
-        // Broker's own listings
+        // Broker's and Builder's own listings
         .route("/api/properties/broker", get(get_broker_properties))
+        .route("/api/properties/builder", get(get_broker_properties))
         // Search
         .route("/api/properties/search", get(search_properties))
         // Saved properties list
@@ -92,6 +93,32 @@ pub fn broker_routes() -> Router<AppState> {
     Router::new()
         .route("/api/broker/onboarding", post(onboarding))
         .route("/api/broker/profile", get(get_profile))
+}
+
+pub fn builder_projects_routes() -> Router<AppState> {
+    use crate::handlers::project::{
+        attach_unit_to_project, create_project, delete_project, enquire_project,
+        get_builder_projects, get_project_by_id, search_projects, update_project,
+    };
+    Router::new()
+        .route("/api/builder/projects", post(create_project).get(get_builder_projects))
+        .route("/api/builder/projects/{id}", put(update_project).delete(delete_project))
+        .route("/api/builder/projects/{id}/units", post(attach_unit_to_project))
+        .route("/api/projects", get(search_projects))
+        .route("/api/projects/{id}", get(get_project_by_id))
+        .route("/api/projects/{id}/enquire", post(enquire_project))
+}
+
+pub fn builder_visits_routes() -> Router<AppState> {
+    use crate::handlers::builder_visits::get_builder_visits;
+    Router::new().route("/api/builder/visits", get(get_builder_visits))
+}
+
+pub fn builder_routes() -> Router<AppState> {
+    use crate::handlers::builder::{get_profile, onboarding, update_profile};
+    Router::new()
+        .route("/api/builder/onboarding", post(onboarding))
+        .route("/api/builder/profile", get(get_profile).put(update_profile))
 }
 
 pub fn associate_routes() -> Router<AppState> {

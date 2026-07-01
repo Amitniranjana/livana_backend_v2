@@ -23,6 +23,7 @@ fn row_to_visit_item(row: SiteVisitRow) -> VisitItem {
         visit_id: row.visit_id,
         property: PropertyInfo {
             id: row.property_id,
+            project_id: row.project_id,
             title: row.property_title,
             location: row.property_location,
         },
@@ -45,8 +46,9 @@ const VISIT_SELECT_SQL: &str = r#"
     SELECT
         sv.id                                       AS visit_id,
         sv.property_id,
-        p.title                                     AS property_title,
-        COALESCE(p.locality, p.city)                AS property_location,
+        sv.project_id,
+        COALESCE(p.title, bp.project_name)          AS property_title,
+        COALESCE(COALESCE(p.locality, p.city), COALESCE(bp.locality, bp.city)) AS property_location,
         sv.user_id,
         sv.provider_id,
         (u.first_name || ' ' || u.last_name)        AS provider_name,
@@ -58,7 +60,8 @@ const VISIT_SELECT_SQL: &str = r#"
         sv.cancellation_reason,
         sv.created_at
     FROM site_visits sv
-    JOIN properties p ON p.id = sv.property_id
+    LEFT JOIN properties p ON p.id = sv.property_id
+    LEFT JOIN builder_projects bp ON bp.id = sv.project_id
     JOIN users u      ON u.id = sv.provider_id
 "#;
 
@@ -86,53 +89,95 @@ pub async fn book_visit_handler(
         }
     };
 
-    // Check property exists
-    let property_exists =
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM properties WHERE id = $1)")
-            .bind(body.property_id)
-            .fetch_one(&state.db)
-            .await;
+    // Check property or project exists
+    if let Some(prop_id) = body.property_id {
+        let property_exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM properties WHERE id = $1)")
+                .bind(prop_id)
+                .fetch_one(&state.db)
+                .await;
 
-    match property_exists {
-        Ok(true) => {}
-        Ok(false) => {
-            return (
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "message": "Property not found",
-                    "error_code": "PROPERTY_NOT_FOUND"
-                })),
-            )
-                .into_response();
+        match property_exists {
+            Ok(true) => {}
+            Ok(false) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "message": "Property not found",
+                        "error_code": "PROPERTY_NOT_FOUND"
+                    })),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                println!("DB error checking property: {:?}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false,
+                        "message": "Internal server error",
+                        "error_code": "DATABASE_ERROR"
+                    })),
+                )
+                    .into_response();
+            }
         }
-        Err(e) => {
-            println!("DB error checking property: {:?}", e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({
-                    "success": false,
-                    "message": "Internal server error",
-                    "error_code": "DATABASE_ERROR"
-                })),
-            )
-                .into_response();
+    } else if let Some(proj_id) = body.project_id {
+        let project_exists =
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM builder_projects WHERE id = $1)")
+                .bind(proj_id)
+                .fetch_one(&state.db)
+                .await;
+
+        match project_exists {
+            Ok(true) => {}
+            Ok(false) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "message": "Project not found",
+                        "error_code": "PROJECT_NOT_FOUND"
+                    })),
+                )
+                    .into_response();
+            }
+            Err(e) => {
+                println!("DB error checking project: {:?}", e);
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({
+                        "success": false,
+                        "message": "Internal server error",
+                        "error_code": "DATABASE_ERROR"
+                    })),
+                )
+                    .into_response();
+            }
         }
+    } else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({
+                "success": false,
+                "message": "Must provide either property_id or project_id",
+                "error_code": "MISSING_ID"
+            })),
+        )
+            .into_response();
     }
 
     // Check duplicate booking
-    let duplicate = sqlx::query_scalar::<_, bool>(
-        r#"
-        SELECT EXISTS (
-            SELECT 1 FROM site_visits
-            WHERE property_id = $1
-              AND user_id = $2
-              AND scheduled_date_time = $3
-              AND status != 'cancelled'
-        )
-        "#,
-    )
-    .bind(body.property_id)
+    let mut query = "SELECT EXISTS (SELECT 1 FROM site_visits WHERE user_id = $1 AND scheduled_date_time = $2 AND status != 'cancelled'".to_string();
+    if let Some(prop_id) = body.property_id {
+        query.push_str(&format!(" AND property_id = '{}'", prop_id));
+    } else if let Some(proj_id) = body.project_id {
+        query.push_str(&format!(" AND project_id = '{}'", proj_id));
+    }
+    query.push(')');
+
+    let duplicate = sqlx::query_scalar::<_, bool>(&query)
     .bind(user_id)
     .bind(body.scheduled_date_time)
     .fetch_one(&state.db)
@@ -169,19 +214,20 @@ pub async fn book_visit_handler(
     let insert_result = sqlx::query_scalar::<_, Uuid>(
         r#"
         INSERT INTO site_visits (
-            property_id, user_id, provider_id,
+            property_id, project_id, user_id, provider_id,
             scheduled_date_time, contact_number, notes, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
         RETURNING id
         "#,
     )
     .bind(body.property_id)
+    .bind(body.project_id)
     .bind(user_id)
     .bind(body.provider_id)
     .bind(body.scheduled_date_time)
-    .bind(&body.contact_number)
-    .bind(&body.notes)
+    .bind(body.contact_number)
+    .bind(body.notes)
     .fetch_one(&state.db)
     .await;
 

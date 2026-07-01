@@ -419,9 +419,10 @@ pub async fn reply_to_review(
     // Review with property owner check via JOIN
     let review_row = sqlx::query(
         r#"
-        SELECT pr.reply, p.user_id AS owner_id
+        SELECT pr.reply, p.user_id AS owner_id, u.user_role
         FROM property_reviews pr
         JOIN properties p ON p.id = pr.property_id
+        LEFT JOIN users u ON u.id = p.user_id
         WHERE pr.id = $1
         "#,
     )
@@ -433,13 +434,19 @@ pub async fn reply_to_review(
 
     let owner_id: Option<Uuid> = review_row.get("owner_id");
     let existing_reply: Option<String> = review_row.get("reply");
+    let user_role: Option<String> = review_row.get("user_role");
 
     let is_owner = match owner_id {
         Some(uid) => uid == user_id,
         None => false,
     };
 
-    if !is_owner {
+    let is_builder = match user_role {
+        Some(role) => role == "builder",
+        None => false,
+    };
+
+    if !is_owner || !is_builder {
         return Err(ApiError::access_denied());
     }
     if existing_reply.is_some() {
