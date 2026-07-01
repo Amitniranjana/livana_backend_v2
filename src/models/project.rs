@@ -128,6 +128,7 @@ pub struct UpdateProjectRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+#[allow(dead_code)]
 pub struct ProjectLead {
     pub id: Uuid,
     pub project_id: Uuid,
@@ -150,6 +151,7 @@ pub struct CreateProjectLeadRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[allow(dead_code)]
 pub struct AttachUnitRequest {
     pub property_id: Uuid,
 }
