@@ -429,5 +429,5 @@ pub fn builder_analytics_routes() -> Router<AppState> {
         .route("/api/builder/dashboard/project-performance", get(get_project_performance))
         .route("/api/builder/dashboard/top-properties", get(get_top_properties))
         .route("/api/builder/dashboard/leads", get(get_leads))
-        .route("/api/builder/dashboard/leads/:id/status", patch(update_lead_status))
+        .route("/api/builder/dashboard/leads/{id}/status", patch(update_lead_status))
 }
