@@ -60,7 +60,9 @@ pub async fn get_referrals_me(
         };
 
     let referral_code = user.referral_code;
-    let referral_link = format!("https://yourapp.com/join?ref={}", referral_code);
+    let template = std::env::var("APP_REFERRAL_LINK_TEMPLATE")
+        .unwrap_or_else(|_| "livana://referral?code={}".to_string());
+    let referral_link = template.replace("{}", &referral_code);
 
     let referral_data = ReferralInfoData {
         referral_code,
