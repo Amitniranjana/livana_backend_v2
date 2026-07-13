@@ -858,7 +858,7 @@ pub async fn delete_property(
 }
 
 // ---------------------------------------------------------------------------
-// 6. GET /api/properties/broker  — my (owner's) properties
+// 6. GET /api/properties/broker  — my (owner's) properties + associates' properties
 // ---------------------------------------------------------------------------
 
 pub async fn get_broker_properties(
@@ -873,15 +873,39 @@ pub async fn get_broker_properties(
     // status filter
     let status_filter = params.status.as_deref().unwrap_or("active");
 
-    // $1 = caller (is_saved), $2 = user_id (owner), $3 = status, $4 = limit, $5 = offset
+    // Broker ki apni listings + uske saare referred associates ki listings dono include karo.
+    // referrals table mein referrer_user_id = broker_id aur referred_user_id = associate_id hota hai.
+    //
+    // Bind order:
+    //   $1 = caller (is_saved / is_liked subquery)
+    //   $2 = broker user_id  (p.user_id = $2)
+    //   $3 = broker user_id  (referrer_user_id = $3 for sub-select)
+    //   $4 = status filter
+    //   $5 = limit
+    //   $6 = offset
     let sql = format!(
-        "{} WHERE p.user_id = $2 AND p.status = $3 ORDER BY p.created_at DESC LIMIT $4 OFFSET $5",
-        property_select_sql(1)
+        r#"{base}
+        WHERE (
+            p.user_id = $2
+            OR p.user_id IN (
+                SELECT referred_user_id FROM referrals WHERE referrer_user_id = $3
+            )
+            OR p.user_id IN (
+                SELECT id FROM users u 
+                WHERE (u.user_role = 'associate' OR u.user_role = 'ASSOCIATE')
+                AND NOT EXISTS (SELECT 1 FROM referrals r WHERE r.referred_user_id = u.id)
+            )
+        )
+        AND p.status = $4
+        ORDER BY p.created_at DESC
+        LIMIT $5 OFFSET $6"#,
+        base = property_select_sql(1)
     );
 
     let rows = match sqlx::query(&sql)
-        .bind(user_id)
-        .bind(user_id)
+        .bind(user_id)   // $1 — is_saved
+        .bind(user_id)   // $2 — broker's own listings
+        .bind(user_id)   // $3 — broker's referred associates
         .bind(status_filter)
         .bind(limit)
         .bind(offset)
@@ -897,13 +921,27 @@ pub async fn get_broker_properties(
         }
     };
 
-    let total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM properties WHERE user_id = $1 AND status = $2")
-            .bind(user_id)
-            .bind(status_filter)
-            .fetch_one(&app_state.db)
-            .await
-            .unwrap_or(0);
+    let total: i64 = sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM properties
+           WHERE (
+               user_id = $1
+               OR user_id IN (
+                   SELECT referred_user_id FROM referrals WHERE referrer_user_id = $1
+               )
+               OR user_id IN (
+                   SELECT id FROM users u 
+                   WHERE (u.user_role = 'associate' OR u.user_role = 'ASSOCIATE')
+                   AND NOT EXISTS (SELECT 1 FROM referrals r WHERE r.referred_user_id = u.id)
+               )
+           )
+           AND status = $2"#,
+    )
+    .bind(user_id)
+    .bind(status_filter)
+    .fetch_one(&app_state.db)
+    .await
+    .unwrap_or(0);
 
     let properties: Vec<Value> = rows
         .iter()
