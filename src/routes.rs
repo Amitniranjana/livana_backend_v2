@@ -412,6 +412,9 @@ pub fn admin_analytics_routes() -> Router<AppState> {
 pub mod admin_users;
 pub use admin_users::admin_users_routes;
 
+pub mod admin_kyc;
+pub use admin_kyc::admin_kyc_routes;
+
 pub mod admin_properties;
 pub use admin_properties::admin_properties_routes;
 

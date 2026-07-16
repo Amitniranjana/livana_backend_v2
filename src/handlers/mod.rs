@@ -43,3 +43,4 @@ pub mod builder_analytics;
 pub mod builder;
 pub mod project;
 pub mod builder_visits;
+pub mod admin_kyc;

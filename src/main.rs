@@ -29,6 +29,7 @@ use crate::{
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
         saved_properties_routes, service_listing_routes, share_routes, suggestions_routes,
         user_routes, unified_listing_routes, vibes_routes, admin_users_routes, admin_properties_routes, referrals_routes,
+        admin_kyc_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -176,6 +177,7 @@ async fn main() {
         .merge(admin_analytics_routes())
         .merge(admin_users_routes(app_state.clone()))
         .merge(admin_properties_routes(app_state.clone()))
+        .merge(admin_kyc_routes(app_state.clone()))
         .merge(crate::routes::builder_analytics_routes())
         .merge(user_routes())
         .merge(listing_routes())

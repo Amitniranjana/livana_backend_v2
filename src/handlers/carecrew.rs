@@ -74,6 +74,7 @@ pub struct ProviderSearchQuery {
     pub city: Option<String>,
     pub page: Option<i32>,
     pub limit: Option<i32>,
+    pub offset: Option<i32>,
 }
 
 // ─── 1. List Services ─────────────────────────────────────────────────────────
@@ -627,6 +628,126 @@ mod tests {
 // ──────────────────────────────────────────────────────────────────────────────
 // Endpoints 33, 34, 35 Implementation
 // ──────────────────────────────────────────────────────────────────────────────
+
+use crate::dtos::carecrew_directory::{
+    CarecrewDirectoryData, CarecrewDirectoryPagination, CarecrewDirectoryResponse,
+    CarecrewMemberResponse,
+};
+
+/// GET /api/carecrew
+/// CareCrew Directory (Public / Auth)
+pub async fn get_carecrew_directory(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<ProviderSearchQuery>,
+) -> impl axum::response::IntoResponse {
+    let mut is_authenticated = false;
+    if let Ok(_) = require_auth(&headers, &app_state.jwt_secret) {
+        is_authenticated = true;
+    }
+
+    let limit = q.limit.unwrap_or(10).clamp(1, 50) as i64;
+    let page = q.page.unwrap_or(1).max(1) as i64;
+    let offset = q.offset.map(|o| o as i64).unwrap_or((page - 1) * limit);
+
+    let mut query = sqlx::QueryBuilder::new(
+        "SELECT u.id, u.full_name as name, u.profile_picture_url as photo, \
+         u.mobile_number as phone, u.email as email, \
+         k.verification_status, k.city, k.services \
+         FROM users u \
+         LEFT JOIN kyc_submissions k ON u.id = k.user_id \
+         WHERE u.role = 'associate' AND u.associate_type = 'carecrew'"
+    );
+
+    let mut count_query = sqlx::QueryBuilder::new(
+        "SELECT COUNT(*) FROM users u \
+         LEFT JOIN kyc_submissions k ON u.id = k.user_id \
+         WHERE u.role = 'associate' AND u.associate_type = 'carecrew'"
+    );
+
+    if let Some(city) = &q.city {
+        query.push(" AND k.city ILIKE ");
+        query.push_bind(format!("%{}%", city));
+        count_query.push(" AND k.city ILIKE ");
+        count_query.push_bind(format!("%{}%", city));
+    }
+
+    // For service type, ideally we'd filter on JSON, but simpler approach is string search for now if applicable
+    if let Some(service) = &q.service_type {
+        query.push(" AND k.services::text ILIKE ");
+        query.push_bind(format!("%{}%", service));
+        count_query.push(" AND k.services::text ILIKE ");
+        count_query.push_bind(format!("%{}%", service));
+    }
+
+    query.push(" ORDER BY u.created_at DESC LIMIT ");
+    query.push_bind(limit);
+    query.push(" OFFSET ");
+    query.push_bind(offset);
+
+    let total_count: i64 = match count_query.build_query_scalar().fetch_one(&app_state.db).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("CareCrew directory count DB error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success":false,"message":"Database error","error_code":"DB_ERROR"})),
+            );
+        }
+    };
+
+    let rows = match query.build().fetch_all(&app_state.db).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::error!("CareCrew directory DB error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success":false,"message":"Database error","error_code":"DB_ERROR"})),
+            );
+        }
+    };
+
+    let mut members = Vec::new();
+    for row in rows {
+        use sqlx::Row;
+        
+        let mut phone: Option<String> = None;
+        let mut email: Option<String> = None;
+        if is_authenticated {
+            phone = row.try_get("phone").unwrap_or(None);
+            email = row.try_get("email").unwrap_or(None);
+        }
+        
+        let services_val: Option<serde_json::Value> = row.try_get("services").unwrap_or(None);
+
+        members.push(CarecrewMemberResponse {
+            id: row.get("id"),
+            name: row.try_get("name").unwrap_or_default(),
+            photo: row.try_get("photo").unwrap_or(None),
+            city: row.try_get("city").unwrap_or(None),
+            services_offered: services_val,
+            rating: Some(0.0), // Ratings would usually come from reviews table; defaulted for now
+            verified_kyc_status: row.try_get("verification_status").unwrap_or_else(|_| "pending".to_string()),
+            phone,
+            email,
+        });
+    }
+
+    let resp = CarecrewDirectoryResponse {
+        success: true,
+        message: "CareCrew members retrieved successfully".to_string(),
+        data: CarecrewDirectoryData {
+            members,
+            pagination: CarecrewDirectoryPagination {
+                total_count,
+                limit,
+                offset,
+            },
+        },
+    };
+
+    (StatusCode::OK, Json(json!(resp)))
+}
 
 #[derive(Debug, Deserialize)]
 pub struct BookingsQuery {

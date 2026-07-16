@@ -3,6 +3,7 @@ use crate::handlers::carecrew::{
     cancel_booking, create_booking, edit_provider_profile, get_booking_details,
     get_featured_providers, get_provider, get_provider_bookings, get_provider_bookings_v2,
     get_service, get_user_bookings, list_services, search_providers, update_booking_status,
+    get_carecrew_directory,
 };
 use axum::{
     Router,
@@ -11,6 +12,8 @@ use axum::{
 
 pub fn carecrew_routes() -> Router<AppState> {
     Router::new()
+        // Directory endpoint (Issue 30)
+        .route("/api/carecrew", get(get_carecrew_directory))
         // Service endpoints (public)
         .route("/api/v1/carecrew/services", get(list_services))
         .route("/api/v1/carecrew/services/{id}", get(get_service))
