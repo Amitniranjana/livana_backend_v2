@@ -156,7 +156,7 @@ pub async fn admin_login(
     })?;
 
     // 5. Set Cookie
-    let cookie = Cookie::build(("admin_session", token))
+    let cookie = Cookie::build(("admin_session", token.clone()))
         .path("/")
         .http_only(true)
         .secure(true)
