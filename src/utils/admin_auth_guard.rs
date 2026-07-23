@@ -17,12 +17,17 @@ pub async fn admin_auth_guard(
     req: Request,
     next: Next,
 ) -> Result<Response, Response> {
-    let session_cookie = jar.get("admin_session");
+    let session_cookie = jar.get("admin_session").map(|c| c.value().to_string());
+    
+    let auth_header = req.headers().get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
 
     let is_api = req.uri().path().starts_with("/api/");
 
-    let token = match session_cookie {
-        Some(cookie) => cookie.value(),
+    let token = match session_cookie.or(auth_header) {
+        Some(t) => t,
         None => {
             if is_api {
                 return Err((
@@ -40,7 +45,7 @@ pub async fn admin_auth_guard(
     };
 
     let token_data = decode::<AdminClaims>(
-        token,
+        &token,
         &DecodingKey::from_secret(state.admin_jwt_secret.as_ref()),
         &Validation::default(),
     );

@@ -21,6 +21,8 @@ pub struct AdminLoginRequest {
 pub struct AdminAuthResponse {
     pub success: bool,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -80,6 +82,7 @@ pub async fn admin_login(
             Json(AdminAuthResponse {
                 success: false,
                 message: "Too many login attempts. Please try again in 15 minutes.".into(),
+                token: None,
             }),
         ));
     }
@@ -94,6 +97,7 @@ pub async fn admin_login(
             Json(AdminAuthResponse {
                 success: false,
                 message: "Invalid credentials".into(),
+                token: None,
             }),
         ));
     }
@@ -117,6 +121,7 @@ pub async fn admin_login(
             Json(AdminAuthResponse {
                 success: false,
                 message: "Invalid credentials".into(),
+                token: None,
             }),
         ));
     }
@@ -137,7 +142,7 @@ pub async fn admin_login(
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(state.jwt_secret.as_ref()),
+        &EncodingKey::from_secret(state.admin_jwt_secret.as_ref()),
     )
     .map_err(|_| {
         (
@@ -145,6 +150,7 @@ pub async fn admin_login(
             Json(AdminAuthResponse {
                 success: false,
                 message: "Token generation failed".into(),
+                token: None,
             }),
         )
     })?;
@@ -154,7 +160,7 @@ pub async fn admin_login(
         .path("/")
         .http_only(true)
         .secure(true)
-        .same_site(SameSite::Strict)
+        .same_site(SameSite::None)
         .build();
 
     let updated_jar = jar.add(cookie);
@@ -164,6 +170,7 @@ pub async fn admin_login(
         Json(AdminAuthResponse {
             success: true,
             message: "Login successful".into(),
+            token: Some(token),
         }),
     ))
 }
@@ -181,6 +188,7 @@ pub async fn admin_logout(
         Json(AdminAuthResponse {
             success: true,
             message: "Logged out successfully".into(),
+            token: None,
         }),
     )
 }
@@ -188,20 +196,29 @@ pub async fn admin_logout(
 pub async fn admin_me(
     State(state): State<AppState>,
     jar: CookieJar,
+    req: axum::extract::Request,
 ) -> Result<Json<AdminMeResponse>, (StatusCode, Json<AdminAuthResponse>)> {
-    let session_cookie = jar.get("admin_session").ok_or_else(|| {
+    let session_cookie = jar.get("admin_session").map(|c| c.value().to_string());
+    
+    let auth_header = req.headers().get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
+
+    let token = session_cookie.or(auth_header).ok_or_else(|| {
         (
             StatusCode::UNAUTHORIZED,
             Json(AdminAuthResponse {
                 success: false,
                 message: "No active session".into(),
+                token: None,
             }),
         )
     })?;
 
     let token_data = decode::<AdminClaims>(
-        session_cookie.value(),
-        &DecodingKey::from_secret(state.jwt_secret.as_ref()),
+        &token,
+        &DecodingKey::from_secret(state.admin_jwt_secret.as_ref()),
         &Validation::default(),
     )
     .map_err(|_| {
@@ -210,6 +227,7 @@ pub async fn admin_me(
             Json(AdminAuthResponse {
                 success: false,
                 message: "Invalid or expired session".into(),
+                token: None,
             }),
         )
     })?;
