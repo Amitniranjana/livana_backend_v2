@@ -235,9 +235,10 @@ pub async fn get_kyc_submission_detail(
 // ---------------------------------------------------------------------------
 pub async fn approve_kyc_submission(
     State(app_state): State<AppState>,
-    axum::extract::Extension(admin_id): axum::extract::Extension<String>,
+    axum::extract::Extension(admin_claims): axum::extract::Extension<crate::handlers::admin_auth::AdminClaims>,
     Path(kyc_id): Path<Uuid>,
 ) -> impl axum::response::IntoResponse {
+    let admin_id = admin_claims.sub.clone();
     let mut tx = match app_state.db.begin().await {
         Ok(t) => t,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success":false,"message":format!("DB error: {}", e)}))),
@@ -272,6 +273,15 @@ pub async fn approve_kyc_submission(
         .execute(&mut *tx)
         .await;
         
+    let _ = crate::utils::admin_logger::log_admin_action(
+        &app_state.db,
+        &admin_id,
+        "kyc_approve",
+        "kyc",
+        Some(kyc_id),
+        Some(json!({ "reason": "Approved via Admin Panel" }))
+    ).await;
+        
     // Insert notification
     let _ = sqlx::query("INSERT INTO notifications (id, user_id, type, title, message, is_read, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW())")
         .bind(Uuid::new_v4())
@@ -294,10 +304,11 @@ pub async fn approve_kyc_submission(
 // ---------------------------------------------------------------------------
 pub async fn reject_kyc_submission(
     State(app_state): State<AppState>,
-    axum::extract::Extension(admin_id): axum::extract::Extension<String>,
+    axum::extract::Extension(admin_claims): axum::extract::Extension<crate::handlers::admin_auth::AdminClaims>,
     Path(kyc_id): Path<Uuid>,
     Json(payload): Json<AdminKycRejectRequest>,
 ) -> impl axum::response::IntoResponse {
+    let admin_id = admin_claims.sub.clone();
     let mut tx = match app_state.db.begin().await {
         Ok(t) => t,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success":false,"message":format!("DB error: {}", e)}))),
@@ -332,6 +343,15 @@ pub async fn reject_kyc_submission(
         .bind(&payload.reason)
         .execute(&mut *tx)
         .await;
+        
+    let _ = crate::utils::admin_logger::log_admin_action(
+        &app_state.db,
+        &admin_id,
+        "kyc_reject",
+        "kyc",
+        Some(kyc_id),
+        Some(json!({ "reason": payload.reason }))
+    ).await;
         
     // Insert notification
     let _ = sqlx::query("INSERT INTO notifications (id, user_id, type, title, message, is_read, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW())")

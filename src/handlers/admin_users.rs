@@ -13,6 +13,7 @@ use crate::{
         UpdateUserRequest, ForceDeleteCounts,
     },
     handlers::admin_auth::AdminClaims,
+    utils::admin_logger::log_admin_action,
 };
 
 pub async fn get_users(
@@ -267,6 +268,7 @@ pub async fn get_user_detail(
 
 pub async fn update_user(
     State(state): State<AppState>,
+    axum::Extension(admin_claims): axum::Extension<AdminClaims>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateUserRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -328,6 +330,15 @@ pub async fn update_user(
         ));
     }
 
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "update_user",
+        "user",
+        Some(id),
+        Some(json!(payload))
+    ).await;
+
     Ok(Json(json!({"success": true, "message": "User updated successfully"})))
 }
 
@@ -383,6 +394,15 @@ pub async fn suspend_user(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "Transaction commit failed"})))
     })?;
 
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "suspend_user",
+        "user",
+        Some(id),
+        Some(json!({ "reason": payload.reason }))
+    ).await;
+
     Ok(Json(json!({"success": true, "message": "User suspended"})))
 }
 
@@ -429,6 +449,15 @@ pub async fn reinstate_user(
     tx.commit().await.map_err(|_| {
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "Transaction commit failed"})))
     })?;
+
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "reinstate_user",
+        "user",
+        Some(id),
+        None
+    ).await;
 
     Ok(Json(json!({"success": true, "message": "User reinstated"})))
 }
@@ -514,6 +543,15 @@ pub async fn force_delete_user(
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "Transaction commit failed"})))
     })?;
 
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "force_delete_user",
+        "user",
+        Some(id),
+        Some(json!({ "counts": counts }))
+    ).await;
+
     Ok(Json(json!({"success": true, "message": "User force deleted", "counts": counts})))
 }
 
@@ -568,6 +606,15 @@ pub async fn bulk_action_users(
     tx.commit().await.map_err(|_| {
         (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "Transaction commit failed"})))
     })?;
+
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "bulk_action_users",
+        "user",
+        None,
+        Some(json!({ "action": payload.action, "reason": reason, "user_ids": payload.user_ids }))
+    ).await;
 
     Ok(Json(json!({"success": true, "message": "Bulk action completed successfully"})))
 }

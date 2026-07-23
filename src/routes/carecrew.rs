@@ -12,8 +12,9 @@ use axum::{
 
 pub fn carecrew_routes() -> Router<AppState> {
     Router::new()
-        // Directory endpoint (Issue 30)
+        // Directory endpoint (Issue 30 & 31)
         .route("/api/carecrew", get(get_carecrew_directory))
+        .route("/api/carecrew/{id}", get(get_provider))
         // Service endpoints (public)
         .route("/api/v1/carecrew/services", get(list_services))
         .route("/api/v1/carecrew/services/{id}", get(get_service))

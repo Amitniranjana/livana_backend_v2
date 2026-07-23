@@ -21,5 +21,9 @@ pub mod vibes;
 pub mod admin_user;
 
 pub mod news;
+
 pub mod admin_kyc;
+pub mod admin_chat;
+pub mod admin_reports;
+pub mod admin_logs;
 pub mod carecrew_directory;

@@ -8,7 +8,11 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::app_state::AppState;
+use crate::{
+    app_state::AppState,
+    handlers::admin_auth::AdminClaims,
+    utils::admin_logger::log_admin_action,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct AdminPropertiesParams {
@@ -297,6 +301,7 @@ pub async fn get_property_detail(
 // 3. PATCH /api/admin/properties/:id
 pub async fn update_property(
     State(app_state): State<AppState>,
+    axum::extract::Extension(admin_claims): axum::extract::Extension<AdminClaims>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdatePropertyRequest>,
 ) -> impl axum::response::IntoResponse {
@@ -345,13 +350,21 @@ pub async fn update_property(
                 let _ = sqlx::query(
                     "INSERT INTO admin_audit_logs (admin_id, target_user_id, action, reason) VALUES ($1, $2, $3, $4)"
                 )
-                .bind("SYSTEM_ADMIN") 
+                .bind(&admin_claims.sub) 
                 .bind(owner)
                 .bind("UPDATE_PROPERTY")
                 .bind(format!("Admin updated property {}", id))
                 .execute(&app_state.db)
                 .await;
             }
+            let _ = log_admin_action(
+                &app_state.db,
+                &admin_claims.sub,
+                "update_property",
+                "property",
+                Some(id),
+                Some(json!({ "fields_updated": { "status": payload.status, "is_featured": payload.is_featured, "is_verified": payload.is_verified } }))
+            ).await;
             (
                 StatusCode::OK,
                 Json(json!({ "success": true, "message": "Property updated successfully" })),
@@ -371,6 +384,7 @@ pub async fn update_property(
 // 4. DELETE /api/admin/properties/:id/force
 pub async fn force_delete_property(
     State(app_state): State<AppState>,
+    axum::extract::Extension(admin_claims): axum::extract::Extension<AdminClaims>,
     Path(id): Path<Uuid>,
 ) -> impl axum::response::IntoResponse {
     let mut tx = match app_state.db.begin().await {
@@ -423,13 +437,22 @@ pub async fn force_delete_property(
 
     if owner_id != Uuid::nil() {
         let _ = sqlx::query("INSERT INTO admin_audit_logs (admin_id, target_user_id, action, reason) VALUES ($1, $2, $3, $4)")
-        .bind("SYSTEM_ADMIN")
+        .bind(&admin_claims.sub)
         .bind(owner_id)
         .bind("FORCE_DELETE_PROPERTY")
         .bind(format!("Admin force deleted property {}", id))
         .execute(&mut *tx)
         .await;
     }
+
+    let _ = log_admin_action(
+        &app_state.db,
+        &admin_claims.sub,
+        "force_delete_property",
+        "property",
+        Some(id),
+        None
+    ).await;
 
     if let Err(e) = tx.commit().await {
         return (
@@ -451,6 +474,7 @@ pub async fn force_delete_property(
 // 5. POST /api/admin/properties/bulk-action
 pub async fn bulk_action_properties(
     State(app_state): State<AppState>,
+    axum::extract::Extension(admin_claims): axum::extract::Extension<AdminClaims>,
     Json(payload): Json<BulkPropertyActionRequest>,
 ) -> impl axum::response::IntoResponse {
     let mut success_count = 0;
@@ -497,7 +521,7 @@ pub async fn bulk_action_properties(
                 if let Ok(_) = sqlx::query("DELETE FROM properties WHERE id = $1").bind(property_id).execute(&mut *tx).await {
                     if let Some(owner) = owner_id {
                          let _ = sqlx::query("INSERT INTO admin_audit_logs (admin_id, target_user_id, action, reason) VALUES ($1, $2, $3, $4)")
-                            .bind("SYSTEM_ADMIN")
+                            .bind(&admin_claims.sub)
                             .bind(owner)
                             .bind("BULK_FORCE_DELETE_PROPERTY")
                             .bind(payload.reason.clone().unwrap_or_else(|| "Bulk action".to_string()))
@@ -512,6 +536,15 @@ pub async fn bulk_action_properties(
             _ => {}
         }
     }
+
+    let _ = log_admin_action(
+        &app_state.db,
+        &admin_claims.sub,
+        "bulk_action_properties",
+        "property",
+        None,
+        Some(json!({ "action": payload.action, "property_ids": payload.property_ids, "reason": payload.reason }))
+    ).await;
 
     (
         StatusCode::OK,

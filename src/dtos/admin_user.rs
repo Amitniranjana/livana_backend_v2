@@ -31,7 +31,7 @@ pub struct PaginatedUserList {
     pub limit: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserRequest {
     pub status: Option<String>,

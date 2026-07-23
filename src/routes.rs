@@ -434,3 +434,12 @@ pub fn builder_analytics_routes() -> Router<AppState> {
         .route("/api/builder/dashboard/leads", get(get_leads))
         .route("/api/builder/dashboard/leads/{id}/status", patch(update_lead_status))
 }
+
+pub mod admin_chat;
+pub use admin_chat::admin_chat_routes;
+
+pub mod admin_reports;
+pub use admin_reports::admin_reports_routes;
+
+pub mod admin_logs;
+pub use admin_logs::admin_logs_routes;
