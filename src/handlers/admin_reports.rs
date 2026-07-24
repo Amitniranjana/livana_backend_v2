@@ -30,9 +30,9 @@ pub async fn get_admin_reports(
 
     let mut query = sqlx::QueryBuilder::new(
         "SELECT r.id, r.property_id, r.reporter_id, r.reason, r.description as comment, r.status, r.created_at, \
-         u.full_name as reporter_name, u.email as reporter_email, \
+         CONCAT(u.first_name, ' ', u.last_name) as reporter_name, u.email as reporter_email, \
          p.title as property_title, p.user_id as owner_id, \
-         ou.full_name as owner_name \
+         CONCAT(ou.first_name, ' ', ou.last_name) as owner_name \
          FROM property_reports r \
          LEFT JOIN users u ON r.reporter_id = u.id \
          LEFT JOIN properties p ON r.property_id = p.id \
@@ -119,9 +119,9 @@ pub async fn get_admin_report_detail(
 ) -> impl axum::response::IntoResponse {
     let row = match sqlx::query(
         "SELECT r.id, r.property_id, r.reporter_id, r.reason, r.description as comment, r.status, r.created_at, \
-         u.full_name as reporter_name, u.email as reporter_email, \
+         CONCAT(u.first_name, ' ', u.last_name) as reporter_name, u.email as reporter_email, \
          p.title as property_title, p.user_id as owner_id, \
-         ou.full_name as owner_name \
+         CONCAT(ou.first_name, ' ', ou.last_name) as owner_name \
          FROM property_reports r \
          LEFT JOIN users u ON r.reporter_id = u.id \
          LEFT JOIN properties p ON r.property_id = p.id \
