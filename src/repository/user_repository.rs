@@ -789,4 +789,85 @@ impl UserRepository {
 
         Ok(history)
     }
+
+    // -------------------------------------------------------------------------
+    // Pending Registration methods
+    // -------------------------------------------------------------------------
+
+    pub async fn upsert_pending_registration(
+        &self,
+        pending: &crate::models::pending_registration::PendingRegistration,
+    ) -> Result<(), String> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO pending_registrations (
+                email, first_name, last_name, password_hash, phone_no, gender, user_role,
+                business_name, license_number, experience_years, commission_rate, ref_code, created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (email) DO UPDATE SET
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                password_hash = EXCLUDED.password_hash,
+                phone_no = EXCLUDED.phone_no,
+                gender = EXCLUDED.gender,
+                user_role = EXCLUDED.user_role,
+                business_name = EXCLUDED.business_name,
+                license_number = EXCLUDED.license_number,
+                experience_years = EXCLUDED.experience_years,
+                commission_rate = EXCLUDED.commission_rate,
+                ref_code = EXCLUDED.ref_code,
+                created_at = EXCLUDED.created_at
+            "#,
+        )
+        .bind(&pending.email)
+        .bind(&pending.first_name)
+        .bind(&pending.last_name)
+        .bind(&pending.password_hash)
+        .bind(&pending.phone_no)
+        .bind(&pending.gender)
+        .bind(&pending.user_role)
+        .bind(&pending.business_name)
+        .bind(&pending.license_number)
+        .bind(pending.experience_years)
+        .bind(pending.commission_rate)
+        .bind(&pending.ref_code)
+        .bind(pending.created_at)
+        .execute(&self.pool)
+        .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub async fn get_pending_registration(
+        &self,
+        email: &str,
+    ) -> Result<Option<crate::models::pending_registration::PendingRegistration>, String> {
+        let result = sqlx::query_as::<_, crate::models::pending_registration::PendingRegistration>(
+            "SELECT * FROM pending_registrations WHERE email = $1",
+        )
+        .bind(email)
+        .fetch_optional(&self.pool)
+        .await;
+
+        match result {
+            Ok(pending) => Ok(pending),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    pub async fn delete_pending_registration(&self, email: &str) -> Result<(), String> {
+        let result = sqlx::query("DELETE FROM pending_registrations WHERE email = $1")
+            .bind(email)
+            .execute(&self.pool)
+            .await;
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
 }

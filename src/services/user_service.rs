@@ -312,4 +312,26 @@ impl UserService {
         log::error!("{} for user_id: {}", error_msg, referred_user_id);
         Err(error_msg)
     }
+
+    // -------------------------------------------------------------------------
+    // Pending Registration methods
+    // -------------------------------------------------------------------------
+
+    pub async fn upsert_pending_registration(
+        &self,
+        pending: &crate::models::pending_registration::PendingRegistration,
+    ) -> Result<(), String> {
+        self.user_repository.upsert_pending_registration(pending).await
+    }
+
+    pub async fn get_pending_registration(
+        &self,
+        email: &str,
+    ) -> Result<Option<crate::models::pending_registration::PendingRegistration>, String> {
+        self.user_repository.get_pending_registration(email).await
+    }
+
+    pub async fn delete_pending_registration(&self, email: &str) -> Result<(), String> {
+        self.user_repository.delete_pending_registration(email).await
+    }
 }

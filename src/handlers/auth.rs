@@ -5,7 +5,6 @@ use crate::dtos::request::{
     ChangePasswordRequest, ForgotPasswordRequest, ResetPasswordRequest, SendOtpRequest,
     SigninRequest, SignupRequest, UpdateAssociateTypeRequest, VerifyOtpRequest,
 };
-use crate::dtos::response::{SignupResponseData, SignupUserData};
 use crate::utils::auth::{create_jwt, verify_password};
 use crate::utils::auth_extractor::AuthenticationUser;
 use crate::utils::util::hash_string;
@@ -83,83 +82,71 @@ pub async fn signup(
 
     let hashed_password = hash_string(&payload.password);
 
-    // 1. Create user in database
-    let user_result = app_state
+    // 1. Check if user already exists in the main users table
+    // We can do this by trying to find them by email or phone
+    if let Ok(Some(_)) = app_state.user_service.find_by_email(&payload.email).await {
+        let response = json!({
+            "success": false,
+            "message": "User with this email already exists",
+            "data": serde_json::Value::Null
+        });
+        return (StatusCode::CONFLICT, Json(response));
+    }
+
+    // 2. Save pending registration
+    let pending = crate::models::pending_registration::PendingRegistration {
+        email: payload.email.clone(),
+        first_name: payload.first_name.clone(),
+        last_name: payload.last_name.clone(),
+        password_hash: hashed_password,
+        phone_no: payload.phone_no.clone(),
+        gender: payload.gender.clone(),
+        user_role: payload.user_role.clone(),
+        business_name: payload.business_name.clone(),
+        license_number: payload.license_number.clone(),
+        experience_years: payload.experience_years,
+        commission_rate: payload.commission_rate,
+        ref_code: payload.ref_code.clone(),
+        created_at: chrono::Utc::now(),
+    };
+
+    if let Err(e) = app_state.user_service.upsert_pending_registration(&pending).await {
+        let response = json!({
+            "success": false,
+            "message": format!("Failed to save registration details: {}", e),
+            "data": null
+        });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
+
+    // 3. Generate and send OTP
+    let otp = generate_otp();
+    let purpose = "signup";
+    
+    if let Err(e) = app_state
         .user_service
-        .create_user(
-            &payload.first_name,
-            &payload.last_name,
-            &payload.email,
-            &payload.phone_no,
-            &hashed_password,
-            &payload.gender,
-            &payload.user_role,
-            payload.ref_code.clone(),
-        )
-        .await;
+        .store_email_otp(&payload.email, &otp, purpose, 10)
+        .await
+    {
+        let response = json!({ "success": false, "message": format!("Failed to store OTP: {}", e), "data": null });
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+    }
 
-    let user = match user_result {
-        Ok(user) => user,
-        Err(e) => {
-            let error_msg = e.to_string();
-
-            // Check if user already exists
-            if error_msg.contains("duplicate") || error_msg.contains("already exists") {
-                let response = json!({
-                    "success": false,
-                    "message": "User with this email or phone number already exists",
-                    "data": serde_json::Value::Null
-                });
-                return (StatusCode::CONFLICT, Json(response));
-            }
-
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to create user: {}", error_msg),
-                "data": null
-            });
-            return (StatusCode::BAD_REQUEST, Json(response));
-        }
-    };
-
-    // 2. Generate JWT token
-    let token = match create_jwt(&user.id.to_string(), &app_state.jwt_secret, 360) {
-        Ok(token) => token,
-        Err(e) => {
-            let response = json!({
-                "success": false,
-                "message": format!("Failed to generate token: {}", e),
-                "data": null
-            });
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
-        }
-    };
-
-    // 4. Return response
-    let signup_response = SignupResponseData {
-        token,
-        user: SignupUserData {
-            id: user.id,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            email: user.email,
-            phone_no: user.phone_no,
-            user_role: user.user_role,
-            verified: user.verified,
-            is_phone_verified: user.is_phone_verified,
-            status: user.status,
-            associate_type: user.associate_type,
-            created_at: user.created_at,
-        },
-    };
+    if let Err(e) = send_email_otp(&payload.email, &otp, "Email Verification").await {
+        tracing::error!("Failed to send OTP email to {}: {:?}", payload.email, e);
+        let response = json!({ "success": false, "message": "Failed to send OTP email. Please check your email address and try again.", "data": null });
+        return (StatusCode::BAD_REQUEST, Json(response));
+    } else {
+        println!("✓ OTP email sent to {}", payload.email);
+    }
 
     let response = json!({
         "success": true,
-        "message": "User created successfully.",
-        "data": signup_response
+        "message": "OTP sent to email. Please verify to complete registration.",
+        "data": null
     });
 
-    (StatusCode::CREATED, Json(response))
+    (StatusCode::OK, Json(response))
 }
 
 /// User login — supports email OR phone-based login
@@ -477,6 +464,40 @@ pub async fn verify_otp(
             if !otp_valid {
                 let response = json!({ "success": false, "message": "Invalid OTP", "data": null });
                 return (StatusCode::UNAUTHORIZED, Json(response));
+            }
+
+            // If it's a signup OTP, we create the user from pending_registrations
+            if purpose == "signup" {
+                if let Ok(Some(pending)) = app_state.user_service.get_pending_registration(email).await {
+                    let user_result = app_state.user_service.create_user(
+                        &pending.first_name,
+                        &pending.last_name,
+                        &pending.email,
+                        &pending.phone_no,
+                        &pending.password_hash, // Already hashed
+                        &pending.gender,
+                        &pending.user_role,
+                        pending.ref_code.clone()
+                    ).await;
+
+                    match user_result {
+                        Ok(user) => {
+                            let _ = app_state.user_service.delete_pending_registration(email).await;
+                            
+                            // Initialize profile
+                            let _ = app_state.user_service.user_repository.upsert_profile(
+                                &user.id.to_string(), 
+                                Some(pending.gender), 
+                                None, 
+                                None
+                            ).await;
+                        },
+                        Err(e) => {
+                            let response = json!({ "success": false, "message": format!("Failed to create user: {}", e), "data": null });
+                            return (StatusCode::INTERNAL_SERVER_ERROR, Json(response));
+                        }
+                    }
+                }
             }
 
             let user = match app_state.user_service.find_by_email(email).await {
