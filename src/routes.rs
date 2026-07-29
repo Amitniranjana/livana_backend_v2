@@ -443,3 +443,6 @@ pub use admin_reports::admin_reports_routes;
 
 pub mod admin_logs;
 pub use admin_logs::admin_logs_routes;
+
+pub mod admin_user_chats;
+pub use admin_user_chats::admin_user_chats_routes;

@@ -29,7 +29,7 @@ use crate::{
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
         saved_properties_routes, service_listing_routes, share_routes, suggestions_routes,
         user_routes, unified_listing_routes, vibes_routes, admin_users_routes, admin_properties_routes, referrals_routes,
-        admin_kyc_routes,
+        admin_kyc_routes, admin_user_chats_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -67,8 +67,8 @@ async fn main() {
         database_user, database_password, database_host, database_port, database_name
     );
     let pool = PgPool::connect(&db_url).await.unwrap_or_else(|e| {
-        log::error!("DB connect error: {}", e);
-        panic!("Could not connect to Postgres");
+        eprintln!("CRITICAL DB connect error: {:?}", e);
+        panic!("Could not connect to Postgres: {:?}", e);
     });
 
     // ————————————— Running Migrations —————————————
@@ -181,6 +181,7 @@ async fn main() {
         .merge(crate::routes::admin_chat_routes())
         .merge(crate::routes::admin_reports_routes(app_state.clone()))
         .merge(crate::routes::admin_logs_routes(app_state.clone()))
+        .merge(admin_user_chats_routes(app_state.clone()))
         .merge(crate::routes::builder_analytics_routes())
         .merge(user_routes())
         .merge(listing_routes())

@@ -27,3 +27,4 @@ pub mod admin_chat;
 pub mod admin_reports;
 pub mod admin_logs;
 pub mod carecrew_directory;
+pub mod admin_user_chats;
