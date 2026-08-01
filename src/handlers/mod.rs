@@ -48,3 +48,4 @@ pub mod builder_visits;
 pub mod admin_kyc;
 pub mod admin_logs;
 pub mod admin_user_chats;
+pub mod admin_schema;

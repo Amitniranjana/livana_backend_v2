@@ -156,11 +156,36 @@ pub async fn admin_login(
     })?;
 
     // 5. Set Cookie
+    //
+    // `Secure` cookies are only ever stored/sent by the browser over HTTPS.
+    // `SameSite=None` additionally *requires* `Secure` per spec. That combo
+    // is correct for a production, cross-origin, HTTPS deployment — but if
+    // the frontend or backend is currently served over plain HTTP (e.g.
+    // local dev on http://localhost), the browser will silently refuse to
+    // store this cookie at all: login "succeeds" but nothing actually
+    // persists, so every subsequent request comes back 401.
+    //
+    // Set COOKIE_SECURE=false in your local .env to test over plain HTTP.
+    // Leave it unset (or "true") for any real HTTPS deployment.
+    let cookie_secure = env::var("COOKIE_SECURE")
+        .map(|v| v.trim().eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
+
+    let same_site = if cookie_secure {
+        SameSite::None
+    } else {
+        // SameSite=None without Secure is rejected by browsers outright, so
+        // fall back to Lax for the non-secure/local case. This still works
+        // fine when frontend and backend share the same site (e.g. both on
+        // localhost), which is the realistic local-dev setup.
+        SameSite::Lax
+    };
+
     let cookie = Cookie::build(("admin_session", token.clone()))
         .path("/")
         .http_only(true)
-        .secure(true)
-        .same_site(SameSite::None)
+        .secure(cookie_secure)
+        .same_site(same_site)
         .build();
 
     let updated_jar = jar.add(cookie);

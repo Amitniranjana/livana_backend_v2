@@ -171,9 +171,9 @@ async fn main() {
 
     let app = Router::new()
         .merge(health_routes())
-        .merge(auth_routes())
+        .merge(auth_routes(app_state.clone()))
         .merge(admin_auth_routes())
-        .merge(admin_stats_routes())
+        .merge(admin_stats_routes(app_state.clone()))
         .merge(admin_analytics_routes())
         .merge(admin_users_routes(app_state.clone()))
         .merge(admin_properties_routes(app_state.clone()))

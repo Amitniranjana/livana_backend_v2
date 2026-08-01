@@ -13,15 +13,20 @@ pub fn health_routes() -> Router<AppState> {
     Router::new().route("/health", get(crate::handlers::health::get_health))
 }
 
-pub fn auth_routes() -> Router<AppState> {
+pub fn auth_routes(state: AppState) -> Router<AppState> {
     use crate::handlers::auth::{
         change_password, resend_otp, reset_password, send_forgot_password_link, send_otp, signin,
         signout, signup, update_associate_type, verify_otp,
     };
-    use axum::routing::patch;
+    use axum::{routing::patch, middleware};
+    
+    let signin_route = Router::new()
+        .route("/api/auth/signin", post(signin))
+        .layer(middleware::from_fn_with_state(state.clone(), crate::utils::rate_limit::login_rate_limiter));
+
     Router::new()
         .route("/api/auth/signup", post(signup))
-        .route("/api/auth/signin", post(signin))
+        .merge(signin_route)
         .route("/api/auth/signout", post(signout))
         .route("/api/auth/send-otp", post(send_otp))
         .route("/api/auth/verify-otp", post(verify_otp))
@@ -391,13 +396,19 @@ pub fn news_routes() -> Router<AppState> {
         .route("/api/v1/admin/news/{id}/action", patch(admin_action_news))
 }
 
-pub fn admin_stats_routes() -> Router<AppState> {
+pub fn admin_stats_routes(state: AppState) -> Router<AppState> {
     use crate::handlers::admin_stats::{get_stats, get_stats_location, get_stats_trend};
     use axum::routing::get;
+    
+    let schema_route = Router::new()
+        .route("/api/admin/schema", get(crate::handlers::admin_schema::get_admin_schema))
+        .route_layer(axum::middleware::from_fn_with_state(state, crate::utils::admin_auth_guard::admin_auth_guard));
+
     Router::new()
         .route("/api/admin/stats", get(get_stats))
         .route("/api/admin/stats/trend", get(get_stats_trend))
         .route("/api/admin/stats/location", get(get_stats_location))
+        .merge(schema_route)
 }
 
 pub fn admin_analytics_routes() -> Router<AppState> {
