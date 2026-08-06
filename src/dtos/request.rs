@@ -199,6 +199,7 @@ pub struct CreatePropertyRequest {
     #[schema(example = "user")]
     pub user_type: Option<String>,
     pub broker_contact_allowed: Option<bool>,
+    pub private_note: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -241,6 +242,7 @@ pub struct UpdatePropertyRequest {
     pub status: Option<String>,
     pub user_type: Option<String>,
     pub broker_contact_allowed: Option<bool>,
+    pub private_note: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

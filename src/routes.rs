@@ -457,3 +457,14 @@ pub use admin_logs::admin_logs_routes;
 
 pub mod admin_user_chats;
 pub use admin_user_chats::admin_user_chats_routes;
+
+pub fn builder_crm_routes() -> Router<AppState> {
+    use crate::handlers::builder_crm::{
+        create_crm_lead, delete_crm_lead, get_crm_leads, update_crm_lead, update_crm_lead_status,
+    };
+    use axum::routing::{delete, get, patch, post, put};
+    Router::new()
+        .route("/api/builder/crm-leads", get(get_crm_leads).post(create_crm_lead))
+        .route("/api/builder/crm-leads/:id", put(update_crm_lead).delete(delete_crm_lead))
+        .route("/api/builder/crm-leads/:id/status", patch(update_crm_lead_status))
+}

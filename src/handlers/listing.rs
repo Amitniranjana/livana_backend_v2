@@ -111,7 +111,7 @@ pub struct SavedPropertiesParams {
 
 /// Builds the property JSON object from a PgRow.
 /// `caller_id`: the logged-in user's UUID (Uuid::nil() if not authenticated).
-fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value {
+fn row_to_property_json(row: &sqlx::postgres::PgRow, caller_id: Uuid) -> Value {
     // Parse JSON columns
     let images_val: Value = row.try_get("images").unwrap_or(json!([]));
     let raw_images: Vec<String> = serde_json::from_value(images_val).unwrap_or_default();
@@ -143,6 +143,11 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
     let owner_id: Uuid = row.try_get("user_id").unwrap_or(Uuid::nil());
     let owner_phone: Option<String> = row.try_get("phone_no").ok().flatten();
     let owner_profile_image: Option<String> = row.try_get("profile_image").ok().flatten();
+
+    let mut private_note: Option<String> = None;
+    if caller_id != Uuid::nil() && caller_id == owner_id {
+        private_note = row.try_get("private_note").ok().flatten();
+    }
 
     // is_saved and is_liked from query
     let is_saved: bool = row.try_get::<bool, _>("is_saved").unwrap_or(false);
@@ -195,6 +200,7 @@ fn row_to_property_json(row: &sqlx::postgres::PgRow, _caller_id: Uuid) -> Value 
             .ok().flatten().map(|d| d.to_rfc3339()),
         "updated_at": row.try_get::<Option<chrono::DateTime<Utc>>, _>("updated_at")
             .ok().flatten().map(|d| d.to_rfc3339()),
+        "private_note": private_note,
         "owner": {
             "id": owner_id.to_string(),
             "name": owner_name,
@@ -220,7 +226,7 @@ fn property_select_sql(is_saved_bind_pos: usize) -> String {
             p.bathroom_type, p.lease_years, p.gender_preference, p.roommates, p.area, p.pincode,
             p.is_featured, p.is_verified,
             p.views_count, p.likes_count,
-            p.status, p.user_id, p.created_at, p.updated_at,
+            p.status, p.user_id, p.created_at, p.updated_at, p.private_note,
             u.first_name, u.last_name, u.phone_no, u.profile_image_url AS profile_image,
             EXISTS(
                 SELECT 1 FROM saved_properties sl2
@@ -467,7 +473,7 @@ pub async fn create_property(
             deposit, floor, total_floors, age_years, facing, parking, parking_count, video_url, user_type, broker_contact_allowed,
             bathroom_type, lease_years, gender_preference, roommates, area, pincode,
             is_featured, is_verified,
-            status, user_id, created_at, updated_at
+            status, user_id, created_at, updated_at, private_note
         ) VALUES (
             $1, $2, $3, $4, $5, $6,
             $7, $8, $9, $10, $11, $12, $13,
@@ -475,7 +481,7 @@ pub async fn create_property(
             $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
             $28, $29, $30, $31, $32, $33,
             false, false,
-            'active', $34, $35, $35
+            'active', $34, $35, $35, $36
         )
         RETURNING id
         "#,
@@ -515,6 +521,7 @@ pub async fn create_property(
     .bind(&payload.pincode)
     .bind(user_id)
     .bind(now)
+    .bind(&payload.private_note)
     .fetch_one(&app_state.db)
     .await;
 
@@ -637,6 +644,10 @@ pub async fn update_property(
     }
     if let Some(v) = payload.lease_years {
         qb.push(", lease_years = ");
+        qb.push_bind(v);
+    }
+    if let Some(v) = &payload.private_note {
+        qb.push(", private_note = ");
         qb.push_bind(v);
     }
     if let Some(v) = &payload.gender_preference {

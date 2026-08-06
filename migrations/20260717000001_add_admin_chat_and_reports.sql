@@ -10,9 +10,9 @@ CREATE TABLE IF NOT EXISTS admin_chat_threads (
     CONSTRAINT uq_admin_chat_user UNIQUE (user_id)
 );
 
-CREATE INDEX idx_admin_chat_threads_user ON admin_chat_threads(user_id);
-CREATE INDEX idx_admin_chat_threads_admin ON admin_chat_threads(admin_id);
-CREATE INDEX idx_admin_chat_threads_status ON admin_chat_threads(status);
+CREATE INDEX IF NOT EXISTS idx_admin_chat_threads_user ON admin_chat_threads(user_id);
+CREATE INDEX IF NOT EXISTS idx_admin_chat_threads_admin ON admin_chat_threads(admin_id);
+CREATE INDEX IF NOT EXISTS idx_admin_chat_threads_status ON admin_chat_threads(status);
 
 
 CREATE TABLE IF NOT EXISTS admin_chat_messages (
@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS admin_chat_messages (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_admin_chat_messages_thread ON admin_chat_messages(thread_id);
-CREATE INDEX idx_admin_chat_messages_created ON admin_chat_messages(created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_admin_chat_messages_thread ON admin_chat_messages(thread_id);
+CREATE INDEX IF NOT EXISTS idx_admin_chat_messages_created ON admin_chat_messages(created_at ASC);
 
 
 -- Property Reports Table
@@ -43,6 +43,6 @@ CREATE TABLE IF NOT EXISTS property_reports (
     CONSTRAINT uq_property_reporter UNIQUE (property_id, reporter_id)
 );
 
-CREATE INDEX idx_property_reports_property ON property_reports(property_id);
-CREATE INDEX idx_property_reports_status ON property_reports(status);
-CREATE INDEX idx_property_reports_created ON property_reports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_property_reports_property ON property_reports(property_id);
+CREATE INDEX IF NOT EXISTS idx_property_reports_status ON property_reports(status);
+CREATE INDEX IF NOT EXISTS idx_property_reports_created ON property_reports(created_at DESC);

@@ -10,19 +10,18 @@ pub async fn log_audit_action(
     reason: Option<&str>,
     metadata: Option<serde_json::Value>,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO app_audit_logs (
             admin_email, action, entity_type, entity_id, reason, metadata
         ) VALUES ($1, $2, $3, $4, $5, $6)
-        "#,
-        admin_email,
-        action,
-        entity_type,
-        entity_id,
-        reason,
-        metadata
-    )
+        "#)
+        .bind(admin_email)
+        .bind(action)
+        .bind(entity_type)
+        .bind(entity_id)
+        .bind(reason)
+        .bind(metadata)
     .execute(&mut **tx)
     .await?;
 

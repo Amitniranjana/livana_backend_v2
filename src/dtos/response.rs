@@ -132,6 +132,8 @@ pub struct ListingResponse {
     pub priority_listing: bool,
     #[schema(example = "direct")]
     pub listing_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_note: Option<String>,
     pub created_at: String,
 }
 

@@ -183,6 +183,7 @@ async fn main() {
         .merge(crate::routes::admin_logs_routes(app_state.clone()))
         .merge(admin_user_chats_routes(app_state.clone()))
         .merge(crate::routes::builder_analytics_routes())
+        .merge(crate::routes::builder_crm_routes())
         .merge(user_routes())
         .merge(listing_routes())
         .merge(broker_routes())
