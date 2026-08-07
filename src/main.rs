@@ -29,7 +29,7 @@ use crate::{
         property_review_routes, property_search_routes, recent_chats_routes, reviews_routes,
         saved_properties_routes, service_listing_routes, share_routes, suggestions_routes,
         user_routes, unified_listing_routes, vibes_routes, admin_users_routes, admin_properties_routes, referrals_routes,
-        admin_kyc_routes, admin_user_chats_routes,
+        admin_kyc_routes, admin_user_chats_routes, ping_routes,
     },
     services::chat_db_service::ChatDbService,
     services::user_service::UserService,
@@ -236,6 +236,7 @@ async fn main() {
         // ── News API ────────────────────────────────────────────────────────────
         .merge(crate::routes::news_routes())
         .merge(referrals_routes())
+        .merge(ping_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

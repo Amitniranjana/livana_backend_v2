@@ -50,3 +50,4 @@ pub mod admin_logs;
 pub mod admin_user_chats;
 pub mod admin_schema;
 pub mod builder_crm;
+pub mod pings;
