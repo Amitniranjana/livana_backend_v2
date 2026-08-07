@@ -462,9 +462,27 @@ pub fn builder_crm_routes() -> Router<AppState> {
     use crate::handlers::builder_crm::{
         create_crm_lead, delete_crm_lead, get_crm_leads, update_crm_lead, update_crm_lead_status,
     };
-    use axum::routing::{delete, get, patch, post, put};
+    use axum::routing::{get, patch, put};
     Router::new()
         .route("/api/builder/crm-leads", get(get_crm_leads).post(create_crm_lead))
         .route("/api/builder/crm-leads/:id", put(update_crm_lead).delete(delete_crm_lead))
         .route("/api/builder/crm-leads/:id/status", patch(update_crm_lead_status))
+}
+
+pub fn ping_routes() -> Router<AppState> {
+    use crate::handlers::pings::{
+        close_ping, create_ping, delete_ping, get_matching_pings, get_my_pings,
+        get_ping_detail, get_ping_responses, respond_to_ping,
+    };
+    use axum::routing::{delete, get, patch, post};
+    
+    Router::new()
+        .route("/api/v1/pings", post(create_ping))
+        .route("/api/v1/pings/mine", get(get_my_pings))
+        .route("/api/v1/pings/matching", get(get_matching_pings))
+        .route("/api/v1/pings/{pingId}", get(get_ping_detail))
+        .route("/api/v1/pings/{pingId}", delete(delete_ping))
+        .route("/api/v1/pings/{pingId}/close", patch(close_ping))
+        .route("/api/v1/pings/{pingId}/respond", post(respond_to_ping))
+        .route("/api/v1/pings/{pingId}/responses", get(get_ping_responses))
 }

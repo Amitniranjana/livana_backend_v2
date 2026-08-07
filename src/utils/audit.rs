@@ -1,6 +1,7 @@
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
+#[allow(dead_code)]
 pub async fn log_audit_action(
     tx: &mut Transaction<'_, Postgres>,
     admin_email: &str,

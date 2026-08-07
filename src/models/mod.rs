@@ -11,3 +11,4 @@ pub mod news;
 pub mod builder;
 pub mod project;
 pub mod pending_registration;
+pub mod pings;
