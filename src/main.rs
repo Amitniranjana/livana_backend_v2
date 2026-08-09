@@ -252,5 +252,5 @@ async fn main() {
     );
 
     let listener = TcpListener::bind(addr).await.unwrap();
-    serve(listener, app).await.unwrap();
+    serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await.unwrap();
 }
