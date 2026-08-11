@@ -8,6 +8,7 @@ use uuid::Uuid;
 use chrono::Utc;
 
 
+
 use crate::{
     app_state::AppState,
     dtos::{
@@ -85,7 +86,7 @@ pub async fn create_ping(
         "SELECT user_id FROM broker_profiles WHERE $1 = ANY(operating_cities) AND kyc_status = 'VERIFIED'",
     );
     // Simple matching logic: matched by location.
-    
+
     let matched_brokers: Vec<Uuid> = sqlx::query_scalar(&query)
         .bind(&payload.location)
         .fetch_all(&app_state.db)
@@ -134,7 +135,7 @@ pub async fn get_my_pings(
         .map_err(|_| ApiError::Unauthorized("Invalid user".into()))?;
 
     let mut sql = "SELECT * FROM pings WHERE user_id = $1 AND status != 'deleted'".to_string();
-    
+
     if let Some(status) = &query.status {
         if status != "all" {
             sql.push_str(format!(" AND status = '{}'", status).as_str());
@@ -265,7 +266,7 @@ pub async fn get_matching_pings(
         .map_err(|_| ApiError::Unauthorized("Invalid user".into()))?;
 
     let mut sql = "SELECT * FROM pings WHERE status = 'active'".to_string();
-    
+
     if let Some(loc) = &query.location {
         sql.push_str(format!(" AND location = '{}'", loc).as_str());
     }
@@ -275,9 +276,9 @@ pub async fn get_matching_pings(
     if let Some(lt) = &query.listing_type {
         sql.push_str(format!(" AND listing_type = '{}'", lt).as_str());
     }
-    
+
     sql.push_str(" ORDER BY created_at DESC");
-    
+
     if let Some(limit) = query.limit {
         sql.push_str(format!(" LIMIT {}", limit).as_str());
     }
@@ -435,8 +436,8 @@ pub async fn get_ping_responses(
 
     let responses = sqlx::query_as::<_, PingResponseJoined>(
         r#"
-        SELECT 
-            pr.id, pr.broker_id, 
+        SELECT
+            pr.id, pr.broker_id,
             COALESCE(u.first_name || ' ' || u.last_name, 'Broker') as broker_name,
             pr.message, pr.chat_id, pr.responded_at
         FROM ping_responses pr

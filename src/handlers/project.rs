@@ -240,16 +240,22 @@ pub async fn get_project_by_id(
                 is_verified: Option<bool>,
             }
             let b_info = sqlx::query_as::<_, BInfo>(
-                "SELECT u.id, (u.first_name || ' ' || u.last_name) AS name, bp.logo_url AS logo, bp.is_verified
+                "SELECT u.id,
+                        TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS name,
+                        bp.logo_url AS logo,
+                        bp.is_verified
                  FROM users u
                  LEFT JOIN builder_profiles bp ON u.id = bp.user_id
                  WHERE u.id = $1"
             ).bind(p.user_id).fetch_optional(&app_state.db).await.unwrap_or(None);
             
             let builder_info = if let Some(info) = b_info {
+                let resolved_name = info.name
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| "Unknown Builder".to_string());
                 ProjectBuilderInfo {
                     id: info.id,
-                    name: info.name.unwrap_or_else(|| "Unknown Builder".to_string()),
+                    name: resolved_name,
                     logo: info.logo,
                     is_verified: info.is_verified.unwrap_or(false),
                 }
