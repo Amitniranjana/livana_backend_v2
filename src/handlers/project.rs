@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::models::project::{
     BuilderProject, BuilderProjectWithStats, CreateProjectLeadRequest, CreateProjectRequest,
-    ProjectBuilderInfo, ProjectDetailResponse, ProjectReviewSummary, UpdateProjectRequest,
+    ProjectBuilderInfo, ProjectDetailResponse, ProjectLead, ProjectReviewSummary,
+    UpdateProjectRequest,
 };
 use crate::utils::auth_extractor::AuthenticationUser;
 
@@ -408,16 +409,131 @@ pub async fn delete_project(
         Ok(uid) => uid,
         Err(_) => return (StatusCode::UNAUTHORIZED, Json(json!({"success": false}))).into_response(),
     };
-    
-    let result = sqlx::query("UPDATE builder_projects SET status = 'deleted' WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(user_id)
-        .execute(&app_state.db)
-        .await;
-        
+
+    let result = sqlx::query(
+        "UPDATE builder_projects SET status = 'deleted' WHERE id = $1 AND user_id = $2"
+    )
+    .bind(id)
+    .bind(user_id)
+    .execute(&app_state.db)
+    .await;
+
     match result {
-        Ok(_) => (StatusCode::OK, Json(json!({"success": true, "message": "Project deleted successfully"}))).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Error: {}", e)}))).into_response()
+        Ok(res) => {
+            if res.rows_affected() == 0 {
+                // Either project doesn't exist or belongs to a different builder
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(json!({
+                        "success": false,
+                        "message": "Project not found or you do not have permission to delete it"
+                    }))
+                ).into_response();
+            }
+            (StatusCode::OK, Json(json!({
+                "success": true,
+                "message": "Project deleted successfully"
+            }))).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "message": format!("Error: {}", e)}))
+        ).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct EnquiryQueryParams {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+    pub status: Option<String>,
+}
+
+/// GET /api/builder/projects/{id}/enquiries
+pub async fn get_project_enquiries(
+    auth: AuthenticationUser,
+    State(app_state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(params): Query<EnquiryQueryParams>,
+) -> impl IntoResponse {
+    let user_id = match Uuid::parse_str(&auth.user_id) {
+        Ok(uid) => uid,
+        Err(_) => return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"success": false, "message": "Invalid token"}))
+        ).into_response(),
+    };
+
+    // Verify the builder owns this project
+    let owner: Option<Uuid> = sqlx::query_scalar(
+        "SELECT user_id FROM builder_projects WHERE id = $1 AND status != 'deleted'"
+    )
+    .bind(id)
+    .fetch_optional(&app_state.db)
+    .await
+    .unwrap_or(None);
+
+    match owner {
+        None => return (
+            StatusCode::NOT_FOUND,
+            Json(json!({"success": false, "message": "Project not found"}))
+        ).into_response(),
+        Some(owner_id) if owner_id != user_id => return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "message": "You do not have access to this project's enquiries"}))
+        ).into_response(),
+        _ => {}
+    }
+
+    let limit = params.limit.unwrap_or(20).min(100);
+    let offset = params.offset.unwrap_or(0);
+
+    // Build optional status filter
+    let status_filter = params.status
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "all")
+        .map(|s| format!(" AND status = '{}'", s))
+        .unwrap_or_default();
+
+    let query = format!(
+        "SELECT * FROM project_leads WHERE project_id = $1{} ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+        status_filter
+    );
+
+    let leads = sqlx::query_as::<_, ProjectLead>(&query)
+        .bind(id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&app_state.db)
+        .await;
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM project_leads WHERE project_id = $1"
+    )
+    .bind(id)
+    .fetch_one(&app_state.db)
+    .await
+    .unwrap_or(0);
+
+    match leads {
+        Ok(enquiries) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "data": {
+                    "enquiries": enquiries,
+                    "pagination": {
+                        "total": total,
+                        "limit": limit,
+                        "offset": offset
+                    }
+                }
+            }))
+        ).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"success": false, "message": format!("Error: {}", e)}))
+        ).into_response(),
     }
 }
 
