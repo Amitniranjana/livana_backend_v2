@@ -103,12 +103,14 @@ pub fn broker_routes() -> Router<AppState> {
 pub fn builder_projects_routes() -> Router<AppState> {
     use crate::handlers::project::{
         attach_unit_to_project, create_project, delete_project, enquire_project,
-        get_builder_projects, get_project_by_id, search_projects, update_project,
+        get_builder_projects, get_project_by_id, get_project_enquiries, search_projects,
+        update_project,
     };
     Router::new()
         .route("/api/builder/projects", post(create_project).get(get_builder_projects))
         .route("/api/builder/projects/{id}", put(update_project).delete(delete_project))
         .route("/api/builder/projects/{id}/units", post(attach_unit_to_project))
+        .route("/api/builder/projects/{id}/enquiries", get(get_project_enquiries))
         .route("/api/projects", get(search_projects))
         .route("/api/projects/{id}", get(get_project_by_id))
         .route("/api/projects/{id}/enquire", post(enquire_project))
