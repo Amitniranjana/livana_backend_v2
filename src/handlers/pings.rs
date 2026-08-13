@@ -82,10 +82,10 @@ pub async fn create_ping(
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Issue 49: Match brokers and insert notifications
+    // Improved matching logic: Match if the broker's operating city is contained within the requested location (case-insensitive)
     let query = String::from(
-        "SELECT user_id FROM broker_profiles WHERE $1 = ANY(operating_cities) AND kyc_status = 'VERIFIED'",
+        "SELECT user_id FROM broker_profiles WHERE EXISTS (SELECT 1 FROM unnest(operating_cities) c WHERE $1 ILIKE '%' || c || '%') AND kyc_status = 'VERIFIED'",
     );
-    // Simple matching logic: matched by location.
 
     let matched_brokers: Vec<Uuid> = sqlx::query_scalar(&query)
         .bind(&payload.location)
@@ -100,7 +100,7 @@ pub async fn create_ping(
         let msg = format!("A new {} request for {} in {} has been posted.", prop_type, list_type, payload.location);
 
         for broker_id in matched_brokers {
-            let _ = sqlx::query(
+            let res = sqlx::query(
                 r#"
                 INSERT INTO notifications (user_id, title, message, type, related_entity_id, related_entity_type)
                 VALUES ($1, $2, $3, 'PING', $4, 'PING')
@@ -112,6 +112,10 @@ pub async fn create_ping(
             .bind(ping.id)
             .execute(&app_state.db)
             .await;
+
+            if let Err(e) = res {
+                eprintln!("Failed to insert ping notification for broker {}: {}", broker_id, e);
+            }
         }
     }
 
