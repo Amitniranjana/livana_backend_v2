@@ -467,8 +467,8 @@ pub fn builder_crm_routes() -> Router<AppState> {
     use axum::routing::{get, patch, put};
     Router::new()
         .route("/api/builder/crm-leads", get(get_crm_leads).post(create_crm_lead))
-        .route("/api/builder/crm-leads/:id", put(update_crm_lead).delete(delete_crm_lead))
-        .route("/api/builder/crm-leads/:id/status", patch(update_crm_lead_status))
+        .route("/api/builder/crm-leads/{id}", put(update_crm_lead).delete(delete_crm_lead))
+        .route("/api/builder/crm-leads/{id}/status", patch(update_crm_lead_status))
 }
 
 pub fn ping_routes() -> Router<AppState> {

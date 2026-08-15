@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 
-// Issue 34
 #[derive(Debug, Deserialize)]
 pub struct AdminReportsQuery {
+    #[serde(rename = "entityType")]
+    pub entity_type: Option<String>, // USER, PROPERTY, COMMUNITY, POST
     pub status: Option<String>,
-    pub property_id: Option<Uuid>,
+    pub search: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }
@@ -15,10 +17,16 @@ pub struct AdminReportsQuery {
 pub struct AdminReportListItem {
     pub id: Uuid,
     pub reporter_user: ReporterInfo,
-    pub property_id: Uuid,
-    pub property_snapshot: PropertySnapshot,
+    #[serde(rename = "entityType")]
+    pub entity_type: String,
+    #[serde(rename = "entityId")]
+    pub entity_id: Uuid,
+    #[serde(rename = "entitySnapshot")]
+    pub entity_snapshot: Option<Value>,
     pub reason: String,
-    pub comment: Option<String>, // maps to description
+    pub comment: Option<String>,
+    #[serde(rename = "adminNotes")]
+    pub admin_notes: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
 }
@@ -28,13 +36,6 @@ pub struct ReporterInfo {
     pub id: Uuid,
     pub name: String,
     pub email: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PropertySnapshot {
-    pub title: String,
-    pub owner_id: Uuid,
-    pub owner_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,7 +57,6 @@ pub struct Pagination {
     pub offset: i64,
 }
 
-// Issue 35
 #[derive(Debug, Serialize)]
 pub struct AdminReportDetailResponse {
     pub success: bool,
@@ -66,7 +66,7 @@ pub struct AdminReportDetailResponse {
 #[derive(Debug, Serialize)]
 pub struct AdminReportDetailData {
     pub report: AdminReportListItem,
-    pub report_history: Vec<AdminReportHistoryItem>, // other reports on this property
+    pub report_history: Vec<AdminReportHistoryItem>, // other reports on this entity
 }
 
 #[derive(Debug, Serialize)]
@@ -77,9 +77,14 @@ pub struct AdminReportHistoryItem {
     pub created_at: DateTime<Utc>,
 }
 
-// Issue 36
 #[derive(Debug, Deserialize)]
 pub struct UpdateReportStatusRequest {
     pub status: String,
-    pub resolution_note: Option<String>,
+    #[serde(rename = "adminNotes")]
+    pub admin_notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportActionRequest {
+    pub action: String, // suspend-user, delete-property, delete-news, dismiss
 }
