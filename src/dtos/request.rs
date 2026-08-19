@@ -51,6 +51,7 @@ pub struct SigninRequest {
 #[serde(rename_all = "camelCase")]
 pub struct SendOtpRequest {
     #[schema(example = "+919876543210")]
+    #[serde(alias = "phone_no")]
     pub phone_no: Option<String>,
     #[schema(example = "john.doe@example.com")]
     pub email: Option<String>,
@@ -64,6 +65,7 @@ pub struct SendOtpRequest {
 #[serde(rename_all = "camelCase")]
 pub struct VerifyOtpRequest {
     #[schema(example = "+919876543210")]
+    #[serde(alias = "phone_no")]
     pub phone_no: Option<String>,
     #[schema(example = "john.doe@example.com")]
     pub email: Option<String>,
