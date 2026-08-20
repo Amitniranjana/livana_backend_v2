@@ -283,7 +283,7 @@ pub async fn get_project_performance(
         SELECT 
             bp.id as project_id,
             bp.project_name,
-            COALESCE(bp.views_count, 0) as views,
+            COALESCE(bp.views_count, 0)::BIGINT as views,
             COALESCE(bp.total_units, 0) as units_total,
             (SELECT COUNT(*) FROM properties p WHERE p.project_id = bp.id) as units_sold,
             (SELECT COUNT(*) FROM site_visits sv WHERE sv.project_id = bp.id) as visits,
@@ -541,7 +541,7 @@ pub struct LeadItem {
     pub message: Option<String>,
     pub preferred_visit_date: Option<chrono::NaiveDate>,
     pub status: String,
-    pub created_at: chrono::NaiveDateTime,
+    pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 pub async fn get_leads(
