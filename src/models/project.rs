@@ -137,6 +137,7 @@ pub struct ProjectLead {
     pub phone: String,
     pub message: Option<String>,
     pub preferred_visit_date: Option<chrono::NaiveDate>,
+    pub preferred_visit_time: Option<chrono::NaiveTime>,
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -148,6 +149,7 @@ pub struct CreateProjectLeadRequest {
     pub phone: String,
     pub message: Option<String>,
     pub preferred_visit_date: Option<chrono::NaiveDate>,
+    pub preferred_visit_time: Option<chrono::NaiveTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

@@ -540,6 +540,7 @@ pub struct LeadItem {
     pub phone: String,
     pub message: Option<String>,
     pub preferred_visit_date: Option<chrono::NaiveDate>,
+    pub preferred_visit_time: Option<chrono::NaiveTime>,
     pub status: String,
     pub created_at: chrono::NaiveDateTime,
 }
@@ -601,6 +602,7 @@ pub async fn get_leads(
                 phone: row.get("phone"),
                 message: row.try_get("message").unwrap_or(None),
                 preferred_visit_date: row.try_get("preferred_visit_date").unwrap_or(None),
+                preferred_visit_time: row.try_get("preferred_visit_time").unwrap_or(None),
                 status: row.get("status"),
                 created_at: row.get("created_at"),
             });
