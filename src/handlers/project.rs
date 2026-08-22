@@ -651,13 +651,14 @@ pub async fn enquire_project(
     ExtractJson(payload): ExtractJson<CreateProjectLeadRequest>,
 ) -> impl IntoResponse {
     let result = sqlx::query(
-        "INSERT INTO project_leads (project_id, name, phone, message, preferred_visit_date) VALUES ($1, $2, $3, $4, $5)"
+        "INSERT INTO project_leads (project_id, name, phone, message, preferred_visit_date, preferred_visit_time) VALUES ($1, $2, $3, $4, $5, $6)"
     )
     .bind(id)
     .bind(payload.name)
     .bind(payload.phone)
     .bind(payload.message)
     .bind(payload.preferred_visit_date)
+    .bind(payload.preferred_visit_time)
     .execute(&app_state.db)
     .await;
     
