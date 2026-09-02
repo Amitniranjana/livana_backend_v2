@@ -240,11 +240,14 @@ pub async fn get_project_by_id(
                 logo: Option<String>,
                 is_verified: Option<bool>,
             }
+            // NOTE: builder_profiles has no `is_verified` column — only
+            // `kyc_status` (text, e.g. 'PENDING' / 'VERIFIED'). Derive the
+            // boolean from that instead of selecting a column that doesn't exist.
             let b_info = sqlx::query_as::<_, BInfo>(
                 "SELECT u.id,
                         TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS name,
                         bp.logo_url AS logo,
-                        bp.is_verified
+                        (UPPER(COALESCE(bp.kyc_status, '')) = 'VERIFIED') AS is_verified
                  FROM users u
                  LEFT JOIN builder_profiles bp ON u.id = bp.user_id
                  WHERE u.id = $1"
@@ -553,38 +556,90 @@ pub async fn search_projects(
 ) -> impl IntoResponse {
     let limit = params.limit.unwrap_or(20).min(100);
     let offset = params.offset.unwrap_or(0);
-    
-    let mut query = "SELECT * FROM builder_projects WHERE status != 'deleted'".to_string();
-    
+
+    // Join `users` (+ `builder_profiles`) so the list response carries the
+    // builder's name/logo/verified status, same as the detail endpoint does.
+    // Previously this was `SELECT * FROM builder_projects`, so callers had
+    // no way to show who the project belonged to.
+    // NOTE: builder_profiles has no `is_verified` column — only
+    // `kyc_status` (text, e.g. 'PENDING' / 'VERIFIED'). Derive the boolean
+    // from that instead of selecting a column that doesn't exist.
+    let mut query = r#"
+        SELECT
+            bp.*,
+            TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS builder_name,
+            bprof.logo_url AS builder_logo,
+            (UPPER(COALESCE(bprof.kyc_status, '')) = 'VERIFIED') AS builder_is_verified
+        FROM builder_projects bp
+        LEFT JOIN users u ON u.id = bp.user_id
+        LEFT JOIN builder_profiles bprof ON bprof.user_id = bp.user_id
+        WHERE bp.status != 'deleted'
+    "#.to_string();
+
     if let Some(ref c) = params.city {
-        query.push_str(&format!(" AND city ILIKE '%{}%'", c));
+        query.push_str(&format!(" AND bp.city ILIKE '%{}%'", c));
     }
     if let Some(ref pt) = params.project_type {
-        query.push_str(&format!(" AND project_type = '{}'", pt));
+        query.push_str(&format!(" AND bp.project_type = '{}'", pt));
     }
     if let Some(ref s) = params.status {
-        query.push_str(&format!(" AND status = '{}'", s));
+        query.push_str(&format!(" AND bp.status = '{}'", s));
     }
-    
-    query.push_str(" ORDER BY created_at DESC LIMIT $1 OFFSET $2");
-    
-    let projects = sqlx::query_as::<_, BuilderProject>(&query)
+
+    query.push_str(" ORDER BY bp.created_at DESC LIMIT $1 OFFSET $2");
+
+    #[derive(sqlx::FromRow)]
+    struct RowWithBuilder {
+        #[sqlx(flatten)]
+        project: BuilderProject,
+        builder_name: Option<String>,
+        builder_logo: Option<String>,
+        builder_is_verified: Option<bool>,
+    }
+
+    let projects = sqlx::query_as::<_, RowWithBuilder>(&query)
         .bind(limit)
         .bind(offset)
         .fetch_all(&app_state.db)
         .await;
-        
+
     match projects {
-        Ok(projs) => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "data": {
-                    "projects": projs,
-                    "pagination": { "limit": limit, "offset": offset }
-                }
-            }))
-        ).into_response(),
+        Ok(projs) => {
+            // Merge the joined builder fields into each project's JSON so
+            // the client doesn't need a second round-trip to the detail
+            // endpoint just to show a name on the card.
+            let projs: Vec<serde_json::Value> = projs
+                .into_iter()
+                .map(|row| {
+                    let mut v = serde_json::to_value(&row.project)
+                        .unwrap_or(json!({}));
+                    let name = row
+                        .builder_name
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| "Unknown Builder".to_string());
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("builder_name".to_string(), json!(name));
+                        obj.insert("builder_logo".to_string(), json!(row.builder_logo));
+                        obj.insert(
+                            "is_verified".to_string(),
+                            json!(row.builder_is_verified.unwrap_or(false)),
+                        );
+                    }
+                    v
+                })
+                .collect();
+
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "data": {
+                        "projects": projs,
+                        "pagination": { "limit": limit, "offset": offset }
+                    }
+                }))
+            ).into_response()
+        },
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": format!("Error: {}", e)}))).into_response()
     }
 }
