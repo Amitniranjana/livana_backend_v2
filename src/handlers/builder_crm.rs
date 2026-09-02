@@ -20,6 +20,19 @@ use crate::{
     utils::auth_extractor::AuthenticationUser,
 };
 
+const VALID_SOURCES: &[&str] = &[
+    "99acres", "magicbricks", "housing", "nobroker", "facebook_ads", 
+    "google_ads", "referral", "walk_in", "other"
+];
+
+const VALID_STATUSES: &[&str] = &[
+    "new", "contacted", "site_visit_scheduled", "negotiation", "converted", "lost"
+];
+
+const VALID_PRIORITIES: &[&str] = &[
+    "hot", "warm", "cold"
+];
+
 // -----------------------------------------------------------------------------
 // Shared Authorization Helper
 // -----------------------------------------------------------------------------
@@ -194,6 +207,16 @@ pub async fn create_crm_lead(
     let status = payload.status.unwrap_or_else(|| "new".to_string());
     let priority = payload.priority.unwrap_or_else(|| "warm".to_string());
 
+    if !VALID_SOURCES.contains(&payload.source.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid source", "data": null}))).into_response();
+    }
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid status", "data": null}))).into_response();
+    }
+    if !VALID_PRIORITIES.contains(&priority.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid priority", "data": null}))).into_response();
+    }
+
     let row = match sqlx::query(
         r#"
         INSERT INTO builder_crm_leads (
@@ -291,6 +314,16 @@ pub async fn update_crm_lead(
     let status = payload.status.unwrap_or_else(|| "new".to_string());
     let priority = payload.priority.unwrap_or_else(|| "warm".to_string());
 
+    if !VALID_SOURCES.contains(&payload.source.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid source", "data": null}))).into_response();
+    }
+    if !VALID_STATUSES.contains(&status.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid status", "data": null}))).into_response();
+    }
+    if !VALID_PRIORITIES.contains(&priority.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid priority", "data": null}))).into_response();
+    }
+
     let row = match sqlx::query(
         r#"
         UPDATE builder_crm_leads SET
@@ -383,6 +416,10 @@ pub async fn update_crm_lead_status(
 
     if !exists {
         return (StatusCode::NOT_FOUND, Json(json!({"success": false, "message": "Lead not found", "data": null}))).into_response();
+    }
+
+    if !VALID_STATUSES.contains(&payload.status.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid status", "data": null}))).into_response();
     }
 
     match sqlx::query("UPDATE builder_crm_leads SET status = $1, updated_at = NOW() WHERE id = $2")
