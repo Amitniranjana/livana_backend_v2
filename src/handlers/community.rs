@@ -90,6 +90,7 @@ pub async fn create_community(
             created_by: user_id,
             created_at: now,
             is_joined: true,
+            members_count: 1,
         },
     };
 
@@ -278,10 +279,13 @@ pub async fn get_communities(
             EXISTS(
                 SELECT 1 FROM community_members cm 
                 WHERE cm.community_id = c.id AND cm.user_id = $1
-            ) as "is_joined!"
+            ) as "is_joined!",
+            (
+                SELECT COUNT(*) FROM community_members cm
+                WHERE cm.community_id = c.id
+            ) as "members_count!"
         FROM communities c
         ORDER BY c.created_at DESC
-        -- cache bust 1
         "#,
         user_id
     )
@@ -344,8 +348,11 @@ pub async fn edit_community(
             updated_at  = NOW()
         WHERE id = $1
         RETURNING id, name, description, created_by, created_at,
-            true as "is_joined!"
-        -- cache bust 2
+            true as "is_joined!",
+            (
+                SELECT COUNT(*) FROM community_members cm
+                WHERE cm.community_id = communities.id
+            ) as "members_count!"
         "#,
         community_id,
         payload.name,
