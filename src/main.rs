@@ -236,6 +236,7 @@ async fn main() {
         .merge(crate::routes::news_routes())
         .merge(referrals_routes())
         .merge(ping_routes())
+        .merge(crate::routes::loan_routes())
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

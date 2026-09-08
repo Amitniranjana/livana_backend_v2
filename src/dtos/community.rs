@@ -19,6 +19,7 @@ pub struct CommunityResponseDto {
     pub created_by: Uuid,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub is_joined: bool,
+    pub members_count: i64,
 }
 
 /// Request body for posting in a community.
