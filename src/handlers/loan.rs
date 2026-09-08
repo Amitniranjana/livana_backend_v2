@@ -16,6 +16,7 @@ use crate::{
 #[derive(serde::Deserialize)]
 struct Claims {
     sub: String,
+    #[allow(dead_code)]
     exp: usize,
 }
 

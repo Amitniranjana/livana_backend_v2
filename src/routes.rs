@@ -476,7 +476,7 @@ pub fn ping_routes() -> Router<AppState> {
         close_ping, create_ping, delete_ping, get_matching_pings, get_my_pings,
         get_ping_detail, get_ping_responses, respond_to_ping,
     };
-    use axum::routing::{delete, get, patch, post};
+    use axum::routing::{get, patch, post};
     
     Router::new()
         .route("/api/v1/pings", post(create_ping))

@@ -1,4 +1,4 @@
-use crate::models::loan::{LoanApplication, LoanStatus};
+use crate::models::loan::LoanApplication;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
