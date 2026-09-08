@@ -487,3 +487,9 @@ pub fn ping_routes() -> Router<AppState> {
         .route("/api/v1/pings/{pingId}/respond", post(respond_to_ping))
         .route("/api/v1/pings/{pingId}/responses", get(get_ping_responses))
 }
+
+pub mod loan;
+
+pub fn loan_routes() -> Router<AppState> {
+    Router::new().nest("/api/v1/loans", loan::router())
+}
