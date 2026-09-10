@@ -488,8 +488,8 @@ pub fn ping_routes() -> Router<AppState> {
         .route("/api/v1/pings/{pingId}/responses", get(get_ping_responses))
 }
 
-pub mod loan;
+pub mod zero_deposit;
 
-pub fn loan_routes() -> Router<AppState> {
-    Router::new().nest("/api/v1/loans", loan::router())
+pub fn zero_deposit_routes() -> Router<AppState> {
+    Router::new().nest("/api/v1/zero-deposit", zero_deposit::router())
 }

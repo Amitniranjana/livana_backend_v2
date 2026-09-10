@@ -1,13 +1,13 @@
-# Loan Application API Documentation
+# Zero Deposit Application API Documentation
 
-This document outlines the endpoints available for the Loan Application module (Issues 52, 53, 54). All endpoints are prefixed with `/api/v1/loans` and require a valid JWT token.
+This document outlines the endpoints available for the Zero Deposit Application module (Issues 52, 53, 54). All endpoints are prefixed with `/api/v1/zero-deposit` and require a valid JWT token.
 
 ---
 
-## 1. Apply for a Loan
-Submit a new loan application. The initial status of the loan will be set to `applied`.
+## 1. Apply for a Zero Deposit
+Submit a new zero deposit application. The initial status of the zero deposit will be set to `applied`.
 
-- **Endpoint**: `POST /api/v1/loans/apply`
+- **Endpoint**: `POST /api/v1/zero-deposit/apply`
 - **Auth Required**: `Bearer <token>`
 - **Content-Type**: `application/json`
 
@@ -28,9 +28,9 @@ Submit a new loan application. The initial status of the loan will be set to `ap
 ```json
 {
   "success": true,
-  "message": "Loan application submitted successfully",
+  "message": "Zero deposit application submitted successfully",
   "data": {
-    "loan": {
+    "zero_deposit": {
       "id": "123e4567-e89b-12d3-a456-426614174002",
       "user_id": "123e4567-e89b-12d3-a456-426614174003",
       "property_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -52,10 +52,10 @@ Submit a new loan application. The initial status of the loan will be set to `ap
 ---
 
 ## 2. Submit Credit Check Consent
-Update the `consent_given` flag for the credit bureau check. This will transition the loan status.
+Update the `consent_given` flag for the credit bureau check. This will transition the zero deposit status.
 
-- **Endpoint**: `POST /api/v1/loans/credit-check/consent`
-- **Auth Required**: `Bearer <token>` (Must be the owner of the loan)
+- **Endpoint**: `POST /api/v1/zero-deposit/credit-check/consent`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
 - **Content-Type**: `application/json`
 
 ### Workflow Transitions
@@ -65,7 +65,7 @@ Update the `consent_given` flag for the credit bureau check. This will transitio
 ### Request Body
 ```json
 {
-  "loan_id": "123e4567-e89b-12d3-a456-426614174002",
+  "zero_deposit_id": "123e4567-e89b-12d3-a456-426614174002",
   "consent_given": true
 }
 ```
@@ -74,9 +74,9 @@ Update the `consent_given` flag for the credit bureau check. This will transitio
 ```json
 {
   "success": true,
-  "message": "Loan consent updated successfully",
+  "message": "Zero deposit consent updated successfully",
   "data": {
-    "loan": {
+    "zero_deposit": {
       "id": "123e4567-e89b-12d3-a456-426614174002",
       "consent_given": true,
       "status": "pending_review",
@@ -88,19 +88,19 @@ Update the `consent_given` flag for the credit bureau check. This will transitio
 
 ---
 
-## 3. Get Loan Details
-Retrieve the full details of a specific loan application.
+## 3. Get Zero Deposit Details
+Retrieve the full details of a specific zero deposit application.
 
-- **Endpoint**: `GET /api/v1/loans/{loan_id}`
-- **Auth Required**: `Bearer <token>` (Must be the owner of the loan)
+- **Endpoint**: `GET /api/v1/zero-deposit/{zero_deposit_id}`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
 
 ### Success Response (200 OK)
 ```json
 {
   "success": true,
-  "message": "Loan retrieved successfully",
+  "message": "Zero deposit application retrieved successfully",
   "data": {
-    "loan": {
+    "zero_deposit": {
       "id": "123e4567-e89b-12d3-a456-426614174002",
       "user_id": "123e4567-e89b-12d3-a456-426614174003",
       "property_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -121,4 +121,4 @@ Retrieve the full details of a specific loan application.
 
 ### Error Responses
 - **401 Unauthorized**: If the token is invalid or missing.
-- **404 Not Found**: If the loan ID is invalid, does not exist, or the user does not own the loan.
+- **404 Not Found**: If the zero deposit ID is invalid, does not exist, or the user does not own the zero deposit application.

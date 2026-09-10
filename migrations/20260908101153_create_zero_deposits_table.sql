@@ -1,5 +1,5 @@
 -- Add migration script here
-CREATE TYPE loan_status AS ENUM (
+CREATE TYPE zero_deposit_status AS ENUM (
     'applied',
     'pending_review',
     'blocked',
@@ -7,7 +7,7 @@ CREATE TYPE loan_status AS ENUM (
     'rejected'
 );
 
-CREATE TABLE loans (
+CREATE TABLE zero_deposits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     property_id UUID REFERENCES properties(id) ON DELETE SET NULL,
@@ -18,10 +18,10 @@ CREATE TABLE loans (
     itr_document_url VARCHAR(512),
     bank_statement_url VARCHAR(512),
     consent_given BOOLEAN NOT NULL DEFAULT false,
-    status loan_status NOT NULL DEFAULT 'applied',
+    status zero_deposit_status NOT NULL DEFAULT 'applied',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_loans_user_id ON loans(user_id);
-CREATE INDEX idx_loans_status ON loans(status);
+CREATE INDEX idx_zero_deposits_user_id ON zero_deposits(user_id);
+CREATE INDEX idx_zero_deposits_status ON zero_deposits(status);
