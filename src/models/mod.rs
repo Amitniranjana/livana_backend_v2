@@ -12,4 +12,4 @@ pub mod builder;
 pub mod project;
 pub mod pending_registration;
 pub mod pings;
-pub mod loan;
+pub mod zero_deposit;

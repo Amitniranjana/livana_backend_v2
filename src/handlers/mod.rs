@@ -51,4 +51,4 @@ pub mod admin_user_chats;
 pub mod admin_schema;
 pub mod builder_crm;
 pub mod pings;
-pub mod loan;
+pub mod zero_deposit;

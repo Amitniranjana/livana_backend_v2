@@ -5,17 +5,37 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::Type, PartialEq)]
-#[sqlx(type_name = "loan_status", rename_all = "snake_case")]
-pub enum LoanStatus {
+#[sqlx(type_name = "zero_deposit_status", rename_all = "snake_case")]
+pub enum ZeroDepositStatus {
     Applied,
     PendingReview,
     Blocked,
     Approved,
     Rejected,
+    FeePending,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::Type, PartialEq)]
+#[sqlx(type_name = "fee_transaction_status", rename_all = "snake_case")]
+pub enum FeeTransactionStatus {
+    Pending,
+    Success,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
-pub struct LoanApplication {
+pub struct FeeTransaction {
+    pub id: Uuid,
+    pub zero_deposit_id: Uuid,
+    pub upi_vpa: String,
+    pub amount: f64,
+    pub status: FeeTransactionStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct ZeroDepositApplication {
     pub id: Uuid,
     pub user_id: Uuid,
     pub property_id: Option<Uuid>,
@@ -29,13 +49,13 @@ pub struct LoanApplication {
     pub itr_document_url: Option<String>,
     pub bank_statement_url: Option<String>,
     pub consent_given: bool,
-    pub status: LoanStatus,
+    pub status: ZeroDepositStatus,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct ApplyLoanRequest {
+pub struct ApplyZeroDepositRequest {
     pub property_id: Option<String>, // Passed as string and parsed into UUID
     pub kyc_id: String,
     pub monthly_rent: f64,
@@ -47,6 +67,18 @@ pub struct ApplyLoanRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreditCheckConsentRequest {
-    pub loan_id: String,
+    pub zero_deposit_id: String,
     pub consent_given: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+pub struct ZeroDepositStatusResponse {
+    pub id: Uuid,
+    pub status: ZeroDepositStatus,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ChargeFeeRequest {
+    pub upi_vpa: String,
 }
