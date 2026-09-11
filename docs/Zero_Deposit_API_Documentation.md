@@ -122,3 +122,96 @@ Retrieve the full details of a specific zero deposit application.
 ### Error Responses
 - **401 Unauthorized**: If the token is invalid or missing.
 - **404 Not Found**: If the zero deposit ID is invalid, does not exist, or the user does not own the zero deposit application.
+
+---
+
+## 4. Get My Zero Deposits
+Retrieve all zero deposit applications created by the currently authenticated user.
+
+- **Endpoint**: `GET /api/v1/zero-deposit/me`
+- **Auth Required**: `Bearer <token>`
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Zero deposits retrieved successfully",
+  "data": {
+    "zero_deposits": [
+      {
+        "id": "123e4567-e89b-12d3-a456-426614174002",
+        "user_id": "123e4567-e89b-12d3-a456-426614174003",
+        "property_id": "123e4567-e89b-12d3-a456-426614174000",
+        "kyc_id": "123e4567-e89b-12d3-a456-426614174001",
+        "monthly_rent": 15000.0,
+        "requested_deposit_amount": 45000.0,
+        "monthly_income": 80000.0,
+        "itr_document_url": "https://s3.amazonaws.com/.../itr.pdf",
+        "bank_statement_url": "https://s3.amazonaws.com/.../bank.pdf",
+        "consent_given": true,
+        "status": "pending_review",
+        "created_at": "2026-09-08T10:15:30Z",
+        "updated_at": "2026-09-08T10:20:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 5. Polling: Get Zero Deposit Status
+Retrieve a lightweight status payload for a specific zero deposit application. Useful for the frontend to poll during long-running background processes (like fee confirmations).
+
+- **Endpoint**: `GET /api/v1/zero-deposit/{application_id}/status`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Status retrieved successfully",
+  "data": {
+    "zero_deposit": {
+      "id": "123e4567-e89b-12d3-a456-426614174002",
+      "status": "fee_pending",
+      "updated_at": "2026-09-10T14:20:00Z"
+    }
+  }
+}
+```
+
+---
+
+## 6. Initiate Processing Fee Charge
+Initiate a processing fee charge using UPI for a given zero deposit application. This will create a pending fee transaction and update the application status to `fee_pending` while awaiting a webhook confirmation.
+
+- **Endpoint**: `POST /api/v1/zero-deposit/{application_id}/fee/charge`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
+- **Content-Type**: `application/json`
+
+### Request Body
+```json
+{
+  "upi_vpa": "user@upi"
+}
+```
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Fee charge initiated successfully",
+  "data": {
+    "fee_transaction": {
+      "id": "987e6543-e21b-12d3-a456-426614174111",
+      "zero_deposit_id": "123e4567-e89b-12d3-a456-426614174002",
+      "upi_vpa": "user@upi",
+      "amount": 500.0,
+      "status": "pending",
+      "created_at": "2026-09-10T14:20:00Z",
+      "updated_at": "2026-09-10T14:20:00Z"
+    }
+  }
+}
+```
