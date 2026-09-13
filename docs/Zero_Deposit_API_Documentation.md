@@ -215,3 +215,109 @@ Initiate a processing fee charge using UPI for a given zero deposit application.
   }
 }
 ```
+
+---
+
+## 7. Setup Autopay Mandate
+Initiate the setup of an autopay mandate for the zero deposit application.
+
+- **Endpoint**: `POST /api/v1/zero-deposit/{application_id}/autopay/setup`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
+- **Content-Type**: `application/json`
+
+### Request Body (UPI Autopay)
+```json
+{
+  "mandate_type": "UPI_AUTOPAY",
+  "upi_vpa": "user@upi"
+}
+```
+
+### Request Body (NACH)
+```json
+{
+  "mandate_type": "NACH",
+  "bank_account_number": "1234567890",
+  "ifsc": "HDFC0001234"
+}
+```
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Autopay mandate setup initiated",
+  "data": {
+    "autopay_mandate": {
+      "id": "111e4567-e89b-12d3-a456-426614174000",
+      "zero_deposit_id": "123e4567-e89b-12d3-a456-426614174002",
+      "mandate_type": "UPI_AUTOPAY",
+      "upi_vpa": "user@upi",
+      "bank_account_number": null,
+      "ifsc": null,
+      "status": "pending",
+      "created_at": "2026-09-11T14:20:00Z",
+      "updated_at": "2026-09-11T14:20:00Z"
+    }
+  }
+}
+```
+
+---
+
+## 8. Get Repayment Schedule
+Retrieve the EMI-style repayment schedule for the zero deposit application.
+
+- **Endpoint**: `GET /api/v1/zero-deposit/{application_id}/repayment-schedule`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Repayment schedule retrieved successfully",
+  "data": {
+    "repayment_schedule": [
+      {
+        "id": "222e4567-e89b-12d3-a456-426614174000",
+        "zero_deposit_id": "123e4567-e89b-12d3-a456-426614174002",
+        "installment_number": 1,
+        "due_date": "2026-10-01",
+        "amount_due": 15000.0,
+        "status": "pending",
+        "created_at": "2026-09-11T14:20:00Z",
+        "updated_at": "2026-09-11T14:20:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 9. Get Ledger
+Retrieve the full transaction ledger (disbursements, repayments, fees, refunds) for the zero deposit application.
+
+- **Endpoint**: `GET /api/v1/zero-deposit/{application_id}/ledger`
+- **Auth Required**: `Bearer <token>` (Must be the owner of the zero deposit application)
+
+### Success Response (200 OK)
+```json
+{
+  "success": true,
+  "message": "Ledger retrieved successfully",
+  "data": {
+    "ledger": [
+      {
+        "id": "333e4567-e89b-12d3-a456-426614174000",
+        "zero_deposit_id": "123e4567-e89b-12d3-a456-426614174002",
+        "transaction_type": "fee",
+        "amount": 500.0,
+        "reference_id": "txn_abc123",
+        "description": "Processing fee charge",
+        "created_at": "2026-09-11T14:20:00Z"
+      }
+    ]
+  }
+}
+```
