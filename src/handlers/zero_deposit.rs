@@ -367,3 +367,180 @@ pub async fn charge_fee(
         }
     }
 }
+
+/// POST /api/v1/zero-deposit/{application_id}/autopay/setup
+pub async fn setup_autopay(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<String>,
+    Json(payload): Json<crate::models::zero_deposit::SetupAutopayRequest>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let zero_deposit_id = match Uuid::parse_str(&application_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Invalid zero_deposit_id", "error_code": "INVALID_UUID"})),
+            );
+        }
+    };
+
+    // Validate payload conditionally
+    match payload.mandate_type {
+        crate::models::zero_deposit::MandateType::UpiAutopay => {
+            if payload.upi_vpa.is_none() {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"success": false, "message": "upi_vpa is required for UPI_AUTOPAY", "error_code": "MISSING_FIELD"})),
+                );
+            }
+        }
+        crate::models::zero_deposit::MandateType::Nach => {
+            if payload.bank_account_number.is_none() || payload.ifsc.is_none() {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"success": false, "message": "bank_account_number and ifsc are required for NACH", "error_code": "MISSING_FIELD"})),
+                );
+            }
+        }
+    }
+
+    match crate::services::zero_deposit_service::setup_autopay_mandate(&app_state.db, zero_deposit_id, user_id, &payload).await {
+        Ok(Some(mandate)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Autopay mandate setup initiated",
+                "data": { "autopay_mandate": mandate }
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "message": "Zero deposit not found or unauthorized",
+                "error_code": "NOT_FOUND"
+            })),
+        ),
+        Err(e) => {
+            log::error!("setup_autopay DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to setup autopay",
+                    "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+/// GET /api/v1/zero-deposit/{application_id}/repayment-schedule
+pub async fn get_repayment_schedule(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let zero_deposit_id = match Uuid::parse_str(&application_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Invalid zero_deposit_id", "error_code": "INVALID_UUID"})),
+            );
+        }
+    };
+
+    match crate::services::zero_deposit_service::get_repayment_schedule(&app_state.db, zero_deposit_id, user_id).await {
+        Ok(Some(schedule)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Repayment schedule retrieved successfully",
+                "data": { "repayment_schedule": schedule }
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "message": "Zero deposit not found or unauthorized",
+                "error_code": "NOT_FOUND"
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_repayment_schedule DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to retrieve repayment schedule",
+                    "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}
+
+/// GET /api/v1/zero-deposit/{application_id}/ledger
+pub async fn get_ledger(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let zero_deposit_id = match Uuid::parse_str(&application_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Invalid zero_deposit_id", "error_code": "INVALID_UUID"})),
+            );
+        }
+    };
+
+    match crate::services::zero_deposit_service::get_ledger_entries(&app_state.db, zero_deposit_id, user_id).await {
+        Ok(Some(entries)) => (
+            StatusCode::OK,
+            Json(json!({
+                "success": true,
+                "message": "Ledger retrieved successfully",
+                "data": { "ledger": entries }
+            })),
+        ),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({
+                "success": false,
+                "message": "Zero deposit not found or unauthorized",
+                "error_code": "NOT_FOUND"
+            })),
+        ),
+        Err(e) => {
+            log::error!("get_ledger DB error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({
+                    "success": false,
+                    "message": "Failed to retrieve ledger",
+                    "error_code": "DB_ERROR"
+                })),
+            )
+        }
+    }
+}

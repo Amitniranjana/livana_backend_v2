@@ -2,7 +2,8 @@ use axum::{routing::{get, post}, Router};
 use crate::app_state::AppState;
 use crate::handlers::zero_deposit::{
     apply_zero_deposit, credit_check_consent, get_zero_deposit,
-    get_my_zero_deposits, get_status, charge_fee
+    get_my_zero_deposits, get_status, charge_fee,
+    setup_autopay, get_repayment_schedule, get_ledger
 };
 
 pub fn router() -> Router<AppState> {
@@ -13,4 +14,7 @@ pub fn router() -> Router<AppState> {
         .route("/{zero_deposit_id}", get(get_zero_deposit))
         .route("/{application_id}/status", get(get_status))
         .route("/{application_id}/fee/charge", post(charge_fee))
+        .route("/{application_id}/autopay/setup", post(setup_autopay))
+        .route("/{application_id}/repayment-schedule", get(get_repayment_schedule))
+        .route("/{application_id}/ledger", get(get_ledger))
 }

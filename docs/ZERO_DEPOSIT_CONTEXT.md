@@ -44,6 +44,42 @@ To support processing fees, a related fee transaction entity will be introduced.
 > **Note on Webhook Dependency (Issue 85):**
 > The `FeeTransaction` record will initially be created with a `pending` status. It will remain pending until a webhook (to be implemented in Issue 85) receives confirmation from the payment gateway and updates the transaction to `success` or `failed`.
 
+## Entity Structure: `AutopayMandate` (Issue 58)
+Stores the automated repayment setup details.
+### Fields
+- **id**: `Uuid` (Primary Key)
+- **zero_deposit_id**: `Uuid` (Foreign Key -> `zero_deposits.id`)
+- **mandate_type**: `String` (e.g., 'UPI_AUTOPAY', 'NACH')
+- **upi_vpa**: `String` (Optional, if type is UPI)
+- **bank_account_number**: `String` (Optional, if type is NACH)
+- **ifsc**: `String` (Optional, if type is NACH)
+- **status**: `String` / Enum (`pending`, `active`, `failed`)
+- **created_at**: `DateTime<Utc>`
+- **updated_at**: `DateTime<Utc>`
+
+## Entity Structure: `RepaymentSchedule` (Issue 59)
+Represents EMI-style repayment due dates and amounts.
+### Fields
+- **id**: `Uuid` (Primary Key)
+- **zero_deposit_id**: `Uuid` (Foreign Key -> `zero_deposits.id`)
+- **installment_number**: `i32`
+- **due_date**: `NaiveDate` / `DateTime<Utc>`
+- **amount_due**: `f64` / `Numeric`
+- **status**: `String` / Enum (`pending`, `paid`, `overdue`)
+- **created_at**: `DateTime<Utc>`
+- **updated_at**: `DateTime<Utc>`
+
+## Entity Structure: `LedgerEntry` (Issue 60)
+Records every financial transaction affecting the zero deposit application.
+### Fields
+- **id**: `Uuid` (Primary Key)
+- **zero_deposit_id**: `Uuid` (Foreign Key -> `zero_deposits.id`)
+- **transaction_type**: `String` / Enum (`disbursement`, `repayment`, `fee`, `refund`)
+- **amount**: `f64` / `Numeric`
+- **reference_id**: `String` (External gateway tx ID)
+- **description**: `String`
+- **created_at**: `DateTime<Utc>`
+
 ## Naming Convention
 - **Strict Adherence:** All code, variables, endpoints, and database tables MUST use the terms "Zero Deposit", "zero deposit", or "zero_deposit".
 - **Forbidden:** The term "loan" must NOT be used anywhere in this module.

@@ -195,3 +195,109 @@ pub async fn initiate_fee_charge(
 
     Ok(Some(fee_transaction))
 }
+
+pub async fn setup_autopay_mandate(
+    db: &Pool<Postgres>,
+    zero_deposit_id: Uuid,
+    user_id: Uuid,
+    payload: &crate::models::zero_deposit::SetupAutopayRequest,
+) -> Result<Option<crate::models::zero_deposit::AutopayMandate>, sqlx::Error> {
+    // Verify ownership
+    let existing = sqlx::query(
+        "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
+    )
+    .bind(zero_deposit_id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?;
+
+    if existing.is_none() {
+        return Ok(None);
+    }
+
+    let mandate = sqlx::query_as::<_, crate::models::zero_deposit::AutopayMandate>(
+        r#"
+        INSERT INTO autopay_mandates (zero_deposit_id, mandate_type, upi_vpa, bank_account_number, ifsc, status)
+        VALUES ($1, $2::mandate_type, $3, $4, $5, 'pending')
+        RETURNING id, zero_deposit_id, mandate_type, upi_vpa, bank_account_number, ifsc, status, created_at, updated_at
+        "#
+    )
+    .bind(zero_deposit_id)
+    .bind(match payload.mandate_type {
+        crate::models::zero_deposit::MandateType::UpiAutopay => "UPI_AUTOPAY",
+        crate::models::zero_deposit::MandateType::Nach => "NACH",
+    })
+    .bind(&payload.upi_vpa)
+    .bind(&payload.bank_account_number)
+    .bind(&payload.ifsc)
+    .fetch_one(db)
+    .await?;
+
+    Ok(Some(mandate))
+}
+
+pub async fn get_repayment_schedule(
+    db: &Pool<Postgres>,
+    zero_deposit_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Vec<crate::models::zero_deposit::RepaymentSchedule>>, sqlx::Error> {
+    // Verify ownership
+    let existing = sqlx::query(
+        "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
+    )
+    .bind(zero_deposit_id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?;
+
+    if existing.is_none() {
+        return Ok(None);
+    }
+
+    let schedule = sqlx::query_as::<_, crate::models::zero_deposit::RepaymentSchedule>(
+        r#"
+        SELECT id, zero_deposit_id, installment_number, due_date, amount_due, status, created_at, updated_at
+        FROM repayment_schedules
+        WHERE zero_deposit_id = $1
+        ORDER BY installment_number ASC
+        "#
+    )
+    .bind(zero_deposit_id)
+    .fetch_all(db)
+    .await?;
+
+    Ok(Some(schedule))
+}
+
+pub async fn get_ledger_entries(
+    db: &Pool<Postgres>,
+    zero_deposit_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<Vec<crate::models::zero_deposit::LedgerEntry>>, sqlx::Error> {
+    // Verify ownership
+    let existing = sqlx::query(
+        "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
+    )
+    .bind(zero_deposit_id)
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?;
+
+    if existing.is_none() {
+        return Ok(None);
+    }
+
+    let entries = sqlx::query_as::<_, crate::models::zero_deposit::LedgerEntry>(
+        r#"
+        SELECT id, zero_deposit_id, transaction_type, amount, reference_id, description, created_at
+        FROM ledger_entries
+        WHERE zero_deposit_id = $1
+        ORDER BY created_at DESC
+        "#
+    )
+    .bind(zero_deposit_id)
+    .fetch_all(db)
+    .await?;
+
+    Ok(Some(entries))
+}
