@@ -493,3 +493,35 @@ pub mod zero_deposit;
 pub fn zero_deposit_routes() -> Router<AppState> {
     Router::new().nest("/api/v1/zero-deposit", zero_deposit::router())
 }
+
+pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
+    use crate::handlers::admin_zero_deposit::{
+        approve_zero_deposit, assign_nbfc, forfeit_default, get_defaulted_zero_deposits,
+        get_zero_deposit_detail, get_zero_deposit_ledger, get_zero_deposits, list_nbfc_partners,
+        onboard_nbfc_partner, recover_default, reject_zero_deposit, suspend_default,
+        update_nbfc_partner,
+    };
+    use axum::routing::{get, patch};
+
+    Router::new()
+        // Zero Deposit endpoints
+        .route("/api/admin/zero-deposit", get(get_zero_deposits))
+        .route("/api/admin/zero-deposit/{id}", get(get_zero_deposit_detail))
+        .route("/api/admin/zero-deposit/{id}/approve", patch(approve_zero_deposit))
+        .route("/api/admin/zero-deposit/{id}/reject", patch(reject_zero_deposit))
+        .route("/api/admin/zero-deposit/{id}/assign-nbfc", patch(assign_nbfc))
+        .route("/api/admin/zero-deposit/{id}/ledger", get(get_zero_deposit_ledger))
+        // Default / delinquency endpoints
+        .route("/api/admin/zero-deposit/defaults", get(get_defaulted_zero_deposits))
+        .route("/api/admin/zero-deposit/{id}/default/suspend", patch(suspend_default))
+        .route("/api/admin/zero-deposit/{id}/default/forfeit", patch(forfeit_default))
+        .route("/api/admin/zero-deposit/{id}/default/recover", patch(recover_default))
+        // NBFC endpoints
+        .route("/api/admin/nbfc-partners", get(list_nbfc_partners).post(onboard_nbfc_partner))
+        .route("/api/admin/nbfc-partners/{id}", patch(update_nbfc_partner))
+        // Apply admin auth guard
+        .route_layer(axum::middleware::from_fn_with_state(
+            state,
+            crate::utils::admin_auth_guard::admin_auth_guard,
+        ))
+}

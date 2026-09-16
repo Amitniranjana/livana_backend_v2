@@ -52,3 +52,4 @@ pub mod admin_schema;
 pub mod builder_crm;
 pub mod pings;
 pub mod zero_deposit;
+pub mod admin_zero_deposit;

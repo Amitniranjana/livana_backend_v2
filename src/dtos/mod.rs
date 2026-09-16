@@ -30,3 +30,4 @@ pub mod carecrew_directory;
 pub mod admin_user_chats;
 pub mod builder_crm;
 pub mod pings;
+pub mod admin_zero_deposit;
