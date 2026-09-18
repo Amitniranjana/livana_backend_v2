@@ -22,7 +22,7 @@ pub async fn apply_for_zero_deposit(
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applied')
         RETURNING 
             id, user_id, property_id, kyc_id, 
-            monthly_rent, requested_deposit_amount, monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
             status, 
             created_at, updated_at
@@ -61,7 +61,7 @@ pub async fn update_consent(
         WHERE id = $3 AND user_id = $4
         RETURNING 
             id, user_id, property_id, kyc_id, 
-            monthly_rent, requested_deposit_amount, monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
             status, 
             created_at, updated_at
@@ -86,7 +86,7 @@ pub async fn get_zero_deposit_by_id(
         r#"
         SELECT 
             id, user_id, property_id, kyc_id, 
-            monthly_rent, requested_deposit_amount, monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
             status, 
             created_at, updated_at
@@ -110,7 +110,7 @@ pub async fn get_my_zero_deposits(
         r#"
         SELECT 
             id, user_id, property_id, kyc_id, 
-            monthly_rent, requested_deposit_amount, monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
             status, 
             created_at, updated_at
