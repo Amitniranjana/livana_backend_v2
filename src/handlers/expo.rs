@@ -125,12 +125,14 @@ pub async fn create_expo(
             let message = format!("An exciting new property expo '{}' is happening near you on {}!", payload.title, event_date.format("%Y-%m-%d"));
             
             for user_id in nearby_users {
+                let notification_id = Uuid::new_v4();
                 let _ = sqlx::query(
                     r#"
-                    INSERT INTO notifications (user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at)
-                    VALUES ($1, $2, $3, 'EXPO', false, $4, 'expo_events', NOW())
+                    INSERT INTO notifications (id, user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at)
+                    VALUES ($1, $2, $3, $4, 'EXPO', false, $5, 'expo_events', NOW())
                     "#,
                 )
+                .bind(notification_id)
                 .bind(user_id)
                 .bind(&title)
                 .bind(&message)
