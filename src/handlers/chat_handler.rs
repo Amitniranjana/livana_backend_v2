@@ -771,9 +771,11 @@ async fn push_message_and_notification(
                 content.clone()
             };
 
+            let notification_id = Uuid::new_v4();
             let _ = sqlx::query(
-                "INSERT INTO notifications (user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at) VALUES ($1, $2, $3, 'MESSAGE', false, $4, 'chat', NOW())"
+                "INSERT INTO notifications (id, user_id, title, message, type, is_read, related_entity_id, related_entity_type, created_at) VALUES ($1, $2, $3, $4, 'MESSAGE', false, $5, 'chat', NOW())"
             )
+            .bind(notification_id)
             .bind(receiver_id)
             .bind(&sender_name)
             .bind(&preview)

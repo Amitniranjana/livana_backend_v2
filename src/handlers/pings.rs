@@ -100,12 +100,14 @@ pub async fn create_ping(
         let msg = format!("A new {} request for {} in {} has been posted.", prop_type, list_type, payload.location);
 
         for broker_id in matched_brokers {
+            let notification_id = Uuid::new_v4();
             let res = sqlx::query(
                 r#"
-                INSERT INTO notifications (user_id, title, message, type, related_entity_id, related_entity_type)
-                VALUES ($1, $2, $3, 'PING', $4, 'PING')
+                INSERT INTO notifications (id, user_id, title, message, type, related_entity_id, related_entity_type)
+                VALUES ($1, $2, $3, $4, 'PING', $5, 'PING')
                 "#
             )
+            .bind(notification_id)
             .bind(broker_id)
             .bind(title)
             .bind(&msg)
@@ -388,9 +390,11 @@ pub async fn respond_to_ping(
     let title = "New Response on your Ping";
     let msg = format!("{} has responded to your ping.", broker_name);
 
+    let notification_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO notifications (user_id, title, message, type, related_entity_id, related_entity_type) VALUES ($1, $2, $3, 'PING_RESPONSE', $4, 'CHAT')"
+        "INSERT INTO notifications (id, user_id, title, message, type, related_entity_id, related_entity_type) VALUES ($1, $2, $3, $4, 'PING_RESPONSE', $5, 'CHAT')"
     )
+    .bind(notification_id)
     .bind(ping.user_id)
     .bind(title)
     .bind(&msg)
