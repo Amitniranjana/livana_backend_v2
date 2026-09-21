@@ -489,6 +489,7 @@ pub fn ping_routes() -> Router<AppState> {
 }
 
 pub mod zero_deposit;
+pub mod nbfc;
 
 pub fn zero_deposit_routes() -> Router<AppState> {
     Router::new().nest("/api/v1/zero-deposit", zero_deposit::router())
