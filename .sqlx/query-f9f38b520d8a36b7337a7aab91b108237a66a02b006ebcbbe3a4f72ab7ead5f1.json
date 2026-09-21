@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM news_items WHERE author_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f9f38b520d8a36b7337a7aab91b108237a66a02b006ebcbbe3a4f72ab7ead5f1"
+}

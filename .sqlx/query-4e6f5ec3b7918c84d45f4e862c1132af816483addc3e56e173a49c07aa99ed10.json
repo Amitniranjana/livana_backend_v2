@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO broker_profiles (user_id, agency_name, license_number, rera_id, operating_cities, deal_types, years_of_experience, kyc_status, updated_at)\n        VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', NOW())\n        ON CONFLICT (user_id) DO UPDATE\n        SET agency_name = $2,\n            license_number = $3,\n            rera_id = $4,\n            operating_cities = $5,\n            deal_types = $6,\n            years_of_experience = $7,\n            kyc_status = 'PENDING',\n            updated_at = NOW()\n        RETURNING *\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "agency_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "license_number",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "rera_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "operating_cities",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 5,
+        "name": "deal_types",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 6,
+        "name": "years_of_experience",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "kyc_status",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "TextArray",
+        "TextArray",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4e6f5ec3b7918c84d45f4e862c1132af816483addc3e56e173a49c07aa99ed10"
+}
