@@ -16,7 +16,7 @@ pub fn nbfc_routes(state: AppState) -> Router<AppState> {
             "/zero-deposits",
             Router::new()
                 .route("/", get(get_nbfc_zero_deposits))
-                .route("/:id", get(get_nbfc_zero_deposit_by_id))
+                .route("/{id}", get(get_nbfc_zero_deposit_by_id))
                 .route_layer(middleware::from_fn_with_state(state, nbfc_auth_guard))
         )
 }
