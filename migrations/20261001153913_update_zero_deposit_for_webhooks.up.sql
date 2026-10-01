@@ -1,0 +1,12 @@
+ALTER TYPE zero_deposit_status ADD VALUE IF NOT EXISTS 'disbursed';
+
+ALTER TABLE fee_transactions
+ADD COLUMN IF NOT EXISTS upi_txn_ref VARCHAR(255);
+
+ALTER TABLE repayment_schedules
+ADD COLUMN IF NOT EXISTS partner_repayment_id VARCHAR(255),
+ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(15, 2) DEFAULT 0,
+ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ;
+
+ALTER TABLE zero_deposits
+ADD COLUMN IF NOT EXISTS disbursed_at TIMESTAMPTZ;

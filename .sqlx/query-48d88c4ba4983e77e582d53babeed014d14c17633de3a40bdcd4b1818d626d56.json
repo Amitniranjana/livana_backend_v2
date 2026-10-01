@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE zero_deposits SET is_defaulted = true, updated_at = NOW() WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "48d88c4ba4983e77e582d53babeed014d14c17633de3a40bdcd4b1818d626d56"
+}

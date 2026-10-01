@@ -54,3 +54,4 @@ pub mod pings;
 pub mod zero_deposit;
 pub mod admin_zero_deposit;
 pub mod nbfc;
+pub mod zero_deposit_webhook;
