@@ -199,7 +199,7 @@ Depending on the mandate type, provide the respective fields:
 - **200 OK**
 ```json
 {
-  "success": true,
+  "success": true,a
   "message": "Autopay mandate setup initiated",
   "data": { "autopay_mandate": { ... } }
 }
