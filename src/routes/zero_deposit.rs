@@ -5,6 +5,9 @@ use crate::handlers::zero_deposit::{
     get_my_zero_deposits, get_status, charge_fee,
     setup_autopay, get_repayment_schedule, get_ledger
 };
+use crate::handlers::zero_deposit_webhook::{
+    disbursement_webhook, repayment_webhook, fee_webhook
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -17,4 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/{application_id}/autopay/setup", post(setup_autopay))
         .route("/{application_id}/repayment-schedule", get(get_repayment_schedule))
         .route("/{application_id}/ledger", get(get_ledger))
+        .route("/webhook/disbursement-status", post(disbursement_webhook))
+        .route("/webhook/repayment-status", post(repayment_webhook))
+        .route("/webhook/fee-status", post(fee_webhook))
 }

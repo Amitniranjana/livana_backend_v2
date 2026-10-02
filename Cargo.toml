@@ -89,6 +89,7 @@ urlencoding = "2"
 dashmap = "5.5"
 futures = "0.3.32"
 tower_governor = "0.8.0"
+hmac = "0.12"
 
 [[bin]]
 name = "gen_jwt"

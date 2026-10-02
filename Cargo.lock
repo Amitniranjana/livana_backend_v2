@@ -2781,6 +2781,7 @@ dependencies = [
  "env_logger",
  "futures",
  "hex",
+ "hmac",
  "image",
  "jsonwebtoken",
  "lettre",

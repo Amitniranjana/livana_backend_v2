@@ -4,7 +4,6 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct ZeroDepositQuery {
     pub status: Option<String>,
-    pub user_role: Option<String>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
 }

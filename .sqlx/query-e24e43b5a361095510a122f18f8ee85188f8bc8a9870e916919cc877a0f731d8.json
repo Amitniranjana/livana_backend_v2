@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE fee_transactions SET status = $1, upi_txn_ref = $2, updated_at = NOW() WHERE zero_deposit_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "fee_transaction_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "success",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Varchar",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e24e43b5a361095510a122f18f8ee85188f8bc8a9870e916919cc877a0f731d8"
+}

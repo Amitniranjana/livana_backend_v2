@@ -13,6 +13,7 @@ pub enum ZeroDepositStatus {
     Approved,
     Rejected,
     FeePending,
+    Disbursed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::Type, PartialEq)]
@@ -138,6 +139,9 @@ pub struct RepaymentSchedule {
     pub due_date: NaiveDate,
     pub amount_due: f64,
     pub status: RepaymentStatus,
+    pub partner_repayment_id: Option<String>,
+    pub amount_paid: f64,
+    pub paid_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -159,4 +163,29 @@ pub struct SetupAutopayRequest {
     pub upi_vpa: Option<String>,
     pub bank_account_number: Option<String>,
     pub ifsc: Option<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DisbursementWebhookRequest {
+    pub zero_deposit_id: Uuid,
+    pub status: String,
+    pub amount: f64,
+    pub disbursed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct RepaymentWebhookRequest {
+    pub zero_deposit_id: Uuid,
+    pub repayment_id: Uuid, // or String depending on what the partner sends, let's use String as partner_repayment_id
+    pub due_date: Option<NaiveDate>,
+    pub amount_paid: f64,
+    pub status: String, // e.g., "paid", "missed"
+    pub paid_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct FeeWebhookRequest {
+    pub zero_deposit_id: Uuid,
+    pub upi_txn_ref: String,
+    pub status: String, // e.g., "success", "failed"
 }

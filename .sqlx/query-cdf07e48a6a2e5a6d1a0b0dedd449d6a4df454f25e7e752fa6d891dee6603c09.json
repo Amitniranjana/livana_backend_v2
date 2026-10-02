@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE zero_deposits SET status = $1, disbursed_at = $2, updated_at = NOW() WHERE id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "zero_deposit_status",
+            "kind": {
+              "Enum": [
+                "applied",
+                "pending_review",
+                "blocked",
+                "approved",
+                "rejected",
+                "fee_pending",
+                "disbursed"
+              ]
+            }
+          }
+        },
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cdf07e48a6a2e5a6d1a0b0dedd449d6a4df454f25e7e752fa6d891dee6603c09"
+}
