@@ -168,16 +168,23 @@ pub async fn get_nbfc_zero_deposit_by_id(
     Extension(claims): Extension<NbfcClaims>,
     Path(zero_deposit_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let zero_deposit = sqlx::query_as::<_, ZeroDepositApplication>(
+    let zero_deposit = sqlx::query_scalar::<_, serde_json::Value>(
         r#"
-        SELECT 
-            id, user_id, property_id, kyc_id, 
-            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
-            itr_document_url, bank_statement_url, consent_given, 
-            status, 
-            created_at, updated_at
-        FROM zero_deposits
-        WHERE id = $1 AND nbfc_id = $2
+        SELECT row_to_json(t) FROM (
+            SELECT z.id, z.user_id, z.property_id, z.kyc_id, 
+                z.monthly_rent::FLOAT8 as monthly_rent, z.requested_deposit_amount::FLOAT8 as requested_deposit_amount, z.monthly_income::FLOAT8 as monthly_income, 
+                z.itr_document_url, z.bank_statement_url, z.consent_given, 
+                z.status, 
+                z.created_at, z.updated_at,
+                (
+                    SELECT coalesce(array_agg(doc), ARRAY[]::text[])
+                    FROM unnest(ARRAY[k.profile_picture_url, k.govt_id_document_url, k.experience_document_url]) as doc
+                    WHERE doc IS NOT NULL
+                ) as kyc_document_urls
+            FROM zero_deposits z
+            LEFT JOIN kyc_submissions k ON z.kyc_id = k.id
+            WHERE z.id = $1 AND z.nbfc_id = $2
+        ) t
         "#
     )
     .bind(zero_deposit_id)

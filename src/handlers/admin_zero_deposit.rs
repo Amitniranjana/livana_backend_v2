@@ -63,11 +63,15 @@ pub async fn get_zero_deposit_detail(
             SELECT z.*, 
                    u.first_name as user_first_name, u.last_name as user_last_name, u.email as user_email, u.phone_no as user_phone,
                    p.title as property_title,
-                   array_remove(ARRAY[k.profile_picture_url, k.govt_id_document_url, k.experience_document_url]::text[], NULL) as kyc_document_urls
+                   (
+                       SELECT coalesce(array_agg(doc), ARRAY[]::text[])
+                       FROM unnest(ARRAY[k.profile_picture_url, k.govt_id_document_url, k.experience_document_url]) as doc
+                       WHERE doc IS NOT NULL
+                   ) as kyc_document_urls
             FROM zero_deposits z
             JOIN users u ON z.user_id = u.id
             LEFT JOIN properties p ON z.property_id = p.id
-            JOIN kyc_submissions k ON z.kyc_id = k.id
+            LEFT JOIN kyc_submissions k ON z.kyc_id = k.id
             WHERE z.id = $1
         ) t
         "#,
