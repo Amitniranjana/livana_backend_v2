@@ -656,13 +656,13 @@ pub async fn get_carecrew_directory(
          k.verification_status, k.city, k.services \
          FROM users u \
          LEFT JOIN kyc_submissions k ON u.id = k.user_id \
-         WHERE u.role = 'associate' AND u.associate_type = 'carecrew'"
+         WHERE u.user_role = 'associate' AND u.associate_type = 'carecrew'"
     );
 
     let mut count_query = sqlx::QueryBuilder::new(
         "SELECT COUNT(*) FROM users u \
          LEFT JOIN kyc_submissions k ON u.id = k.user_id \
-         WHERE u.role = 'associate' AND u.associate_type = 'carecrew'"
+         WHERE u.user_role = 'associate' AND u.associate_type = 'carecrew'"
     );
 
     if let Some(city) = &q.city {
