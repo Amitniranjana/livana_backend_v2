@@ -27,7 +27,7 @@ pub async fn get_kyc_submissions(
 
     let mut query = sqlx::QueryBuilder::new(
         "SELECT k.id, k.user_id, k.full_name as name, k.verification_status as status, k.submitted_at, \
-         k.govt_id_type, k.experience_document_url, u.role \
+         k.govt_id_type, k.experience_document_url, u.user_role as role \
          FROM kyc_submissions k \
          LEFT JOIN users u ON k.user_id = u.id \
          WHERE 1=1"
@@ -49,9 +49,9 @@ pub async fn get_kyc_submissions(
     }
 
     if let Some(role) = &q.user_role {
-        query.push(" AND u.role = ");
+        query.push(" AND u.user_role = ");
         query.push_bind(role);
-        count_query.push(" AND u.role = ");
+        count_query.push(" AND u.user_role = ");
         count_query.push_bind(role);
     }
 
@@ -125,7 +125,7 @@ pub async fn get_kyc_submission_detail(
     Path(kyc_id): Path<Uuid>,
 ) -> impl axum::response::IntoResponse {
     let row = match sqlx::query(
-        "SELECT k.*, u.role \
+        "SELECT k.*, u.user_role as role \
          FROM kyc_submissions k \
          LEFT JOIN users u ON k.user_id = u.id \
          WHERE k.id = $1"
