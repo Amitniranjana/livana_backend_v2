@@ -651,8 +651,9 @@ pub async fn get_carecrew_directory(
     let offset = q.offset.map(|o| o as i64).unwrap_or((page - 1) * limit);
 
     let mut query = sqlx::QueryBuilder::new(
-        "SELECT u.id, u.full_name as name, u.profile_picture_url as photo, \
-         u.mobile_number as phone, u.email as email, \
+        "SELECT u.id, (u.first_name || ' ' || u.last_name) as name, \
+         COALESCE(k.profile_picture_url, u.profile_picture) as photo, \
+         u.phone_no as phone, u.email as email, \
          k.verification_status, k.city, k.services \
          FROM users u \
          LEFT JOIN kyc_submissions k ON u.id = k.user_id \
