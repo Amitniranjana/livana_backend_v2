@@ -22,6 +22,14 @@ pub enum KycStatus {
     PendingReview,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, sqlx::Type, PartialEq)]
+#[sqlx(type_name = "kyc_integrity_status", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum KycIntegrityStatus {
+    Clean,
+    Suspicious,
+    Flagged,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct KycSubmission {
     #[schema(example = "123e4567-e89b-12d3-a456-426614174000")]
@@ -52,6 +60,18 @@ pub struct KycSubmission {
     pub extracted_name: Option<String>,
 
     pub name_match: Option<bool>,
+
+    pub extracted_doc_number: Option<String>,
+
+    pub extracted_dob: Option<chrono::NaiveDate>,
+
+    pub extracted_income: Option<f64>,
+
+    pub document_integrity_status: Option<KycIntegrityStatus>,
+
+    pub face_match_score: Option<f64>,
+
+    pub face_match_status: Option<bool>,
 
     pub status: KycStatus,
 
