@@ -246,3 +246,30 @@ impl From<KycRow> for KycResponse {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Advanced KYC (Issues 90, 91, 92)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct FaceMatchRequest {
+    pub selfie_url: String,
+    pub id_photo_url: Option<String>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct FaceMatchResponse {
+    pub match_score: f64,
+    pub match_status: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DocumentExtractResponse {
+    pub extracted_name: Option<String>,
+    pub extracted_doc_number: Option<String>,
+    pub extracted_dob: Option<String>,
+    pub extracted_income: Option<f64>,
+    pub integrity_status: Option<String>,
+    pub message: String,
+}

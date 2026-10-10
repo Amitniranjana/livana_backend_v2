@@ -939,3 +939,55 @@ async fn run_ocr_on_document_url(
 
     (Some(extracted_name), Some(score), status)
 }
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/kyc/documents/{doc_id}/extract
+// ---------------------------------------------------------------------------
+pub async fn extract_kyc_document(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(_doc_id): Path<Uuid>,
+) -> impl axum::response::IntoResponse {
+    let _user_id = require_auth!(headers, app_state);
+
+    // TODO: Implement actual vendor integration for OCR and Tampering Detection
+    // 1. Fetch KycSubmission from repo using _doc_id
+    // 2. Fetch image from S3
+    // 3. Call 3rd party OCR API
+    // 4. Update the submission record in DB
+
+    let response = crate::dtos::kyc::DocumentExtractResponse {
+        extracted_name: Some("John Doe".to_string()),
+        extracted_doc_number: Some("ABCDE1234F".to_string()),
+        extracted_dob: Some("1990-01-01".to_string()),
+        extracted_income: None,
+        integrity_status: Some("CLEAN".to_string()),
+        message: "Document extracted successfully (Mock)".to_string(),
+    };
+
+    (StatusCode::OK, Json(json!({ "success": true, "data": response })))
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/kyc/face-match
+// ---------------------------------------------------------------------------
+pub async fn verify_face_match(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Json(_payload): Json<crate::dtos::kyc::FaceMatchRequest>,
+) -> impl axum::response::IntoResponse {
+    let _user_id = require_auth!(headers, app_state);
+
+    // TODO: Implement actual vendor integration for Face Match & Liveness
+    // 1. Fetch images from S3 based on _payload
+    // 2. Call 3rd party Face Match API
+    // 3. Store result in DB (against the associated doc_id/user)
+
+    let response = crate::dtos::kyc::FaceMatchResponse {
+        match_score: 98.5,
+        match_status: true,
+        message: "Face matched successfully (Mock)".to_string(),
+    };
+
+    (StatusCode::OK, Json(json!({ "success": true, "data": response })))
+}
