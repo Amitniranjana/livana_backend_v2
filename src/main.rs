@@ -73,10 +73,11 @@ async fn main() {
 
     // ————————————— Running Migrations —————————————
     log::info!("Running database migrations...");
-    match sqlx::migrate!("./migrations").set_ignore_missing(true).run(&pool).await {
-        Ok(_) => log::info!("Database migrations applied successfully."),
-        Err(e) => log::warn!("Failed to run database migrations (skipping): {:?}", e),
-    }
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run database migrations");
+    log::info!("Database migrations applied successfully.");
 
     // ———————————— Wire up repository & service ————————————
     let user_repo = UserRepository::new(pool.clone());

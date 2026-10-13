@@ -82,13 +82,20 @@ pub async fn create_ping(
     .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     // Issue 49: Match brokers and insert notifications
-    // Improved matching logic: Match if the broker's operating city is contained within the requested location (case-insensitive)
-    let query = String::from(
-        "SELECT user_id FROM broker_profiles WHERE EXISTS (SELECT 1 FROM unnest(operating_cities) c WHERE $1 ILIKE '%' || c || '%') AND kyc_status = 'VERIFIED'",
-    );
+    // Rule: only brokers whose operating_cities includes the ping's location (exact trim/lowercase) and have kyc_status = 'VERIFIED'
+    let query = r#"
+        SELECT user_id FROM broker_profiles
+        WHERE kyc_status = 'VERIFIED'
+          AND user_id <> $2
+          AND EXISTS (
+            SELECT 1 FROM unnest(operating_cities) c
+            WHERE trim(c) <> '' AND lower(trim(c)) = lower(trim($1))
+          )
+    "#;
 
-    let matched_brokers: Vec<Uuid> = sqlx::query_scalar(&query)
+    let matched_brokers: Vec<Uuid> = sqlx::query_scalar(query)
         .bind(&payload.location)
+        .bind(user_id)
         .fetch_all(&app_state.db)
         .await
         .unwrap_or_default();
@@ -140,20 +147,25 @@ pub async fn get_my_pings(
     let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".into()))?;
 
-    let mut sql = "SELECT * FROM pings WHERE user_id = $1 AND status != 'deleted'".to_string();
+    let status_filter = match query.status.as_deref() {
+        Some("all") | None => None,
+        Some(s) => Some(s),
+    };
 
-    if let Some(status) = &query.status {
-        if status != "all" {
-            sql.push_str(format!(" AND status = '{}'", status).as_str());
-        }
-    }
-    sql.push_str(" ORDER BY created_at DESC");
-
-    let pings = sqlx::query_as::<_, Ping>(&sql)
-        .bind(user_id)
-        .fetch_all(&app_state.db)
-        .await
-        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+    let pings = sqlx::query_as::<_, Ping>(
+        r#"
+        SELECT * FROM pings
+        WHERE user_id = $1
+          AND status != 'deleted'
+          AND ($2::text IS NULL OR status = $2)
+        ORDER BY created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .bind(status_filter)
+    .fetch_all(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
     let dtos: Vec<PingDto> = pings.into_iter().map(map_ping_to_dto).collect();
 
@@ -173,27 +185,51 @@ pub async fn get_ping_detail(
     auth: AuthenticationUser,
     Path(ping_id): Path<Uuid>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let _user_id = Uuid::parse_str(&auth.user_id)
+    let user_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".into()))?;
 
-    // Assuming requester can always view, and broker can view (we might want to add strict broker matching feed check here if required)
     let ping = sqlx::query_as::<_, Ping>("SELECT * FROM pings WHERE id = $1 AND status != 'deleted'")
         .bind(ping_id)
         .fetch_optional(&app_state.db)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
 
-    match ping {
-        Some(p) => Ok((
-            StatusCode::OK,
-            Json(ApiResponse {
-                success: true,
-                message: "Ping fetched successfully".into(),
-                data: map_ping_to_dto(p),
-            }),
-        )),
-        None => Err(ApiError::NotFound("Ping not found".into())),
+    let ping = match ping {
+        Some(p) => p,
+        None => return Err(ApiError::NotFound("Ping not found".into())),
+    };
+
+    // The owner can still view their own ping.
+    // A broker whose cities don't include the ping's location (or KYC not verified) gets 404.
+    if ping.user_id != user_id {
+        let is_matching_broker: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1 FROM broker_profiles b, unnest(b.operating_cities) c
+                WHERE b.user_id = $1 AND b.kyc_status = 'VERIFIED'
+                  AND trim(c) <> '' AND lower(trim(c)) = lower(trim($2))
+            )
+            "#,
+        )
+        .bind(user_id)
+        .bind(&ping.location)
+        .fetch_one(&app_state.db)
+        .await
+        .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+        if !is_matching_broker {
+            return Err(ApiError::NotFound("Ping not found".into()));
+        }
     }
+
+    Ok((
+        StatusCode::OK,
+        Json(ApiResponse {
+            success: true,
+            message: "Ping fetched successfully".into(),
+            data: map_ping_to_dto(ping),
+        }),
+    ))
 }
 
 // PATCH /api/v1/pings/{pingId}/close
@@ -268,31 +304,53 @@ pub async fn get_matching_pings(
     auth: AuthenticationUser,
     Query(query): Query<MatchingPingQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let _broker_id = Uuid::parse_str(&auth.user_id)
+    let broker_id = Uuid::parse_str(&auth.user_id)
         .map_err(|_| ApiError::Unauthorized("Invalid user".into()))?;
 
-    let mut sql = "SELECT * FROM pings WHERE status = 'active'".to_string();
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).max(0);
 
-    if let Some(loc) = &query.location {
-        sql.push_str(format!(" AND location = '{}'", loc).as_str());
-    }
-    if let Some(pt) = &query.property_type {
-        sql.push_str(format!(" AND property_type = '{}'", pt).as_str());
-    }
-    if let Some(lt) = &query.listing_type {
-        sql.push_str(format!(" AND listing_type = '{}'", lt).as_str());
-    }
+    let location_filter = query
+        .location
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
-    sql.push_str(" ORDER BY created_at DESC");
+    let property_type_filter = query
+        .property_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
-    if let Some(limit) = query.limit {
-        sql.push_str(format!(" LIMIT {}", limit).as_str());
-    }
-    if let Some(offset) = query.offset {
-        sql.push_str(format!(" OFFSET {}", offset).as_str());
-    }
+    let listing_type_filter = query
+        .listing_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
-    let pings = sqlx::query_as::<_, Ping>(&sql)
+    let query_sql = r#"
+        SELECT p.* FROM pings p
+        WHERE p.status = 'active'
+          AND p.user_id <> $1
+          AND EXISTS (
+            SELECT 1 FROM broker_profiles b, unnest(b.operating_cities) c
+            WHERE b.user_id = $1 AND b.kyc_status = 'VERIFIED'
+              AND trim(c) <> '' AND lower(trim(c)) = lower(trim(p.location))
+          )
+          AND ($2::text IS NULL OR p.property_type = $2)
+          AND ($3::text IS NULL OR p.listing_type = $3)
+          AND ($4::text IS NULL OR lower(trim(p.location)) = lower(trim($4)))
+        ORDER BY p.created_at DESC
+        LIMIT $5 OFFSET $6
+    "#;
+
+    let pings = sqlx::query_as::<_, Ping>(query_sql)
+        .bind(broker_id)
+        .bind(property_type_filter)
+        .bind(listing_type_filter)
+        .bind(location_filter)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(&app_state.db)
         .await
         .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
@@ -329,6 +387,31 @@ pub async fn respond_to_ping(
         Some(p) => p,
         None => return Err(ApiError::NotFound("Active ping not found".into())),
     };
+
+    // The owner cannot respond to their own ping
+    if ping.user_id == broker_id {
+        return Err(ApiError::Forbidden("You cannot respond to your own ping".into()));
+    }
+
+    // A broker whose cities don't include the ping's location (or KYC not verified) gets 403
+    let is_matching_broker: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1 FROM broker_profiles b, unnest(b.operating_cities) c
+            WHERE b.user_id = $1 AND b.kyc_status = 'VERIFIED'
+              AND trim(c) <> '' AND lower(trim(c)) = lower(trim($2))
+        )
+        "#,
+    )
+    .bind(broker_id)
+    .bind(&ping.location)
+    .fetch_one(&app_state.db)
+    .await
+    .map_err(|e| ApiError::InternalServerError(format!("Database error: {}", e)))?;
+
+    if !is_matching_broker {
+        return Err(ApiError::Forbidden("You are not authorized to respond to pings outside your operating cities or your KYC is not verified".into()));
+    }
 
     // Check if response already exists
     let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ping_responses WHERE ping_id = $1 AND broker_id = $2")
