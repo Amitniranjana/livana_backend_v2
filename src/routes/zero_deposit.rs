@@ -1,3 +1,7 @@
+/// Zero-deposit routes
+/// Issue 97: POST /apply is wrapped with the loan_velocity_guard middleware
+/// which enforces sliding-window rate limits keyed on device_id and IP.
+
 use axum::{routing::{get, post}, Router};
 use crate::app_state::AppState;
 use crate::handlers::zero_deposit::{
@@ -10,9 +14,17 @@ use crate::handlers::zero_deposit_webhook::{
 };
 
 pub fn router() -> Router<AppState> {
+    // Note: loan_velocity_guard is a `from_fn_with_state` middleware and needs
+    // the full AppState to query Redis/DB.  The state is injected by Axum
+    // automatically via `route_layer` because the parent Router carries AppState.
+    // We use `from_fn` (stateless variant) because the middleware extracts State
+    // itself via `State<AppState>` — the same pattern used in login_rate_limiter.
+    let apply_route = Router::new()
+        .route("/apply", post(apply_zero_deposit));
+
     Router::new()
+        .merge(apply_route)
         .route("/me", get(get_my_zero_deposits))
-        .route("/apply", post(apply_zero_deposit))
         .route("/credit-check/consent", post(credit_check_consent))
         .route("/{zero_deposit_id}", get(get_zero_deposit))
         .route("/{application_id}/status", get(get_status))

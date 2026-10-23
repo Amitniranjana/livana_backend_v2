@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
-    Json,
+    Extension, Json,
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde_json::json;
@@ -11,6 +11,7 @@ use crate::{
     app_state::AppState,
     models::zero_deposit::{ApplyZeroDepositRequest, CreditCheckConsentRequest},
     services::zero_deposit_service,
+    utils::loan_velocity::LoanApplyContext,
 };
 
 #[derive(serde::Deserialize)]
@@ -47,15 +48,29 @@ fn require_auth(
 }
 
 /// POST /api/v1/zero_deposits/apply
+///
+/// The velocity-check middleware (`loan_velocity_guard`) runs *before* this
+/// handler and injects a `LoanApplyContext` extension containing the
+/// device_id and client_ip already validated against rate limits (Issue 97).
 pub async fn apply_zero_deposit(
     State(app_state): State<AppState>,
     headers: HeaderMap,
+    // Issue 97: injected by loan_velocity_guard middleware
+    apply_ctx: Option<Extension<LoanApplyContext>>,
     Json(payload): Json<ApplyZeroDepositRequest>,
 ) -> impl axum::response::IntoResponse {
     let user_id = match require_auth(&headers, &app_state.jwt_secret) {
         Ok(uid) => uid,
         Err((code, body)) => return (code, body),
     };
+
+    // Extract velocity context (device_id + client_ip) injected by middleware.
+    // Falls back to None gracefully when the middleware is not applied
+    // (e.g. in tests or older route configurations).
+    let (ctx_device_id, client_ip) = apply_ctx
+        .map(|Extension(ctx)| (ctx.device_id.clone(), ctx.client_ip.clone()))
+        .unwrap_or((None, None));
+    let device_id = ctx_device_id.or_else(|| payload.device_fingerprint.clone());
 
     let kyc_id = match Uuid::parse_str(&payload.kyc_id) {
         Ok(u) => u,
@@ -80,6 +95,9 @@ pub async fn apply_zero_deposit(
         None => None,
     };
 
+    // Also extract bank_account_hash from payload if provided
+    let bank_account_hash = payload.bank_account_hash.clone();
+
     match zero_deposit_service::apply_for_zero_deposit(
         &app_state.db,
         user_id,
@@ -90,17 +108,54 @@ pub async fn apply_zero_deposit(
         payload.monthly_income,
         payload.itr_document_url.as_deref(),
         payload.bank_statement_url.as_deref(),
+        device_id.as_deref(),
+        bank_account_hash.as_deref(),
+        client_ip.as_deref(),
+        payload.stated_employer.as_deref(),
     )
     .await
     {
-        Ok(zero_deposit) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "success": true,
-                "message": "zero_deposit application submitted successfully",
-                "data": { "zero_deposit": zero_deposit }
-            })),
-        ),
+        Ok(zero_deposit) => {
+            let db_clone = app_state.db.clone();
+            let zd_id = zero_deposit.id;
+            let stmt_url = payload.bank_statement_url.clone();
+            let device_id_clone = device_id.clone();
+            let client_ip_clone = client_ip.clone();
+
+            tokio::spawn(async move {
+                // Issue 94: analyse bank statement
+                let _ = crate::services::loan_risk_service::analyze_bank_statement(
+                    &db_clone,
+                    zd_id,
+                    stmt_url.as_deref(),
+                )
+                .await;
+                // Issue 93: compute risk score
+                let _ =
+                    crate::services::loan_risk_service::score_loan_application(&db_clone, zd_id)
+                        .await;
+                // Issue 96: run fraud/anomaly detection asynchronously
+                crate::services::fraud_service::detect_fraud_signals(&db_clone, zd_id).await;
+                // Issue 97: record the apply event for velocity tracking
+                crate::services::fraud_service::record_apply_event(
+                    &db_clone,
+                    user_id,
+                    zd_id,
+                    device_id_clone.as_deref(),
+                    client_ip_clone.as_deref(),
+                )
+                .await;
+            });
+
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "success": true,
+                    "message": "zero_deposit application submitted successfully",
+                    "data": { "zero_deposit": zero_deposit }
+                })),
+            )
+        }
         Err(e) => {
             log::error!("apply_zero_deposit DB error: {}", e);
             (

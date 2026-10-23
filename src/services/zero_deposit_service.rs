@@ -12,19 +12,27 @@ pub async fn apply_for_zero_deposit(
     monthly_income: f64,
     itr_document_url: Option<&str>,
     bank_statement_url: Option<&str>,
+    device_fingerprint: Option<&str>,
+    bank_account_hash: Option<&str>,
+    applicant_ip: Option<&str>,
+    stated_employer: Option<&str>,
 ) -> Result<ZeroDepositApplication, sqlx::Error> {
     let zero_deposit = sqlx::query_as::<_, ZeroDepositApplication>(
         r#"
         INSERT INTO zero_deposits (
-            user_id, property_id, kyc_id, monthly_rent, requested_deposit_amount, 
-            monthly_income, itr_document_url, bank_statement_url, status
+            user_id, property_id, kyc_id, monthly_rent, requested_deposit_amount,
+            monthly_income, itr_document_url, bank_statement_url,
+            device_fingerprint, bank_account_hash, applicant_ip, stated_employer,
+            status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'applied')
-        RETURNING 
-            id, user_id, property_id, kyc_id, 
-            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
-            itr_document_url, bank_statement_url, consent_given, 
-            status, 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::INET, $12, 'applied')
+        RETURNING
+            id, user_id, property_id, kyc_id,
+            monthly_rent::FLOAT8 as monthly_rent,
+            requested_deposit_amount::FLOAT8 as requested_deposit_amount,
+            monthly_income::FLOAT8 as monthly_income,
+            itr_document_url, bank_statement_url, consent_given,
+            status,
             created_at, updated_at
         "#
     )
@@ -36,11 +44,16 @@ pub async fn apply_for_zero_deposit(
     .bind(monthly_income)
     .bind(itr_document_url)
     .bind(bank_statement_url)
+    .bind(device_fingerprint)
+    .bind(bank_account_hash)
+    .bind(applicant_ip)
+    .bind(stated_employer)
     .fetch_one(db)
     .await?;
 
     Ok(zero_deposit)
 }
+
 
 pub async fn update_consent(
     db: &Pool<Postgres>,
