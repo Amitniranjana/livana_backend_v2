@@ -64,6 +64,15 @@ pub struct ApplyZeroDepositRequest {
     pub monthly_income: f64,
     pub itr_document_url: Option<String>,
     pub bank_statement_url: Option<String>,
+    /// Issue 96/97: Opaque device fingerprint string from the client SDK.
+    /// Optional — older clients that don't send this will still be accepted.
+    pub device_fingerprint: Option<String>,
+    /// Issue 96: SHA-256 hex of "IFSC:account_number" (lowercased).
+    /// Computed client-side or server-side before hashing, never stored raw.
+    pub bank_account_hash: Option<String>,
+    /// Issue 96: Stated employer name, alias employer_name or company_name
+    #[serde(alias = "employer_name", alias = "company_name")]
+    pub stated_employer: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

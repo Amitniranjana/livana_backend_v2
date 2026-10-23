@@ -11,3 +11,5 @@ pub mod storage;
 pub mod user_service;
 pub mod news_service;
 pub mod zero_deposit_service;
+pub mod loan_risk_service;
+pub mod fraud_service;
