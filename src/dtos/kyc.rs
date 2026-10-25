@@ -251,6 +251,7 @@ impl From<KycRow> for KycResponse {
 // Advanced KYC (Issues 90, 91, 92)
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct FaceMatchRequest {
     pub selfie_url: String,
