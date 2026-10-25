@@ -28,6 +28,7 @@ const W_EMI_BURDEN: f64 = 0.25;
 
 /// All inputs the scoring engine needs.  Collected from zero_deposits +
 /// bank_statement_analyses rows.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RiskInputs {
     pub zero_deposit_id: Uuid,

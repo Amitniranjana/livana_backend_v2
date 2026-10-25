@@ -182,6 +182,7 @@ pub struct DisbursementWebhookRequest {
     pub disbursed_at: DateTime<Utc>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RepaymentWebhookRequest {
     pub zero_deposit_id: Uuid,

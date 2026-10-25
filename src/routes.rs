@@ -494,21 +494,7 @@ pub mod loan_risk;
 pub use loan_risk::loan_risk_routes;
 
 pub fn zero_deposit_routes(state: AppState) -> Router<AppState> {
-    // Issue 97: Wrap the /apply sub-route with the velocity-check middleware.
-    // Other zero-deposit routes (status, ledger, webhooks) are NOT throttled.
-    let apply_only = Router::new()
-        .route(
-            "/api/v1/zero-deposit/apply",
-            axum::routing::post(crate::handlers::zero_deposit::apply_zero_deposit),
-        )
-        .route_layer(axum::middleware::from_fn_with_state(
-            state,
-            crate::utils::loan_velocity::loan_velocity_guard,
-        ));
-
-    Router::new()
-        .merge(apply_only)
-        .nest("/api/v1/zero-deposit", zero_deposit::router())
+    Router::new().nest("/api/v1/zero-deposit", zero_deposit::router(state))
 }
 
 

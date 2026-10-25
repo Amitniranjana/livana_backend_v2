@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 // ─── Issue 94: Bank Statement Analysis DTOs ────────────────────────────────
 
 /// Response body for a completed bank-statement analysis
+#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BankStatementAnalysisResponse {
     pub id: uuid::Uuid,
@@ -79,6 +80,7 @@ pub struct DecisionReason {
 }
 
 /// Request body extensions for approve / reject that include decision_reasons
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct DecisionReasonsPayload {
     /// Structured reasons list. May be empty for legacy callers (defaults to auto-derived reasons).
