@@ -8,5 +8,4 @@ pub mod admin_logger;
 pub mod audit;
 pub mod rate_limit;
 pub mod response;
-pub mod nbfc_auth_guard;
 pub mod loan_velocity;

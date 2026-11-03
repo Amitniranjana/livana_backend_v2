@@ -13,3 +13,9 @@ pub mod news_service;
 pub mod zero_deposit_service;
 pub mod loan_risk_service;
 pub mod fraud_service;
+pub mod collections_service;  // Issue 100
+pub mod nudge_service;        // Issue 99
+pub mod zd_lifecycle_service; // Issue 108
+pub mod zd_token_service;     // Issue 109
+pub mod zd_eligibility_service; // Issue 110
+pub mod zd_ai_client_service; // Issue 111, 112, 114

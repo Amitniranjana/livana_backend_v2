@@ -12,8 +12,8 @@ use sqlx::Row;
 use crate::{
     app_state::AppState,
     models::zero_deposit::{
-        DisbursementWebhookRequest, RepaymentWebhookRequest, FeeWebhookRequest,
-        ZeroDepositStatus, FeeTransactionStatus, RepaymentStatus, LedgerTransactionType,
+        RepaymentWebhookRequest, FeeWebhookRequest,
+        FeeTransactionStatus, RepaymentStatus, LedgerTransactionType,
     },
 };
 
@@ -32,77 +32,6 @@ fn verify_webhook_signature(headers: &HeaderMap, body: &[u8], secret: &str) -> b
     let expected = hex::encode(result);
 
     signature == expected
-}
-
-/// POST /api/v1/zero-deposit/webhook/disbursement-status
-pub async fn disbursement_webhook(
-    State(app_state): State<AppState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> impl axum::response::IntoResponse {
-    let webhook_secret = std::env::var("NBFC_WEBHOOK_SECRET").unwrap_or_else(|_| "secret".to_string());
-    if !verify_webhook_signature(&headers, &body, &webhook_secret) {
-        return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid signature"})));
-    }
-
-    let payload: DisbursementWebhookRequest = match serde_json::from_slice(&body) {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!("Invalid disbursement payload: {}", e);
-            return (StatusCode::BAD_REQUEST, Json(json!({"success": false, "message": "Invalid payload"})));
-        }
-    };
-
-    let status_enum = if payload.status.to_lowercase() == "disbursed" {
-        ZeroDepositStatus::Disbursed
-    } else {
-        ZeroDepositStatus::Blocked // or Rejected based on business logic, fallback to blocked
-    };
-
-    let mut tx = match app_state.db.begin().await {
-        Ok(t) => t,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "DB error"}))),
-    };
-
-    match sqlx::query(
-        "UPDATE zero_deposits SET status = $1::zero_deposit_status, disbursed_at = $2, updated_at = NOW() WHERE id = $3"
-    )
-    .bind(status_enum.clone() as ZeroDepositStatus)
-    .bind(payload.disbursed_at)
-    .bind(payload.zero_deposit_id)
-    .execute(&mut *tx)
-    .await {
-        Ok(_) => {},
-        Err(e) => {
-            log::error!("disbursement_webhook update error: {}", e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "DB error"})));
-        }
-    };
-
-    if status_enum == ZeroDepositStatus::Disbursed {
-        match sqlx::query(
-            "INSERT INTO ledger_entries (zero_deposit_id, transaction_type, amount, description) VALUES ($1, $2::ledger_transaction_type, $3, $4)"
-        )
-        .bind(payload.zero_deposit_id)
-        .bind(LedgerTransactionType::Disbursement)
-        .bind(payload.amount)
-        .bind("Disbursement to property owner")
-        .execute(&mut *tx)
-        .await {
-            Ok(_) => {},
-            Err(e) => {
-                log::error!("disbursement_webhook ledger error: {}", e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "DB error"})));
-            }
-        };
-    }
-
-    if tx.commit().await.is_err() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": "DB error"})));
-    }
-
-    // TODO: Notify tenant using notification service
-    (StatusCode::OK, Json(json!({"success": true})))
 }
 
 /// POST /api/v1/zero-deposit/webhook/repayment-status
@@ -264,17 +193,7 @@ pub async fn fee_webhook(
             }
         };
 
-        match sqlx::query(
-            "UPDATE zero_deposits SET status = $1::zero_deposit_status, updated_at = NOW() WHERE id = $2 AND status = $3::zero_deposit_status"
-        )
-        .bind(ZeroDepositStatus::Approved)
-        .bind(payload.zero_deposit_id)
-        .bind(ZeroDepositStatus::FeePending)
-        .execute(&mut *tx)
-        .await {
-            Ok(_) => {},
-            Err(e) => log::error!("fee_webhook zero deposit update error: {}", e),
-        };
+        // Note: Issue 108 — Fee payment does not overwrite application status
     }
 
     if tx.commit().await.is_err() {
