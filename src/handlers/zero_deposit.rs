@@ -97,6 +97,10 @@ pub async fn apply_zero_deposit(
 
     // Also extract bank_account_hash from payload if provided
     let bank_account_hash = payload.bank_account_hash.clone();
+    let requested_deposit_amount = payload
+        .deposit_amount
+        .or(payload.requested_deposit_amount)
+        .unwrap_or(payload.monthly_rent * 2.0);
 
     match zero_deposit_service::apply_for_zero_deposit(
         &app_state.db,
@@ -104,7 +108,7 @@ pub async fn apply_zero_deposit(
         property_id,
         kyc_id,
         payload.monthly_rent,
-        payload.requested_deposit_amount,
+        requested_deposit_amount,
         payload.monthly_income,
         payload.itr_document_url.as_deref(),
         payload.bank_statement_url.as_deref(),
@@ -192,14 +196,29 @@ pub async fn credit_check_consent(
     };
 
     match zero_deposit_service::update_consent(&app_state.db, zero_deposit_id, user_id, payload.consent_given).await {
-        Ok(Some(zero_deposit)) => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "message": "zero_deposit consent updated successfully",
-                "data": { "zero_deposit": zero_deposit }
-            })),
-        ),
+        Ok(Some(zero_deposit)) => {
+            // Issues 111 & 112: On consent, trigger credit bureau pull & queue AI assessment
+            if payload.consent_given {
+                let db_clone = app_state.db.clone();
+                tokio::spawn(async move {
+                    let _ = crate::services::zd_ai_client_service::pull_and_store_bureau_report(
+                        &db_clone,
+                        zero_deposit_id,
+                        user_id,
+                    )
+                    .await;
+                });
+            }
+
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "zero_deposit consent updated successfully",
+                    "data": { "zero_deposit": zero_deposit }
+                })),
+            )
+        }
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({

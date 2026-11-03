@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct ZeroDepositQuery {
@@ -20,11 +19,6 @@ pub struct ZeroDepositRejectReq {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ZeroDepositAssignNbfcReq {
-    pub nbfc_id: Uuid,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ZeroDepositDefaultActionReq {
     pub remarks: Option<String>,
 }
@@ -33,17 +27,4 @@ pub struct ZeroDepositDefaultActionReq {
 pub struct ZeroDepositRecoverReq {
     pub recovered_amount: f64,
     pub remarks: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct NbfcPartnerReq {
-    pub name: String,
-    pub entity_type: String,
-    pub revenue_share_pct: f64,
-    pub fldg_buffer_pct: f64,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct NbfcPartnerUpdateReq {
-    pub status: crate::models::nbfc::NbfcStatus,
 }

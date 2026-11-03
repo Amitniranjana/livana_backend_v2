@@ -32,3 +32,5 @@ pub mod builder_crm;
 pub mod pings;
 pub mod admin_zero_deposit;
 pub mod loan_risk;
+pub mod collections;  // Issue 100
+pub mod nudge;        // Issue 99

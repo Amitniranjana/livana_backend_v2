@@ -183,7 +183,6 @@ async fn main() {
         .merge(crate::routes::admin_logs_routes(app_state.clone()))
         .merge(admin_user_chats_routes(app_state.clone()))
         .merge(crate::routes::admin_zero_deposit_routes(app_state.clone()))
-        .merge(crate::routes::nbfc::nbfc_routes(app_state.clone()))
         .merge(crate::routes::builder_analytics_routes())
         .merge(crate::routes::builder_crm_routes())
         .merge(user_routes())
@@ -240,7 +239,12 @@ async fn main() {
         .merge(referrals_routes())
         .merge(ping_routes())
         .merge(crate::routes::zero_deposit_routes(app_state.clone()))
+        .merge(crate::routes::zd_internal_routes())
         .merge(loan_risk_routes(app_state.clone()))
+        // ── Issue 100: Collections prioritization ─────────────────────────
+        .merge(crate::routes::collections_routes(app_state.clone()))
+        // ── Issue 99: Nudge experiments ───────────────────────────────────
+        .merge(crate::routes::nudge_routes(app_state.clone()))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .with_state(app_state);
 

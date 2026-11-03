@@ -322,7 +322,8 @@ pub async fn detect_fraud_signals(
                    zd.bank_statement_url, zd.itr_document_url,
                    COALESCE(zd.stated_employer, ks.company_name) AS stated_employer,
                    ks.extracted_income::FLOAT8 AS kyc_extracted_income,
-                   u.full_name, u.email, u.phone_no,
+                   TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS full_name,
+                   u.email, u.phone_no,
                    (
                        SELECT bsa.flags
                        FROM bank_statement_analyses bsa
@@ -355,7 +356,7 @@ pub async fn detect_fraud_signals(
     let mut signals: Vec<FraudSignal> = Vec::new();
 
     let user_id = row.get("user_id").and_then(|v| v.as_str()).unwrap_or("");
-    let applicant_name = row.get("full_name").and_then(|v| v.as_str()).unwrap_or("Applicant");
+    let applicant_name = row.get("full_name").and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).unwrap_or("Applicant");
     let stated_employer = row.get("stated_employer").and_then(|v| v.as_str()).unwrap_or("").trim();
     let device_fp = row.get("device_fingerprint").and_then(|v| v.as_str());
     let bank_hash = row.get("bank_account_hash").and_then(|v| v.as_str());
@@ -628,7 +629,7 @@ pub async fn list_fraud_flagged_applications(
             SELECT
                 zd.id                       AS zero_deposit_id,
                 zd.user_id,
-                u.full_name                 AS applicant_name,
+                TRIM(CONCAT(u.first_name, ' ', u.last_name)) AS applicant_name,
                 u.email                     AS applicant_email,
                 u.phone_no                  AS applicant_phone,
                 COALESCE(zd.stated_employer, ks.company_name) AS stated_employer,

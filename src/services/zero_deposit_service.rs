@@ -61,8 +61,9 @@ pub async fn update_consent(
     user_id: Uuid,
     consent_given: bool,
 ) -> Result<Option<ZeroDepositApplication>, sqlx::Error> {
+    // Issue 108: pending_review is no longer used for new applications; moves to ai_review on consent
     let status_str = if consent_given {
-        "pending_review"
+        "ai_review"
     } else {
         "blocked"
     };
@@ -182,13 +183,7 @@ pub async fn initiate_fee_charge(
         return Ok(None);
     }
 
-    // 2. Update status to fee_pending
-    sqlx::query(
-        "UPDATE zero_deposits SET status = 'fee_pending', updated_at = NOW() WHERE id = $1"
-    )
-    .bind(zero_deposit_id)
-    .execute(&mut *tx)
-    .await?;
+    // 2. Note: Issue 108 — Fee and autopay state must stop overwriting application status (no status = fee_pending)
 
     // 3. Create fee transaction
     let fee_transaction = sqlx::query_as::<_, crate::models::zero_deposit::FeeTransaction>(
