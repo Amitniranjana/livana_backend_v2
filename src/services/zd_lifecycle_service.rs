@@ -235,3 +235,77 @@ pub async fn redemption_transition_tx(
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Into ApiError conversions (Issue 108 / Shared Errors -> HTTP 409, 404, 500)
+// ---------------------------------------------------------------------------
+
+impl From<ZdLifecycleError> for crate::utils::api_error::ApiError {
+    fn from(err: ZdLifecycleError) -> Self {
+        match err {
+            ZdLifecycleError::InvalidState => {
+                crate::utils::api_error::ApiError::InvalidState(
+                    "Invalid state transition — application is not in the expected status".to_string(),
+                )
+            }
+            ZdLifecycleError::NotFound => {
+                crate::utils::api_error::ApiError::NotFound("Application not found".to_string())
+            }
+            ZdLifecycleError::Db(e) => {
+                crate::utils::api_error::ApiError::InternalServerError(e.to_string())
+            }
+        }
+    }
+}
+
+impl From<ZdRedemptionError> for crate::utils::api_error::ApiError {
+    fn from(err: ZdRedemptionError) -> Self {
+        match err {
+            ZdRedemptionError::InvalidState => {
+                crate::utils::api_error::ApiError::InvalidState(
+                    "Invalid redemption state transition".to_string(),
+                )
+            }
+            ZdRedemptionError::NotFound => {
+                crate::utils::api_error::ApiError::NotFound("Redemption not found".to_string())
+            }
+            ZdRedemptionError::Db(e) => {
+                crate::utils::api_error::ApiError::InternalServerError(e.to_string())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn test_application_invalid_state_returns_409() {
+        let err = ZdLifecycleError::InvalidState;
+        let api_err: crate::utils::api_error::ApiError = err.into();
+        let resp = api_err.into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn test_redemption_invalid_state_returns_409() {
+        let err = ZdRedemptionError::InvalidState;
+        let api_err: crate::utils::api_error::ApiError = err.into();
+        let resp = api_err.into_response();
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn test_not_found_returns_404() {
+        let err = ZdLifecycleError::NotFound;
+        let api_err: crate::utils::api_error::ApiError = err.into();
+        let resp = api_err.into_response();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+
+

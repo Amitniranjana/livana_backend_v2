@@ -29,6 +29,22 @@ pub enum ApiError {
     UnprocessableEntity(String),
     /// Custom error: (StatusCode, message, error_code)
     CustomError(StatusCode, String, String),
+
+    // Zero Deposit V2 Shared Error Codes
+    NotOwner,
+    MakerChecker,
+    InvalidState(String),
+    InsufficientTokens { requested: f64, available: f64 },
+    RedemptionAlreadyOpen,
+    DuplicateRequest,
+    TokensExpired,
+    FileTooLarge,
+    UnsupportedFileType,
+    DocumentsMissing(Vec<String>),
+    TenancyTooShort,
+    PersonalEmailNotAllowed,
+    PreconditionFailed(Vec<String>),
+    BadHmac,
 }
 
 impl IntoResponse for ApiError {
@@ -68,6 +84,100 @@ impl IntoResponse for ApiError {
                 None,
             ),
             ApiError::CustomError(status, msg, code) => (status, msg, code, None),
+
+            // ZD v2 Shared Errors (Issue 108 / ZD Spec)
+            ApiError::NotOwner => (
+                StatusCode::FORBIDDEN,
+                "Application, redemption or chat belongs to another user".to_string(),
+                "NOT_OWNER".to_string(),
+                None,
+            ),
+            ApiError::MakerChecker => (
+                StatusCode::FORBIDDEN,
+                "Maker-checker rule violation: approver and payer must be different admins".to_string(),
+                "MAKER_CHECKER".to_string(),
+                None,
+            ),
+            ApiError::InvalidState(msg) => (
+                StatusCode::CONFLICT,
+                msg,
+                "INVALID_STATE".to_string(),
+                None,
+            ),
+            ApiError::InsufficientTokens { requested, available } => (
+                StatusCode::CONFLICT,
+                format!("Insufficient available tokens: requested {}, available {}", requested, available),
+                "INSUFFICIENT_TOKENS".to_string(),
+                None,
+            ),
+            ApiError::RedemptionAlreadyOpen => (
+                StatusCode::CONFLICT,
+                "An open redemption already exists for this application".to_string(),
+                "REDEMPTION_ALREADY_OPEN".to_string(),
+                None,
+            ),
+            ApiError::DuplicateRequest => (
+                StatusCode::CONFLICT,
+                "Duplicate request with matching idempotency key and conflicting payload".to_string(),
+                "DUPLICATE_REQUEST".to_string(),
+                None,
+            ),
+            ApiError::TokensExpired => (
+                StatusCode::GONE,
+                "Credit tokens have expired (30-day window passed) or allocation revoked".to_string(),
+                "TOKENS_EXPIRED".to_string(),
+                None,
+            ),
+            ApiError::FileTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "File exceeds maximum allowed size of 10 MB".to_string(),
+                "FILE_TOO_LARGE".to_string(),
+                None,
+            ),
+            ApiError::UnsupportedFileType => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Unsupported file type. Only PDF, JPG, and PNG are allowed".to_string(),
+                "UNSUPPORTED_FILE_TYPE".to_string(),
+                None,
+            ),
+            ApiError::DocumentsMissing(docs) => {
+                let mut map = HashMap::new();
+                map.insert("missing_documents".to_string(), docs);
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "Required documents are missing from checklist".to_string(),
+                    "DOCUMENTS_MISSING".to_string(),
+                    Some(map),
+                )
+            }
+            ApiError::TenancyTooShort => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Tenancy agreement term must be at least 11 months".to_string(),
+                "TENANCY_TOO_SHORT".to_string(),
+                None,
+            ),
+            ApiError::PersonalEmailNotAllowed => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Personal email domains are not allowed for employer verification".to_string(),
+                "PERSONAL_EMAIL_NOT_ALLOWED".to_string(),
+                None,
+            ),
+            ApiError::PreconditionFailed(keys) => {
+                let mut map = HashMap::new();
+                map.insert("failing_preconditions".to_string(), keys);
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "Precondition check failed".to_string(),
+                    "PRECONDITION_FAILED".to_string(),
+                    Some(map),
+                )
+            }
+            ApiError::BadHmac => (
+                StatusCode::UNAUTHORIZED,
+                "Invalid or expired HMAC signature".to_string(),
+                "BAD_HMAC".to_string(),
+                None,
+            ),
         };
 
         let body = ApiErrorResponse {
