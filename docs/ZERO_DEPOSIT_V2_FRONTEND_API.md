@@ -1,9 +1,9 @@
 # Livana Zero Deposit (Credit Tokens) v2 — Frontend API & Integration Guide
 
-> **Audience**: Frontend Engineers (Tenant Mobile App, Web App, and Admin Backoffice)  
-> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)  
-> **Tenant Base Path**: `/api/v1/zero-deposit` (Scoped to caller `user_id` via JWT)  
-> **Admin Base Path**: `/api/admin/zero-deposit` (Guarded by `admin_auth_guard` + transactional audit logging)  
+> **Audience**: Frontend Engineers (Tenant Mobile App, Web App, and Admin Backoffice)
+> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)
+> **Tenant Base Path**: `/api/v1/zero-deposit` (Scoped to caller `user_id` via JWT)
+> **Admin Base Path**: `/api/admin/zero-deposit` (Guarded by `admin_auth_guard` + transactional audit logging)
 > **WebSocket Gateway**: `/api/v1/ws` (Chat & real-time notification push)
 
 ---
@@ -66,7 +66,7 @@ stateDiagram-v2
     [*] --> applied : POST /apply
     applied --> ai_review : Consent = true (POST /consent)
     applied --> blocked : Consent = false or Admin Block
-    
+
     state ai_review {
         [*] --> AI_Bureau_Pull
         AI_Bureau_Pull --> AutoApproved : Tier A/B & Rules Pass
@@ -77,21 +77,21 @@ stateDiagram-v2
 
     ai_review --> action_required : Rule signals missing action
     action_required --> ai_review : Tenant resolves pending action
-    
+
     ai_review --> ai_manual_review : Underwriter review needed
     ai_manual_review --> tokens_issued : Admin approves override
     ai_manual_review --> rejected : Admin rejects
-    
+
     ai_review --> tokens_issued : Rules auto_approve
     ai_review --> rejected : Rules auto_reject / 7-day timeout
-    
+
     tokens_issued --> redemption_in_progress : Tenant initiates redemption chat
     tokens_issued --> expired : 30 days pass without redemption
-    
+
     redemption_in_progress --> released : Payout completed with Bank UTR
     redemption_in_progress --> tokens_issued : Redemption cancelled/rejected (tokens left, <= day 30)
     redemption_in_progress --> expired : Redemption closes after Day 30
-    
+
     released --> [*]
     rejected --> [*]
     expired --> [*]
