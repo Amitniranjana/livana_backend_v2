@@ -40,7 +40,9 @@ pub async fn repayment_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl axum::response::IntoResponse {
-    let webhook_secret = std::env::var("NBFC_WEBHOOK_SECRET").unwrap_or_else(|_| "secret".to_string());
+    let webhook_secret = std::env::var("ZD_WEBHOOK_SECRET")
+        .or_else(|_| std::env::var("NBFC_WEBHOOK_SECRET"))
+        .unwrap_or_else(|_| "secret".to_string());
     if !verify_webhook_signature(&headers, &body, &webhook_secret) {
         return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid signature"})));
     }
@@ -125,7 +127,9 @@ pub async fn fee_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> impl axum::response::IntoResponse {
-    let webhook_secret = std::env::var("NBFC_WEBHOOK_SECRET").unwrap_or_else(|_| "secret".to_string());
+    let webhook_secret = std::env::var("ZD_WEBHOOK_SECRET")
+        .or_else(|_| std::env::var("NBFC_WEBHOOK_SECRET"))
+        .unwrap_or_else(|_| "secret".to_string());
     if !verify_webhook_signature(&headers, &body, &webhook_secret) {
         return (StatusCode::UNAUTHORIZED, Json(json!({"success": false, "message": "Invalid signature"})));
     }

@@ -276,6 +276,14 @@ pub enum ZdTokenAllocationStatus {
 pub struct ZdTokenAllocation {
     pub id: Uuid,
     pub zero_deposit_id: Uuid,
+    #[sqlx(default)]
+    pub user_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub property_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub assessment_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub source: Option<String>,
     pub issued: f64,
     pub available: f64,
     pub locked: f64,
@@ -283,6 +291,8 @@ pub struct ZdTokenAllocation {
     pub status: ZdTokenAllocationStatus,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub issued_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -305,7 +315,17 @@ pub struct ZdTokenTransaction {
     pub zero_deposit_id: Uuid,
     pub operation: ZdTokenOperation,
     pub amount: f64,
+    #[sqlx(default)]
+    pub available_after: Option<f64>,
+    #[sqlx(default)]
+    pub locked_after: Option<f64>,
+    #[sqlx(default)]
+    pub reference_type: Option<String>,
     pub reference_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub actor_type: Option<String>,
+    #[sqlx(default)]
+    pub actor_id: Option<Uuid>,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -322,6 +342,12 @@ pub enum ZdRedemptionStatus {
     Rejected,
     Cancelled,
     Completed,
+    // V2 formal statuses
+    DocsPending,
+    UnderReview,
+    ChangesRequested,
+    Released,
+    Expired,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -329,9 +355,17 @@ pub struct ZdRedemption {
     pub id: Uuid,
     pub zero_deposit_id: Uuid,
     pub allocation_id: Uuid,
+    #[sqlx(default)]
+    pub user_id: Option<Uuid>,
+    #[sqlx(default)]
+    pub chat_id: Option<Uuid>,
     pub tokens_requested: f64,
     pub tokens_locked: Option<f64>,
+    #[sqlx(default)]
+    pub tokens_approved: Option<f64>,
     pub status: ZdRedemptionStatus,
+    #[sqlx(default)]
+    pub payee_snapshot: Option<serde_json::Value>,
     pub property_address: Option<String>,
     pub monthly_rent: Option<f64>,
     pub landlord_name: Option<String>,
@@ -343,9 +377,23 @@ pub struct ZdRedemption {
     pub admin_remarks: Option<String>,
     pub approved_by: Option<Uuid>,
     pub approved_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub released_by: Option<Uuid>,
+    #[sqlx(default)]
+    pub released_at: Option<DateTime<Utc>>,
+    #[sqlx(default)]
+    pub released_amount: Option<f64>,
+    #[sqlx(default)]
+    pub payout_mode: Option<String>,
     pub submitted_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
     pub utr: Option<String>,
+    #[sqlx(default)]
+    pub reject_reason: Option<String>,
+    #[sqlx(default)]
+    pub cancel_reason: Option<String>,
+    #[sqlx(default)]
+    pub idempotency_key: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

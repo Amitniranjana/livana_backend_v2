@@ -1,3 +1,4 @@
 * text=auto eol=lf
 *.sqlx/* text eol=lf
 *.rs text eol=lf
+migrations/20260822000000_add_visit_time_to_project_leads.sql text eol=crlf

@@ -91,6 +91,14 @@ futures = "0.3.32"
 tower_governor = "0.8.0"
 hmac = "0.12"
 
+[lib]
+name = "livana_backend_v2"
+path = "src/lib.rs"
+
+[[bin]]
+name = "livana-backend-v2"
+path = "src/main.rs"
+
 [[bin]]
 name = "gen_jwt"
 path = "gen_test_jwt.rs"

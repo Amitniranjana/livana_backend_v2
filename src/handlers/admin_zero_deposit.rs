@@ -170,10 +170,14 @@ pub async fn approve_zero_deposit(
     tx.commit().await.unwrap();
 
     // Issue 109: Issue tokens and advance status to tokens_issued
+    let admin_uuid = Uuid::parse_str(&admin_id).ok();
+    let monthly_rent = payload.approved_deposit_amount / crate::services::zd_token_service::DEPOSIT_RENT_MULTIPLE;
     let _ = crate::services::zd_token_service::issue(
         &state.db,
         id,
-        payload.approved_deposit_amount,
+        monthly_rent,
+        Some("admin_override"),
+        admin_uuid,
         None,
         Some("Admin approved"),
     ).await;

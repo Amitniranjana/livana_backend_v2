@@ -323,12 +323,14 @@ pub async fn assessment_result_callback(
             if let Ok(r) = res {
                 if r.rows_affected() > 0 {
                     tx.commit().await.ok();
-                    // Issue tokens
-                    let dep_amt = signals.deposit_amount;
+                    // Issue tokens (3x rent)
+                    let rent = signals.monthly_rent;
                     let _ = zd_token_service::issue(
                         &state.db,
                         zd_id,
-                        dep_amt,
+                        rent,
+                        Some("ai_auto"),
+                        None,
                         None,
                         Some("Auto-approved by rules engine"),
                     )
