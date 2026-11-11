@@ -93,25 +93,44 @@ pub struct ZeroDepositApplication {
     pub bureau_summary: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+pub struct DocumentsPayload {
+    pub bank_statement_url: Option<String>,
+    #[serde(default)]
+    pub salary_slip_urls: Vec<String>,
+    pub offer_letter_url: Option<String>,
+    pub itr_url: Option<String>,
+    #[serde(default)]
+    pub gst_return_urls: Vec<String>,
+    pub address_proof_url: Option<String>,
+}
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ApplyZeroDepositRequest {
     pub property_id: Option<String>,
     pub kyc_id: String,
     pub monthly_rent: f64,
-    pub requested_deposit_amount: Option<f64>,
-    pub deposit_amount: Option<f64>,
-    pub monthly_income: f64,
-    pub itr_document_url: Option<String>,
-    pub bank_statement_url: Option<String>,
-    pub tenancy_months: Option<i32>,
-    pub employment_type: Option<String>,
+    #[serde(default = "default_tenancy_months")]
+    pub tenancy_months: i32,
+    #[serde(default = "default_employment_type")]
+    pub employment_type: String,
     pub employer_name: Option<String>,
     pub current_job_start_date: Option<NaiveDate>,
     pub total_experience_months: Option<i32>,
     pub business_start_date: Option<NaiveDate>,
+    #[serde(alias = "monthly_income")]
+    pub declared_monthly_income: f64,
+    #[serde(default)]
     pub variable_pay_monthly: Option<f64>,
-    pub is_repeat_renter: Option<bool>,
+    #[serde(default)]
+    pub is_repeat_renter: bool,
     pub occupants: Option<serde_json::Value>,
+    pub documents: Option<DocumentsPayload>,
+    /// Legacy fields for backwards-compatibility
+    pub requested_deposit_amount: Option<f64>,
+    pub deposit_amount: Option<f64>,
+    pub itr_document_url: Option<String>,
+    pub bank_statement_url: Option<String>,
     pub document_urls: Option<serde_json::Value>,
     /// Issue 96/97: Opaque device fingerprint string from the client SDK.
     pub device_fingerprint: Option<String>,
@@ -120,6 +139,27 @@ pub struct ApplyZeroDepositRequest {
     /// Issue 96: Stated employer name, alias employer_name or company_name
     #[serde(alias = "stated_employer", alias = "company_name")]
     pub stated_employer: Option<String>,
+}
+
+fn default_tenancy_months() -> i32 {
+    11
+}
+
+fn default_employment_type() -> String {
+    "salaried".to_string()
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TenantSafeAssessmentResponse {
+    pub zero_deposit_id: Uuid,
+    pub assessment_status: String,
+    pub outcome: String, // in_progress | action_required | tokens_issued | under_review | rejected
+    pub tier: Option<String>,
+    pub tokens_issued: Option<f64>,
+    pub reasons: Vec<String>,
+    pub pending_actions: Vec<String>,
+    pub co_applicant_due_by: Option<DateTime<Utc>>,
+    pub assessed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

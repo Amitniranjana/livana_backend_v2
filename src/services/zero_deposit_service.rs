@@ -1,5 +1,5 @@
-use crate::models::zero_deposit::ZeroDepositApplication;
-use sqlx::{Pool, Postgres};
+use crate::models::zero_deposit::{ApplyZeroDepositRequest, ZeroDepositApplication};
+use sqlx::{Pool, Postgres, Row};
 use uuid::Uuid;
 
 pub async fn apply_for_zero_deposit(
@@ -7,61 +7,112 @@ pub async fn apply_for_zero_deposit(
     user_id: Uuid,
     property_id: Option<Uuid>,
     kyc_id: Uuid,
-    monthly_rent: f64,
-    requested_deposit_amount: f64,
-    monthly_income: f64,
-    itr_document_url: Option<&str>,
-    bank_statement_url: Option<&str>,
-    device_fingerprint: Option<&str>,
-    bank_account_hash: Option<&str>,
-    applicant_ip: Option<&str>,
-    stated_employer: Option<&str>,
+    payload: &ApplyZeroDepositRequest,
+    deposit_amount: f64,
+    fee_amount: f64,
+    device_id: Option<&str>,
+    client_ip: Option<&str>,
 ) -> Result<ZeroDepositApplication, sqlx::Error> {
+    let documents_val = payload
+        .documents
+        .as_ref()
+        .and_then(|d| serde_json::to_value(d).ok())
+        .or_else(|| payload.document_urls.clone())
+        .unwrap_or(serde_json::json!({}));
+
+    let occupants_val = payload
+        .occupants
+        .clone()
+        .unwrap_or(serde_json::json!([]));
+
     let zero_deposit = sqlx::query_as::<_, ZeroDepositApplication>(
         r#"
         INSERT INTO zero_deposits (
             user_id, property_id, kyc_id, monthly_rent, requested_deposit_amount,
-            monthly_income, itr_document_url, bank_statement_url,
+            deposit_amount, fee_amount, monthly_income, tenancy_months, employment_type,
+            employer_name, current_job_start_date, total_experience_months, business_start_date,
+            variable_pay_monthly, is_repeat_renter, occupants, document_urls,
             device_fingerprint, bank_account_hash, applicant_ip, stated_employer,
-            status
+            status, consent_given
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::INET, $12, 'applied')
+        VALUES (
+            $1, $2, $3, $4, $5,
+            $5, $6, $7, $8, $9,
+            $10, $11, $12, $13,
+            $14, $15, $16, $17,
+            $18, $19, $20::INET, $21,
+            'applied'::zero_deposit_status, false
+        )
         RETURNING
             id, user_id, property_id, kyc_id,
             monthly_rent::FLOAT8 as monthly_rent,
             requested_deposit_amount::FLOAT8 as requested_deposit_amount,
             monthly_income::FLOAT8 as monthly_income,
             itr_document_url, bank_statement_url, consent_given,
-            status,
-            created_at, updated_at
+            status, created_at, updated_at,
+            tenancy_months, employment_type, employer_name, current_job_start_date,
+            total_experience_months, business_start_date,
+            variable_pay_monthly::FLOAT8 as variable_pay_monthly,
+            is_repeat_renter, occupants, document_urls,
+            deposit_amount::FLOAT8 as deposit_amount,
+            fee_amount::FLOAT8 as fee_amount,
+            pending_actions, bureau_summary
         "#
     )
     .bind(user_id)
     .bind(property_id)
     .bind(kyc_id)
-    .bind(monthly_rent)
-    .bind(requested_deposit_amount)
-    .bind(monthly_income)
-    .bind(itr_document_url)
-    .bind(bank_statement_url)
-    .bind(device_fingerprint)
-    .bind(bank_account_hash)
-    .bind(applicant_ip)
-    .bind(stated_employer)
+    .bind(payload.monthly_rent)
+    .bind(deposit_amount)
+    .bind(fee_amount)
+    .bind(payload.declared_monthly_income)
+    .bind(payload.tenancy_months)
+    .bind(&payload.employment_type)
+    .bind(&payload.employer_name)
+    .bind(payload.current_job_start_date)
+    .bind(payload.total_experience_months)
+    .bind(payload.business_start_date)
+    .bind(payload.variable_pay_monthly)
+    .bind(payload.is_repeat_renter)
+    .bind(occupants_val)
+    .bind(documents_val)
+    .bind(device_id)
+    .bind(payload.bank_account_hash.as_deref())
+    .bind(client_ip)
+    .bind(payload.stated_employer.as_deref().or(payload.employer_name.as_deref()))
     .fetch_one(db)
     .await?;
 
     Ok(zero_deposit)
 }
 
+pub enum ConsentUpdateResult {
+    Success(ZeroDepositApplication),
+    NotOwner,
+    NotFound,
+}
 
 pub async fn update_consent(
     db: &Pool<Postgres>,
     zero_deposit_id: Uuid,
-    user_id: Uuid,
+    caller_user_id: Uuid,
     consent_given: bool,
-) -> Result<Option<ZeroDepositApplication>, sqlx::Error> {
-    // Issue 108: pending_review is no longer used for new applications; moves to ai_review on consent
+) -> Result<ConsentUpdateResult, sqlx::Error> {
+    // 1. Check ownership
+    let owner_row = sqlx::query("SELECT user_id FROM zero_deposits WHERE id = $1")
+        .bind(zero_deposit_id)
+        .fetch_optional(db)
+        .await?;
+
+    let owner_id: Uuid = match owner_row {
+        Some(r) => r.get("user_id"),
+        None => return Ok(ConsentUpdateResult::NotFound),
+    };
+
+    if owner_id != caller_user_id {
+        return Ok(ConsentUpdateResult::NotOwner);
+    }
+
     let status_str = if consent_given {
         "ai_review"
     } else {
@@ -75,60 +126,84 @@ pub async fn update_consent(
         WHERE id = $3 AND user_id = $4
         RETURNING 
             id, user_id, property_id, kyc_id, 
-            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent,
+            requested_deposit_amount::FLOAT8 as requested_deposit_amount,
+            monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
-            status, 
-            created_at, updated_at
+            status, created_at, updated_at,
+            tenancy_months, employment_type, employer_name, current_job_start_date,
+            total_experience_months, business_start_date,
+            variable_pay_monthly::FLOAT8 as variable_pay_monthly,
+            is_repeat_renter, occupants, document_urls,
+            deposit_amount::FLOAT8 as deposit_amount,
+            fee_amount::FLOAT8 as fee_amount,
+            pending_actions, bureau_summary
         "#
     )
     .bind(consent_given)
     .bind(status_str)
     .bind(zero_deposit_id)
-    .bind(user_id)
-    .fetch_optional(db)
+    .bind(caller_user_id)
+    .fetch_one(db)
     .await?;
 
-    Ok(zero_deposit)
+    Ok(ConsentUpdateResult::Success(zero_deposit))
 }
 
 pub async fn get_zero_deposit_by_id(
     db: &Pool<Postgres>,
-    zero_deposit_id: Uuid,
+    id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<ZeroDepositApplication>, sqlx::Error> {
-    let zero_deposit = sqlx::query_as::<_, ZeroDepositApplication>(
+    let row = sqlx::query_as::<_, ZeroDepositApplication>(
         r#"
         SELECT 
             id, user_id, property_id, kyc_id, 
-            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent,
+            requested_deposit_amount::FLOAT8 as requested_deposit_amount,
+            monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
-            status, 
-            created_at, updated_at
-        FROM zero_deposits
+            status, created_at, updated_at,
+            tenancy_months, employment_type, employer_name, current_job_start_date,
+            total_experience_months, business_start_date,
+            variable_pay_monthly::FLOAT8 as variable_pay_monthly,
+            is_repeat_renter, occupants, document_urls,
+            deposit_amount::FLOAT8 as deposit_amount,
+            fee_amount::FLOAT8 as fee_amount,
+            pending_actions, bureau_summary
+        FROM zero_deposits 
         WHERE id = $1 AND user_id = $2
         "#
     )
-    .bind(zero_deposit_id)
+    .bind(id)
     .bind(user_id)
     .fetch_optional(db)
     .await?;
 
-    Ok(zero_deposit)
+    Ok(row)
 }
 
 pub async fn get_my_zero_deposits(
     db: &Pool<Postgres>,
     user_id: Uuid,
 ) -> Result<Vec<ZeroDepositApplication>, sqlx::Error> {
-    let zero_deposits = sqlx::query_as::<_, ZeroDepositApplication>(
+    let rows = sqlx::query_as::<_, ZeroDepositApplication>(
         r#"
         SELECT 
             id, user_id, property_id, kyc_id, 
-            monthly_rent::FLOAT8 as monthly_rent, requested_deposit_amount::FLOAT8 as requested_deposit_amount, monthly_income::FLOAT8 as monthly_income, 
+            monthly_rent::FLOAT8 as monthly_rent,
+            requested_deposit_amount::FLOAT8 as requested_deposit_amount,
+            monthly_income::FLOAT8 as monthly_income, 
             itr_document_url, bank_statement_url, consent_given, 
-            status, 
-            created_at, updated_at
-        FROM zero_deposits
+            status, created_at, updated_at,
+            tenancy_months, employment_type, employer_name, current_job_start_date,
+            total_experience_months, business_start_date,
+            variable_pay_monthly::FLOAT8 as variable_pay_monthly,
+            is_repeat_renter, occupants, document_urls,
+            deposit_amount::FLOAT8 as deposit_amount,
+            fee_amount::FLOAT8 as fee_amount,
+            pending_actions, bureau_summary
+        FROM zero_deposits 
         WHERE user_id = $1
         ORDER BY created_at DESC
         "#
@@ -137,7 +212,14 @@ pub async fn get_my_zero_deposits(
     .fetch_all(db)
     .await?;
 
-    Ok(zero_deposits)
+    Ok(rows)
+}
+
+pub async fn get_zero_deposits_by_user_id(
+    db: &Pool<Postgres>,
+    user_id: Uuid,
+) -> Result<Vec<ZeroDepositApplication>, sqlx::Error> {
+    get_my_zero_deposits(db, user_id).await
 }
 
 pub async fn get_zero_deposit_status(
@@ -167,10 +249,8 @@ pub async fn initiate_fee_charge(
     upi_vpa: &str,
     amount: f64,
 ) -> Result<Option<crate::models::zero_deposit::FeeTransaction>, sqlx::Error> {
-    // Start transaction
     let mut tx = db.begin().await?;
 
-    // 1. Verify ownership and lock row
     let existing = sqlx::query(
         "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2 FOR UPDATE"
     )
@@ -183,14 +263,11 @@ pub async fn initiate_fee_charge(
         return Ok(None);
     }
 
-    // 2. Note: Issue 108 — Fee and autopay state must stop overwriting application status (no status = fee_pending)
-
-    // 3. Create fee transaction
     let fee_transaction = sqlx::query_as::<_, crate::models::zero_deposit::FeeTransaction>(
         r#"
         INSERT INTO fee_transactions (zero_deposit_id, upi_vpa, amount, status)
         VALUES ($1, $2, $3, 'pending')
-        RETURNING id, zero_deposit_id, upi_vpa, amount, status, created_at, updated_at
+        RETURNING id, zero_deposit_id, upi_vpa, amount::FLOAT8 as amount, status, created_at, updated_at
         "#
     )
     .bind(zero_deposit_id)
@@ -210,7 +287,6 @@ pub async fn setup_autopay_mandate(
     user_id: Uuid,
     payload: &crate::models::zero_deposit::SetupAutopayRequest,
 ) -> Result<Option<crate::models::zero_deposit::AutopayMandate>, sqlx::Error> {
-    // Verify ownership
     let existing = sqlx::query(
         "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
     )
@@ -249,7 +325,6 @@ pub async fn get_repayment_schedule(
     zero_deposit_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<Vec<crate::models::zero_deposit::RepaymentSchedule>>, sqlx::Error> {
-    // Verify ownership
     let existing = sqlx::query(
         "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
     )
@@ -264,7 +339,7 @@ pub async fn get_repayment_schedule(
 
     let schedule = sqlx::query_as::<_, crate::models::zero_deposit::RepaymentSchedule>(
         r#"
-        SELECT id, zero_deposit_id, installment_number, due_date, amount_due, status, created_at, updated_at
+        SELECT id, zero_deposit_id, installment_number, due_date, amount_due::FLOAT8 as amount_due, status, created_at, updated_at
         FROM repayment_schedules
         WHERE zero_deposit_id = $1
         ORDER BY installment_number ASC
@@ -282,7 +357,6 @@ pub async fn get_ledger_entries(
     zero_deposit_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<Vec<crate::models::zero_deposit::LedgerEntry>>, sqlx::Error> {
-    // Verify ownership
     let existing = sqlx::query(
         "SELECT id FROM zero_deposits WHERE id = $1 AND user_id = $2"
     )
@@ -297,7 +371,7 @@ pub async fn get_ledger_entries(
 
     let entries = sqlx::query_as::<_, crate::models::zero_deposit::LedgerEntry>(
         r#"
-        SELECT id, zero_deposit_id, transaction_type, amount, reference_id, description, created_at
+        SELECT id, zero_deposit_id, transaction_type, amount::FLOAT8 as amount, reference_id, description, created_at
         FROM ledger_entries
         WHERE zero_deposit_id = $1
         ORDER BY created_at DESC

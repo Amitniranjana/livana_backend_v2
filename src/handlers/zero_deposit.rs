@@ -5,6 +5,7 @@ use axum::{
 };
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use serde_json::json;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -72,6 +73,52 @@ pub async fn apply_zero_deposit(
         .unwrap_or((None, None));
     let device_id = ctx_device_id.or_else(|| payload.device_fingerprint.clone());
 
+    // Validation 1: Tenancy duration
+    if payload.tenancy_months < 11 {
+        return (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "success": false,
+                "error": "TENANCY_TOO_SHORT",
+                "message": "Tenancy duration must be at least 11 months"
+            })),
+        );
+    }
+
+    // Validation 2: Employment documents
+    let docs = payload.documents.as_ref();
+    if payload.employment_type == "salaried" {
+        let has_slips = docs.map(|d| d.salary_slip_urls.len() >= 3).unwrap_or(false);
+        let has_offer = docs.and_then(|d| d.offer_letter_url.as_ref()).is_some();
+        let has_bank = docs.and_then(|d| d.bank_statement_url.as_ref()).is_some() || payload.bank_statement_url.is_some();
+
+        if !(has_slips || has_offer) || !has_bank {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "success": false,
+                    "error": "DOCUMENTS_MISSING",
+                    "message": "Salaried applicants require 3 salary slips or offer letter, plus 6 months bank statement"
+                })),
+            );
+        }
+    } else if payload.employment_type == "self_employed" {
+        let has_gst = docs.map(|d| !d.gst_return_urls.is_empty()).unwrap_or(false);
+        let has_itr = docs.and_then(|d| d.itr_url.as_ref()).is_some() || payload.itr_document_url.is_some();
+        let has_bank = docs.and_then(|d| d.bank_statement_url.as_ref()).is_some() || payload.bank_statement_url.is_some();
+
+        if !has_gst && !has_itr && !has_bank {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "success": false,
+                    "error": "DOCUMENTS_MISSING",
+                    "message": "Self-employed applicants require GST returns, ITR, or 12 months bank statements"
+                })),
+            );
+        }
+    }
+
     let kyc_id = match Uuid::parse_str(&payload.kyc_id) {
         Ok(u) => u,
         Err(_) => {
@@ -95,71 +142,36 @@ pub async fn apply_zero_deposit(
         None => None,
     };
 
-    // Also extract bank_account_hash from payload if provided
-    let bank_account_hash = payload.bank_account_hash.clone();
-    let requested_deposit_amount = payload
-        .deposit_amount
-        .or(payload.requested_deposit_amount)
-        .unwrap_or(payload.monthly_rent * 2.0);
+    let deposit_amount = payload.monthly_rent * 3.0;
+    let fee_amount = payload.monthly_rent + 2000.0;
+    let first_rent_amount = payload.monthly_rent;
 
     match zero_deposit_service::apply_for_zero_deposit(
         &app_state.db,
         user_id,
         property_id,
         kyc_id,
-        payload.monthly_rent,
-        requested_deposit_amount,
-        payload.monthly_income,
-        payload.itr_document_url.as_deref(),
-        payload.bank_statement_url.as_deref(),
+        &payload,
+        deposit_amount,
+        fee_amount,
         device_id.as_deref(),
-        bank_account_hash.as_deref(),
         client_ip.as_deref(),
-        payload.stated_employer.as_deref(),
     )
     .await
     {
-        Ok(zero_deposit) => {
-            let db_clone = app_state.db.clone();
-            let zd_id = zero_deposit.id;
-            let stmt_url = payload.bank_statement_url.clone();
-            let device_id_clone = device_id.clone();
-            let client_ip_clone = client_ip.clone();
-
-            tokio::spawn(async move {
-                // Issue 94: analyse bank statement
-                let _ = crate::services::loan_risk_service::analyze_bank_statement(
-                    &db_clone,
-                    zd_id,
-                    stmt_url.as_deref(),
-                )
-                .await;
-                // Issue 93: compute risk score
-                let _ =
-                    crate::services::loan_risk_service::score_loan_application(&db_clone, zd_id)
-                        .await;
-                // Issue 96: run fraud/anomaly detection asynchronously
-                crate::services::fraud_service::detect_fraud_signals(&db_clone, zd_id).await;
-                // Issue 97: record the apply event for velocity tracking
-                crate::services::fraud_service::record_apply_event(
-                    &db_clone,
-                    user_id,
-                    zd_id,
-                    device_id_clone.as_deref(),
-                    client_ip_clone.as_deref(),
-                )
-                .await;
-            });
-
-            (
-                StatusCode::CREATED,
-                Json(json!({
-                    "success": true,
-                    "message": "zero_deposit application submitted successfully",
-                    "data": { "zero_deposit": zero_deposit }
-                })),
-            )
-        }
+        Ok(zero_deposit) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "success": true,
+                "message": "zero_deposit application submitted successfully",
+                "data": {
+                    "zero_deposit": zero_deposit,
+                    "deposit_amount": deposit_amount,
+                    "fee_amount": fee_amount,
+                    "first_rent_amount": first_rent_amount
+                }
+            })),
+        ),
         Err(e) => {
             log::error!("apply_zero_deposit DB error: {}", e);
             (
@@ -196,35 +208,59 @@ pub async fn credit_check_consent(
     };
 
     match zero_deposit_service::update_consent(&app_state.db, zero_deposit_id, user_id, payload.consent_given).await {
-        Ok(Some(zero_deposit)) => {
-            // Issues 111 & 112: On consent, trigger credit bureau pull & queue AI assessment
+        Ok(zero_deposit_service::ConsentUpdateResult::Success(zero_deposit)) => {
             if payload.consent_given {
                 let db_clone = app_state.db.clone();
+                let redis_clone = app_state.redis_pool.clone();
                 tokio::spawn(async move {
-                    let _ = crate::services::zd_ai_client_service::pull_and_store_bureau_report(
+                    let _ = crate::services::zd_ai_client_service::queue_ai_assessment_job(
                         &db_clone,
+                        redis_clone,
                         zero_deposit_id,
                         user_id,
                     )
                     .await;
                 });
-            }
 
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "success": true,
-                    "message": "zero_deposit consent updated successfully",
-                    "data": { "zero_deposit": zero_deposit }
-                })),
-            )
+                (
+                    StatusCode::OK,
+                    Json(json!({
+                        "success": true,
+                        "message": "zero_deposit consent updated successfully",
+                        "data": {
+                            "zero_deposit": zero_deposit,
+                            "assessment_status": "queued"
+                        }
+                    })),
+                )
+            } else {
+                (
+                    StatusCode::OK,
+                    Json(json!({
+                        "success": true,
+                        "message": "zero_deposit consent updated successfully",
+                        "data": {
+                            "zero_deposit": zero_deposit,
+                            "assessment_status": "blocked"
+                        }
+                    })),
+                )
+            }
         }
-        Ok(None) => (
+        Ok(zero_deposit_service::ConsentUpdateResult::NotOwner) => (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "success": false,
+                "error": "NOT_OWNER",
+                "message": "You do not own this zero_deposit application"
+            })),
+        ),
+        Ok(zero_deposit_service::ConsentUpdateResult::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(json!({
                 "success": false,
-                "message": "zero_deposit not found or unauthorized",
-                "error_code": "NOT_FOUND"
+                "error": "NOT_FOUND",
+                "message": "zero_deposit application not found"
             })),
         ),
         Err(e) => {
@@ -615,6 +651,164 @@ pub async fn get_ledger(
                     "error_code": "DB_ERROR"
                 })),
             )
+        }
+    }
+}
+
+/// GET /api/v1/zero-deposit/{zero_deposit_id}/assessment
+///
+/// Tenant-safe assessment endpoint: NO score, NO raw extracted data, NO fraud flags.
+/// Scoped to caller user_id (403 NOT_OWNER if accessed by another user).
+pub async fn get_assessment(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+    Path(zero_deposit_id): Path<String>,
+) -> impl axum::response::IntoResponse {
+    let user_id = match require_auth(&headers, &app_state.jwt_secret) {
+        Ok(uid) => uid,
+        Err((code, body)) => return (code, body),
+    };
+
+    let app_uuid = match Uuid::parse_str(&zero_deposit_id) {
+        Ok(u) => u,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"success": false, "message": "Invalid zero_deposit_id", "error_code": "INVALID_UUID"})),
+            );
+        }
+    };
+
+    // 1. Fetch application and check ownership
+    let app_row = sqlx::query(
+        "SELECT user_id, status::TEXT as status, created_at, pending_actions FROM zero_deposits WHERE id = $1"
+    )
+    .bind(app_uuid)
+    .fetch_optional(&app_state.db)
+    .await;
+
+    let app_row = match app_row {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "error": "NOT_FOUND", "message": "Application not found"})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "error": "DB_ERROR", "message": e.to_string()})),
+            );
+        }
+    };
+
+    let owner_id: Uuid = app_row.get("user_id");
+    if owner_id != user_id {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "error": "NOT_OWNER", "message": "You do not own this application"})),
+        );
+    }
+
+    let app_created_at: chrono::DateTime<chrono::Utc> = app_row.get("created_at");
+    let pending_actions: Vec<String> = app_row.try_get("pending_actions").unwrap_or_default();
+
+    // 2. Fetch current assessment
+    let assessment_row = sqlx::query(
+        r#"SELECT
+            id, status::TEXT as status, decision, tier,
+            recommended_token_amount::FLOAT8 as tokens_issued,
+            tenant_message, reason_codes, completed_at, created_at
+        FROM zero_deposit_ai_assessments
+        WHERE zero_deposit_id = $1 AND is_current = true
+        LIMIT 1"#
+    )
+    .bind(app_uuid)
+    .fetch_optional(&app_state.db)
+    .await;
+
+    let assessment_row = match assessment_row {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "error": "DB_ERROR", "message": e.to_string()})),
+            );
+        }
+    };
+
+    let co_applicant_due_by = if pending_actions.iter().any(|a| a == "co_applicant") {
+        Some(app_created_at + chrono::Duration::days(7))
+    } else {
+        None
+    };
+
+    match assessment_row {
+        Some(r) => {
+            let status: String = r.get("status");
+            if status == "completed" {
+                let decision: Option<String> = r.try_get("decision").ok();
+                let tier: Option<String> = r.try_get("tier").ok();
+                let tokens_issued: Option<f64> = r.try_get("tokens_issued").ok();
+                let tenant_message: Option<String> = r.try_get("tenant_message").ok();
+                let completed_at: Option<chrono::DateTime<chrono::Utc>> = r.try_get("completed_at").ok();
+
+                let outcome = match decision.as_deref() {
+                    Some("auto_approve") => "tokens_issued",
+                    Some("action_required") => "action_required",
+                    Some("manual_review") => "under_review",
+                    Some("auto_reject") => "rejected",
+                    _ => "under_review",
+                };
+
+                let reasons = if let Some(msg) = tenant_message {
+                    vec![msg]
+                } else {
+                    vec!["Assessment completed".to_string()]
+                };
+
+                let resp = crate::models::zero_deposit::TenantSafeAssessmentResponse {
+                    zero_deposit_id: app_uuid,
+                    assessment_status: "completed".to_string(),
+                    outcome: outcome.to_string(),
+                    tier,
+                    tokens_issued: if outcome == "tokens_issued" { tokens_issued } else { None },
+                    reasons,
+                    pending_actions,
+                    co_applicant_due_by,
+                    assessed_at: completed_at,
+                };
+
+                (StatusCode::OK, Json(json!({ "success": true, "data": resp })))
+            } else {
+                let resp = crate::models::zero_deposit::TenantSafeAssessmentResponse {
+                    zero_deposit_id: app_uuid,
+                    assessment_status: status,
+                    outcome: "in_progress".to_string(),
+                    tier: None,
+                    tokens_issued: None,
+                    reasons: vec!["Assessment is in progress".to_string()],
+                    pending_actions,
+                    co_applicant_due_by,
+                    assessed_at: None,
+                };
+                (StatusCode::OK, Json(json!({ "success": true, "data": resp })))
+            }
+        }
+        None => {
+            let resp = crate::models::zero_deposit::TenantSafeAssessmentResponse {
+                zero_deposit_id: app_uuid,
+                assessment_status: "queued".to_string(),
+                outcome: "in_progress".to_string(),
+                tier: None,
+                tokens_issued: None,
+                reasons: vec!["Assessment is in progress".to_string()],
+                pending_actions,
+                co_applicant_due_by,
+                assessed_at: None,
+            };
+            (StatusCode::OK, Json(json!({ "success": true, "data": resp })))
         }
     }
 }
