@@ -10,7 +10,7 @@ use axum::{
 use crate::app_state::AppState;
 use crate::handlers::zero_deposit::{
     apply_zero_deposit, credit_check_consent, get_zero_deposit,
-    get_my_zero_deposits, get_status, charge_fee,
+    get_my_zero_deposits, get_status, get_assessment, charge_fee,
     setup_autopay, get_repayment_schedule, get_ledger
 };
 use crate::handlers::zero_deposit_webhook::{
@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/me", get(get_my_zero_deposits))
         .route("/credit-check/consent", post(credit_check_consent))
         .route("/{zero_deposit_id}", get(get_zero_deposit))
+        .route("/{zero_deposit_id}/assessment", get(get_assessment))
         .route("/{application_id}/status", get(get_status))
         .route("/{application_id}/fee/charge", post(charge_fee))
         .route("/{application_id}/autopay/setup", post(setup_autopay))

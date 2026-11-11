@@ -19,3 +19,4 @@ pub mod zd_lifecycle_service; // Issue 108
 pub mod zd_token_service;     // Issue 109
 pub mod zd_eligibility_service; // Issue 110
 pub mod zd_ai_client_service; // Issue 111, 112, 114
+pub mod zd_tier_job;          // Nightly Tier Job

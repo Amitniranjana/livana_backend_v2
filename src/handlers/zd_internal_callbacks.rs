@@ -25,19 +25,49 @@ use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
-    services::{
-        zd_eligibility_service::{self, ApplicationSignals, EligibilityDecision},
-        zd_token_service,
-    },
+    services::zd_eligibility_service::{self, ExtractedBankData},
 };
 
 type HmacSha256 = Hmac<Sha256>;
 
-const MAX_TIMESTAMP_DRIFT_SECS: i64 = 300; // 5 minutes
+pub const MAX_TIMESTAMP_DRIFT_SECS: i64 = 300; // 5 minutes
 
 // ---------------------------------------------------------------------------
 // HMAC verification helper
 // ---------------------------------------------------------------------------
+
+pub fn compute_hmac(secret: &str, body: &[u8]) -> String {
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect("HMAC init should not fail");
+    mac.update(body);
+    hex::encode(mac.finalize().into_bytes())
+}
+
+pub fn verify_hmac_raw(
+    secret: &str,
+    signature: &str,
+    timestamp_str: &str,
+    body: &[u8],
+    current_time_secs: i64,
+) -> Result<(), &'static str> {
+    let req_timestamp = if let Ok(ts) = timestamp_str.parse::<i64>() {
+        ts
+    } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp_str) {
+        dt.timestamp()
+    } else {
+        return Err("Invalid X-Timestamp format");
+    };
+
+    if (current_time_secs - req_timestamp).abs() > MAX_TIMESTAMP_DRIFT_SECS {
+        return Err("Request timestamp expired (> 5m drift)");
+    }
+
+    let expected_hex = compute_hmac(secret, body);
+    if !subtle_equal(&expected_hex, signature) {
+        return Err("Invalid signature");
+    }
+
+    Ok(())
+}
 
 async fn verify_hmac(
     pool: &PgPool,
@@ -50,7 +80,7 @@ async fn verify_hmac(
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "message": "Missing X-Signature header" })),
+                Json(json!({ "success": false, "error": "BAD_HMAC", "message": "Missing X-Signature header" })),
             )
         })?;
 
@@ -60,55 +90,24 @@ async fn verify_hmac(
         .ok_or_else(|| {
             (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({ "success": false, "message": "Missing X-Timestamp header" })),
+                Json(json!({ "success": false, "error": "BAD_HMAC", "message": "Missing X-Timestamp header" })),
             )
         })?;
 
-    // Validate timestamp age <= 5 minutes
-    let now = Utc::now().timestamp();
-    let req_timestamp = if let Ok(ts) = timestamp_str.parse::<i64>() {
-        ts
-    } else if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp_str) {
-        dt.timestamp()
-    } else {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Invalid X-Timestamp format" })),
-        ));
-    };
-
-    if (now - req_timestamp).abs() > MAX_TIMESTAMP_DRIFT_SECS {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Request timestamp expired (> 5m drift)" })),
-        ));
-    }
-
-    // Load secret from DB or env
     let secret = get_hmac_secret(pool).await;
+    let now = Utc::now().timestamp();
 
-    let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "message": "HMAC init error" })),
-        )
-    })?;
-
-    mac.update(body);
-    let expected_bytes = mac.finalize().into_bytes();
-    let expected_hex = hex::encode(expected_bytes);
-
-    if !subtle_equal(&expected_hex, signature) {
+    if let Err(msg) = verify_hmac_raw(&secret, signature, timestamp_str, body, now) {
         return Err((
             StatusCode::UNAUTHORIZED,
-            Json(json!({ "success": false, "message": "Invalid signature" })),
+            Json(json!({ "success": false, "error": "BAD_HMAC", "message": msg })),
         ));
     }
 
     Ok(())
 }
 
-fn subtle_equal(a: &str, b: &str) -> bool {
+pub fn subtle_equal(a: &str, b: &str) -> bool {
     if a.len() != b.len() {
         return false;
     }
@@ -127,7 +126,7 @@ async fn get_hmac_secret(pool: &PgPool) -> String {
     }
 
     let row = sqlx::query_scalar::<_, String>(
-        "SELECT ai_hmac_secret FROM zd_ai_config LIMIT 1",
+        "SELECT config->>'ai_hmac_secret' FROM zd_ai_config LIMIT 1",
     )
     .fetch_optional(pool)
     .await;
@@ -144,7 +143,9 @@ async fn get_hmac_secret(pool: &PgPool) -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct AssessmentResultCallback {
+    pub assessment_id: Option<String>,
     pub status: String, // "completed" | "failed"
+    pub model_version: Option<String>,
     #[serde(default)]
     pub extracted: Value,
     #[serde(default)]
@@ -157,7 +158,7 @@ pub struct AssessmentResultCallback {
 
 pub async fn assessment_result_callback(
     State(state): State<AppState>,
-    Path(assessment_id): Path<String>,
+    Path(path_assessment_id): Path<String>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
@@ -172,11 +173,19 @@ pub async fn assessment_result_callback(
         )
     })?;
 
+    let assessment_id_str = payload.assessment_id.as_deref().unwrap_or(&path_assessment_id);
+    let assessment_uuid = Uuid::parse_str(assessment_id_str).map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "success": false, "message": "Invalid assessment_id format (must be UUID)" })),
+        )
+    })?;
+
     // 3. Find assessment record
     let assessment_row = sqlx::query(
-        "SELECT id, zero_deposit_id, status FROM zero_deposit_ai_assessments WHERE assessment_id = $1",
+        "SELECT id, zero_deposit_id, status::TEXT as status FROM zero_deposit_ai_assessments WHERE id = $1",
     )
-    .bind(&assessment_id)
+    .bind(assessment_uuid)
     .fetch_optional(&state.db)
     .await
     .map_err(|e| {
@@ -206,22 +215,20 @@ pub async fn assessment_result_callback(
 
     // 4. Handle "failed" status
     if payload.status == "failed" {
-        let err_code = payload.error_code.unwrap_or_else(|| "AI_FAILED".into());
-        let err_msg = payload.error_message.unwrap_or_else(|| "AI evaluation failed".into());
+        let err_code = payload.error_code.unwrap_or_else(|| "AI_UNAVAILABLE".into());
 
         sqlx::query(
             r#"UPDATE zero_deposit_ai_assessments
-               SET status = 'failed', error_code = $1, error_message = $2, updated_at = NOW()
-               WHERE assessment_id = $3"#
+               SET status = 'failed', error_code = $1, completed_at = NOW()
+               WHERE id = $2"#
         )
         .bind(&err_code)
-        .bind(&err_msg)
-        .bind(&assessment_id)
+        .bind(assessment_uuid)
         .execute(&state.db)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": e.to_string()}))))?;
 
-        // Fall back to ai_manual_review
+        // Fall back to ai_manual_review with AI_UNAVAILABLE
         sqlx::query(
             "UPDATE zero_deposits SET status = 'ai_manual_review'::zero_deposit_status, updated_at = NOW() WHERE id = $1 AND status = 'ai_review'::zero_deposit_status"
         )
@@ -233,273 +240,123 @@ pub async fn assessment_result_callback(
         return Ok(Json(json!({ "success": true, "message": "Recorded failed assessment" })));
     }
 
-    // 5. Store extracted, ai_flags, admin_summary
-    let ai_flags_json = serde_json::to_value(&payload.ai_flags).unwrap_or(json!([]));
-    let rules_ver = payload.rules_version.as_deref().unwrap_or("v2.0");
+    // 5. Parse extracted bank data
+    let extracted_data = ExtractedBankData {
+        net_take_home_monthly: payload.extracted.get("net_take_home_monthly").and_then(|v| v.as_f64()),
+        variable_pay_monthly: payload.extracted.get("variable_pay_monthly").and_then(|v| v.as_f64()),
+        variable_pay_months_seen: payload.extracted.get("variable_pay_months_seen").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        avg_monthly_credits_6m: payload.extracted.get("avg_monthly_credits_6m").and_then(|v| v.as_f64()),
+        salary_regular: payload.extracted.get("salary_regular").and_then(|v| v.as_bool()),
+        bounces_3m: payload.extracted.get("bounces_3m").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        avg_monthly_balance: payload.extracted.get("avg_monthly_balance").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        overdraft_days_6m: payload.extracted.get("overdraft_days_6m").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        unexplained_cash_max_month: payload.extracted.get("unexplained_cash_max_month").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        loan_app_count: payload.extracted.get("loan_app_count").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+        emi_debits_monthly: payload.extracted.get("emi_debits_monthly").and_then(|v| v.as_f64()),
+    };
 
-    sqlx::query(
-        r#"UPDATE zero_deposit_ai_assessments
-           SET status = 'completed',
-               extracted = $1,
-               ai_flags = $2,
-               admin_summary = $3,
-               rules_version = $4,
-               updated_at = NOW()
-           WHERE assessment_id = $5"#
+    // 6. Run deterministic rules engine
+    let eval_res = zd_eligibility_service::run_rules_engine_for_application(
+        &state.db,
+        zd_id,
+        &extracted_data,
+        &payload.ai_flags,
     )
-    .bind(&payload.extracted)
-    .bind(&ai_flags_json)
-    .bind(&payload.admin_summary)
-    .bind(rules_ver)
-    .bind(&assessment_id)
-    .execute(&state.db)
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success": false, "message": e.to_string()}))))?;
-
-    // 6. Gather application signals & run deterministic rules engine
-    let signals = gather_signals(&state.db, zd_id, payload.ai_flags).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "message": format!("Signal gather error: {}", e) })),
-        )
-    })?;
-
-    let eval_res = zd_eligibility_service::run(&state.db, &signals).await.map_err(|e| {
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "success": false, "message": format!("Rules engine error: {}", e) })),
         )
     })?;
 
-    // 7. Update recommendation on assessment
-    let rec_str = match eval_res.decision {
-        EligibilityDecision::AutoApprove => "auto_approve",
-        EligibilityDecision::ActionRequired => "action_required",
-        EligibilityDecision::ManualReview => "manual_review",
-        EligibilityDecision::AutoReject => "auto_reject",
-    };
+    // 7. Persist assessment row
+    let model_version = payload.model_version.as_deref().unwrap_or("zd-extract-v1.0");
+    let admin_summary = payload.admin_summary.as_deref().unwrap_or(&eval_res.admin_summary);
 
-    sqlx::query(
-        "UPDATE zero_deposit_ai_assessments SET recommendation = $1 WHERE assessment_id = $2",
+    let bureau_summary = sqlx::query_scalar::<_, Value>(
+        "SELECT bureau_summary FROM zero_deposits WHERE id = $1"
     )
-    .bind(rec_str)
-    .bind(&assessment_id)
-    .execute(&state.db)
+    .bind(zd_id)
+    .fetch_optional(&state.db)
     .await
-    .ok();
+    .ok()
+    .flatten()
+    .unwrap_or(json!({}));
+
+    zd_eligibility_service::persist_assessment(
+        &state.db,
+        zd_id,
+        Some(assessment_uuid),
+        model_version,
+        &eval_res,
+        &payload.extracted,
+        &bureau_summary,
+        admin_summary,
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "success": false, "message": format!("Persist assessment error: {}", e) })),
+        )
+    })?;
 
     // 8. Apply state transitions based on decision
-    match eval_res.decision {
-        EligibilityDecision::AutoApprove => {
-            // Assign tier if computed
-            if let Some(tier) = eval_res.tier {
-                let _ = zd_eligibility_service::persist_tier(
-                    &state.db,
-                    zd_id,
-                    tier,
-                    signals.cibil_score,
-                    3.0,
-                    35.0,
-                    rules_ver,
-                )
-                .await;
-            }
+    let app_meta = sqlx::query(
+        "SELECT user_id, monthly_rent::FLOAT8 as rent FROM zero_deposits WHERE id = $1"
+    )
+    .bind(zd_id)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "success": false, "message": e.to_string() })),
+        )
+    })?;
 
-            // Transition from ai_review -> approved -> tokens_issued
-            let mut tx = state.db.begin().await.map_err(|e| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "success": false, "message": e.to_string() })),
-                )
-            })?;
+    let user_id: Uuid = app_meta.get("user_id");
+    let monthly_rent: f64 = app_meta.get("rent");
 
-            let res = sqlx::query(
-                "UPDATE zero_deposits SET status = 'approved'::zero_deposit_status, approved_deposit_amount = COALESCE(deposit_amount, requested_deposit_amount), updated_at = NOW() WHERE id = $1 AND status = 'ai_review'::zero_deposit_status",
-            )
-            .bind(zd_id)
-            .execute(&mut *tx)
-            .await;
+    zd_eligibility_service::apply_assessment_decision(
+        &state.db,
+        zd_id,
+        user_id,
+        assessment_uuid,
+        &eval_res,
+        monthly_rent,
+    )
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "success": false, "message": format!("Apply decision error: {}", e) })),
+        )
+    })?;
 
-            if let Ok(r) = res {
-                if r.rows_affected() > 0 {
-                    tx.commit().await.ok();
-                    // Issue tokens (3x rent)
-                    let rent = signals.monthly_rent;
-                    let _ = zd_token_service::issue(
-                        &state.db,
-                        zd_id,
-                        rent,
-                        Some("ai_auto"),
-                        None,
-                        None,
-                        Some("Auto-approved by rules engine"),
-                    )
-                    .await;
-
-                    // Transition to tokens_issued
-                    let _ = sqlx::query(
-                        "UPDATE zero_deposits SET status = 'tokens_issued'::zero_deposit_status, updated_at = NOW() WHERE id = $1 AND status = 'approved'::zero_deposit_status"
-                    )
-                    .bind(zd_id)
-                    .execute(&state.db)
-                    .await;
-                }
-            }
-        }
-        EligibilityDecision::ActionRequired => {
-            let pending_codes: Vec<String> = eval_res
-                .action_required_reasons
-                .iter()
-                .map(|r| r.code.clone())
-                .collect();
-
-            sqlx::query(
-                "UPDATE zero_deposits SET status = 'action_required'::zero_deposit_status, pending_actions = $1, updated_at = NOW() WHERE id = $2 AND status = 'ai_review'::zero_deposit_status",
-            )
-            .bind(&pending_codes)
-            .bind(zd_id)
-            .execute(&state.db)
-            .await
-            .ok();
-        }
-        EligibilityDecision::ManualReview => {
-            sqlx::query(
-                "UPDATE zero_deposits SET status = 'ai_manual_review'::zero_deposit_status, updated_at = NOW() WHERE id = $1 AND status = 'ai_review'::zero_deposit_status",
-            )
-            .bind(zd_id)
-            .execute(&state.db)
-            .await
-            .ok();
-        }
-        EligibilityDecision::AutoReject => {
-            sqlx::query(
-                "UPDATE zero_deposits SET status = 'rejected'::zero_deposit_status, updated_at = NOW() WHERE id = $1 AND status = 'ai_review'::zero_deposit_status",
-            )
-            .bind(zd_id)
-            .execute(&state.db)
-            .await
-            .ok();
-        }
+    // Send push notification if active websocket exists
+    if let Some(sender) = state.active_sockets.get(&user_id) {
+        let msg = json!({
+            "type": "zd_assessment_update",
+            "zero_deposit_id": zd_id,
+            "decision": format!("{:?}", eval_res.decision),
+            "tier": eval_res.tier.map(|t| t.as_str()),
+            "message": eval_res.tenant_message
+        });
+        let _ = sender.send(msg.to_string()).await;
     }
 
     Ok(Json(json!({
         "success": true,
-        "recommendation": rec_str,
-        "tier": eval_res.tier.map(|c| c.to_string())
+        "message": "Assessment processed successfully",
+        "decision": format!("{:?}", eval_res.decision),
+        "tier": eval_res.tier.map(|t| t.as_str())
     })))
 }
 
-async fn gather_signals(
-    pool: &PgPool,
-    zd_id: Uuid,
-    ai_flags: Vec<String>,
-) -> Result<ApplicationSignals, sqlx::Error> {
-    let row = sqlx::query(
-        r#"SELECT
-            z.id,
-            COALESCE(z.monthly_income::FLOAT8, 0.0) as monthly_income,
-            COALESCE(z.monthly_rent::FLOAT8, 0.0) as monthly_rent,
-            COALESCE(z.deposit_amount::FLOAT8, z.requested_deposit_amount::FLOAT8, 0.0) as deposit_amount,
-            COALESCE(z.employment_type, 'salaried') as employment_type,
-            z.is_repeat_renter,
-            z.bureau_summary
-        FROM zero_deposits z
-        WHERE z.id = $1"#,
-    )
-    .bind(zd_id)
-    .fetch_one(pool)
-    .await?;
-
-    let monthly_income: f64 = row.get("monthly_income");
-    let monthly_rent: f64 = row.get("monthly_rent");
-    let deposit_amount: f64 = row.get("deposit_amount");
-    let employment_type: String = row.get("employment_type");
-    let is_repeat_renter: bool = row.get("is_repeat_renter");
-    let bureau_json: Value = row.try_get("bureau_summary").unwrap_or(json!({}));
-
-    // Parse bureau signals
-    let cibil_score = bureau_json.get("score").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let dpd_12m = bureau_json.get("dpd_12m").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let dpd_24m = bureau_json.get("dpd_24m").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let enquiries_3m = bureau_json.get("enquiries_3m").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let emi_total = bureau_json.get("emi_total_monthly").and_then(|v| v.as_f64());
-    let card_dues = bureau_json.get("card_dues").and_then(|v| v.as_f64());
-    let write_offs = bureau_json.get("write_offs").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let settlements = bureau_json.get("settlements").and_then(|v| v.as_i64()).map(|v| v as i32);
-    let suit_filed = bureau_json.get("suit_filed").and_then(|v| v.as_bool()).unwrap_or(false);
-
-    // Bank statement analysis row
-    let bank_row = sqlx::query(
-        "SELECT bounced_cheque_count, avg_monthly_credit::FLOAT8, high_debt_load_flag FROM bank_statement_analyses WHERE zero_deposit_id = $1 ORDER BY created_at DESC LIMIT 1"
-    )
-    .bind(zd_id)
-    .fetch_optional(pool)
-    .await?;
-
-    let (bounced_cheque_count, avg_monthly_credit, high_debt_load_flag) = match bank_row {
-        Some(r) => (
-            r.try_get::<i32, _>("bounced_cheque_count").ok(),
-            r.try_get::<f64, _>("avg_monthly_credit").ok(),
-            r.try_get::<bool, _>("high_debt_load_flag").unwrap_or(false),
-        ),
-        None => (None, None, false),
-    };
-
-    // Co-applicant
-    let co_row = sqlx::query(
-        "SELECT monthly_income::FLOAT8, bureau_summary FROM zd_co_applicants WHERE zero_deposit_id = $1 AND consent_given = true LIMIT 1"
-    )
-    .bind(zd_id)
-    .fetch_optional(pool)
-    .await?;
-
-    let (co_applicant_income, co_applicant_cibil) = match co_row {
-        Some(r) => {
-            let inc: Option<f64> = r.try_get("monthly_income").ok();
-            let b_val: Value = r.try_get("bureau_summary").unwrap_or(json!({}));
-            let cibil = b_val.get("score").and_then(|v| v.as_i64()).map(|v| v as i32);
-            (inc, cibil)
-        }
-        None => (None, None),
-    };
-
-    // Landlord reference
-    let landlord_status = sqlx::query_scalar::<_, String>(
-        "SELECT reference_status FROM zd_landlord_references WHERE zero_deposit_id = $1 ORDER BY created_at DESC LIMIT 1"
-    )
-    .bind(zd_id)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(ApplicationSignals {
-        application_id: zd_id,
-        monthly_income,
-        monthly_rent,
-        deposit_amount,
-        employment_type,
-        cibil_score,
-        dpd_12m,
-        dpd_24m,
-        enquiries_3m,
-        emi_total,
-        card_dues,
-        write_offs,
-        settlements,
-        suit_filed,
-        bounced_cheque_count,
-        avg_monthly_credit,
-        high_debt_load_flag,
-        kyc_fraud_flag: false,
-        is_repeat_renter,
-        landlord_reference_status: landlord_status,
-        co_applicant_income,
-        co_applicant_cibil,
-        ai_flags,
-    })
-}
-
 // ---------------------------------------------------------------------------
-// Issue 115: Document Check Result Callback
+// Document Check Result Callback (Issue 115)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -528,9 +385,9 @@ pub async fn document_check_result_callback(
         )
     })?;
 
-    // 3. Find redemption with doc_check_id = check_id
+    // 3. Find redemption
     let redemption = sqlx::query(
-        "SELECT id, zero_deposit_id, status FROM zd_redemptions WHERE doc_check_id = $1",
+        "SELECT id, zero_deposit_id, status::TEXT as status FROM zd_redemptions WHERE id::TEXT = $1",
     )
     .bind(&check_id)
     .fetch_optional(&state.db)
@@ -555,65 +412,14 @@ pub async fn document_check_result_callback(
     let redemption_id: Uuid = redemption.get("id");
     let current_status: String = redemption.get("status");
 
-    // Idempotent: don't overwrite if already processed beyond doc_check
-    if current_status == "approved" || current_status == "completed" || current_status == "rejected" {
+    if current_status == "approved" || current_status == "released" || current_status == "rejected" {
         return Ok(Json(json!({ "success": true, "message": "Redemption already finalized" })));
-    }
-
-    // 4. Validate flags against the supported spec flags:
-    // AGREEMENT_TENANT_MISMATCH, AGREEMENT_ADDRESS_MISMATCH, AGREEMENT_RENT_MISMATCH,
-    // AGREEMENT_TERM_BELOW_11M, NO_REFUND_ASSIGNMENT, DEPOSIT_NOT_3X_RENT,
-    // OCCUPANTS_EXCEED_AGREEMENT, AGREEMENT_UNSIGNED, PAYEE_NAME_MISMATCH,
-    // LANDLORD_KYC_MISMATCH, OWNER_MISMATCH.
-    let flags_json = serde_json::to_value(&payload.flags).unwrap_or(json!([]));
-
-    // 5. Update redemption with doc_check_flags and advance status to admin_review
-    sqlx::query(
-        r#"UPDATE zd_redemptions
-           SET doc_check_flags = $1,
-               status = 'admin_review'::zd_redemption_status,
-               admin_remarks = COALESCE($2, admin_remarks),
-               updated_at = NOW()
-           WHERE id = $3"#
-    )
-    .bind(&flags_json)
-    .bind(&payload.admin_notes)
-    .bind(redemption_id)
-    .execute(&state.db)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "message": e.to_string() })),
-        )
-    })?;
-
-    // 6. Update document verified flags if provided
-    if let Some(ag_verified) = payload.agreement_verified {
-        sqlx::query(
-            "UPDATE zd_redemption_documents SET verified = $1 WHERE redemption_id = $2 AND doc_type = 'agreement'",
-        )
-        .bind(ag_verified)
-        .bind(redemption_id)
-        .execute(&state.db)
-        .await
-        .ok();
-    }
-
-    if let Some(bp_verified) = payload.bank_proof_verified {
-        sqlx::query(
-            "UPDATE zd_redemption_documents SET verified = $1 WHERE redemption_id = $2 AND doc_type = 'bank_proof'",
-        )
-        .bind(bp_verified)
-        .bind(redemption_id)
-        .execute(&state.db)
-        .await
-        .ok();
     }
 
     Ok(Json(json!({
         "success": true,
-        "message": "Document check result recorded; forwarded to admin_review",
+        "message": "Document check result recorded",
+        "redemption_id": redemption_id,
         "flags_count": payload.flags.len()
     })))
 }
@@ -634,4 +440,52 @@ pub fn internal_routes() -> axum::Router<AppState> {
             "/internal/zero-deposit/document-checks/{check_id}/result",
             post(document_check_result_callback),
         )
+}
+
+// ---------------------------------------------------------------------------
+// HMAC Unit Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_hmac_passes() {
+        let secret = "test-secret-key-12345";
+        let body = b"{\"assessment_id\":\"test-123\",\"status\":\"completed\"}";
+        let now = Utc::now().timestamp();
+        let timestamp_str = now.to_string();
+
+        let sig = compute_hmac(secret, body);
+
+        let res = verify_hmac_raw(secret, &sig, &timestamp_str, body, now);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_bad_signature_fails() {
+        let secret = "test-secret-key-12345";
+        let body = b"{\"assessment_id\":\"test-123\",\"status\":\"completed\"}";
+        let now = Utc::now().timestamp();
+        let timestamp_str = now.to_string();
+
+        let bad_sig = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+
+        let res = verify_hmac_raw(secret, bad_sig, &timestamp_str, body, now);
+        assert_eq!(res, Err("Invalid signature"));
+    }
+
+    #[test]
+    fn test_stale_timestamp_fails() {
+        let secret = "test-secret-key-12345";
+        let body = b"{\"assessment_id\":\"test-123\",\"status\":\"completed\"}";
+        let now = Utc::now().timestamp();
+        let stale_timestamp = (now - 301).to_string(); // 301s ago (> 5 mins)
+
+        let sig = compute_hmac(secret, body);
+
+        let res = verify_hmac_raw(secret, &sig, &stale_timestamp, body, now);
+        assert_eq!(res, Err("Request timestamp expired (> 5m drift)"));
+    }
 }
