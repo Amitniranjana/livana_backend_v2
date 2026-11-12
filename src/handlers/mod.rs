@@ -59,3 +59,5 @@ pub mod fraud_admin;
 pub mod collections;      // Issue 100
 pub mod nudge_experiments; // Issue 99
 pub mod zd_internal_callbacks; // Issues 113, 115
+pub mod zd_actions_handler;
+pub mod zd_wallet_handler;

@@ -569,6 +569,10 @@ pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
         .route("/api/admin/zero-deposit/{id}/default/suspend", patch(suspend_default))
         .route("/api/admin/zero-deposit/{id}/default/forfeit", patch(forfeit_default))
         .route("/api/admin/zero-deposit/{id}/default/recover", patch(recover_default))
+        // Pending actions admin endpoints
+        .route("/api/admin/zero-deposit/{id}/employer-verification", patch(crate::handlers::zd_actions_handler::admin_verify_employer))
+        .route("/api/admin/zero-deposit/{id}/co-applicants", get(crate::handlers::zd_actions_handler::admin_get_co_applicants))
+        .route("/api/admin/zero-deposit/{id}/landlord-reference/{reference_id}", patch(crate::handlers::zd_actions_handler::admin_verify_landlord_reference))
         // Apply admin auth guard
         .route_layer(axum::middleware::from_fn_with_state(
             state,

@@ -1218,6 +1218,63 @@ pub async fn apply_assessment_decision(
     Ok(())
 }
 
+pub async fn run_and_apply_rules_engine(
+    pool: &PgPool,
+    app_id: Uuid,
+) -> Result<RulesEngineResult, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT user_id, monthly_rent::FLOAT8 as rent FROM zero_deposits WHERE id = $1"
+    )
+    .bind(app_id)
+    .fetch_one(pool)
+    .await?;
+
+    let user_id: Uuid = row.get("user_id");
+    let monthly_rent: f64 = row.get("rent");
+
+    // Fetch existing extracted data and ai_flags from the latest assessment, or fallback to defaults
+    let prev_assessment = sqlx::query(
+        r#"SELECT extracted, ai_flags, bureau_summary
+           FROM zero_deposit_ai_assessments
+           WHERE zero_deposit_id = $1 AND is_current = true
+           ORDER BY created_at DESC LIMIT 1"#
+    )
+    .bind(app_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let (extracted, ai_flags, bureau_summary_val): (ExtractedBankData, Vec<String>, Value) = if let Some(r) = prev_assessment {
+        let extracted_json = r.try_get::<Value, _>("extracted").unwrap_or(Value::Null);
+        let flags_json = r.try_get::<Value, _>("ai_flags").unwrap_or(Value::Null);
+        let bureau_val = r.try_get::<Value, _>("bureau_summary").unwrap_or(Value::Null);
+        let ext = serde_json::from_value::<ExtractedBankData>(extracted_json).unwrap_or_default();
+        let flags: Vec<String> = flags_json.as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        (ext, flags, bureau_val)
+    } else {
+        (ExtractedBankData::default(), vec![], Value::Null)
+    };
+
+    let result = run_rules_engine_for_application(pool, app_id, &extracted, &ai_flags).await?;
+
+    let assessment_id = persist_assessment(
+        pool,
+        app_id,
+        None,
+        "elig-2026-09",
+        &result,
+        &serde_json::to_value(&extracted).unwrap_or(Value::Null),
+        &bureau_summary_val,
+        &result.admin_summary,
+    )
+    .await?;
+
+    apply_assessment_decision(pool, app_id, user_id, assessment_id, &result, monthly_rent).await?;
+
+    Ok(result)
+}
+
 // ---------------------------------------------------------------------------
 // Unit Tests (Comprehensive Coverage)
 // ---------------------------------------------------------------------------
