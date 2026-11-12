@@ -313,59 +313,206 @@ Content-Type: application/json
 
 ---
 
-### 4.6 Open or Retrieve Redemption Chat
-- **Path**: `POST /api/v1/zero-deposit/{id}/redemptions`
-- **Description**: Creates a redemption draft and connects to the dedicated redemption chat.
-- **Idempotency**: Pass `Idempotency-Key` header to prevent duplicate redemptions.
-
-#### Request Body
+### 4.6 Open Redemption Chat
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/redemptions`
+- **Headers**:
+  - `Authorization: Bearer <tenant_jwt>`
+  - `Idempotency-Key: <uuid>` (**REQUIRED**)
+- **Description**: Opens the dedicated redemption chat (`chat_type: "zd_redemption"`). Allowed only while token allocation is active, unexpired, and no other redemption is open (`409 REDEMPTION_ALREADY_OPEN`).
+- **Idempotency Rule**: Same idempotency key + same body returns the original response; same key + different body returns `409 DUPLICATE_REQUEST`.
+- **Request Body**:
 ```json
 {
-  "tokens_requested": 30000.00,
-  "property_id": "019d1234-abcd-7000-8000-000000000001",
-  "landlord_name": "Suresh Mehta",
-  "landlord_phone": "+919876543210"
+  "message": "Hi, I have finalized my rental agreement and would like to redeem my zero deposit tokens." // Optional initial message
 }
 ```
-
-#### Response (`201 Created` or `200 OK`)
+- **Response (`201 Created` or `200 OK`)**:
 ```json
 {
   "success": true,
   "data": {
-    "redemption": {
-      "id": "019d08f0-1111-2222-3333-444455556666",
-      "chat_id": "019d08f0-9999-8888-7777-666655554444",
-      "status": "docs_pending",
-      "tokens_requested": 30000.00,
-      "required_documents": [
-        "rental_agreement",
-        "landlord_pan",
-        "landlord_aadhaar",
-        "landlord_bank_proof",
-        "property_ownership_proof"
-      ]
-    }
+    "redemption_id": "019d1234-abcd-7000-8000-000000000010",
+    "chat_id": "019d1234-abcd-7000-8000-000000000020",
+    "status": "docs_pending",
+    "tokens_available": 30000.00,
+    "tokens_expire_at": "2026-12-11T12:00:00Z",
+    "required_documents": [
+      {
+        "doc_type": "rental_agreement",
+        "label": "Signed rental agreement, 11+ months, with the deposit refund assigned to Livana",
+        "required": true,
+        "status": "missing"
+      },
+      {
+        "doc_type": "landlord_pan",
+        "label": "Landlord PAN",
+        "required": true,
+        "status": "missing"
+      },
+      {
+        "doc_type": "landlord_aadhaar",
+        "label": "Landlord Aadhaar",
+        "required": true,
+        "status": "missing"
+      },
+      {
+        "doc_type": "landlord_bank_proof",
+        "label": "Landlord cancelled cheque or passbook",
+        "required": true,
+        "status": "missing"
+      },
+      {
+        "doc_type": "property_ownership_proof",
+        "label": "Sale deed, property tax receipt or society share certificate",
+        "required": true,
+        "status": "missing"
+      }
+    ]
   }
 }
 ```
 
 ---
 
-### 4.7 Upload Document into Redemption
-- **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/documents`
-- **Content-Type**: `multipart/form-data`
-- **File Limits**: Max 10MB; Allowed: `.pdf`, `.jpg`, `.jpeg`, `.png`.
-
-#### Form Fields:
-- `doc_type`: `rental_agreement` | `landlord_pan` | `landlord_aadhaar` | `landlord_bank_proof` | `property_ownership_proof`
-- `file`: Binary file upload
+### 4.7 List My Redemptions
+- **Path**: `GET /api/v1/zero-deposit/redemptions/me?status=&limit=20&offset=0`
+- **Description**: Returns all redemptions initiated by the logged-in tenant with optional status filter.
 
 ---
 
-### 4.8 Submit Redemption for Review
+### 4.8 Get Redemption Detail
+- **Path**: `GET /api/v1/zero-deposit/redemptions/{redemption_id}`
+- **Description**: Returns redemption status, chat ID, checklist items with review comments, requested/used tokens, and masked payee details (`****1234`).
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "id": "019d1234-abcd-7000-8000-000000000010",
+    "zero_deposit_id": "c1f76d49-43c2-4013-8cfb-69bc3c27181c",
+    "chat_id": "019d1234-abcd-7000-8000-000000000020",
+    "status": "under_review",
+    "tokens_requested": 30000.00,
+    "tokens_approved": 30000.00,
+    "tokens_available": 30000.00,
+    "tokens_expire_at": "2026-12-11T12:00:00Z",
+    "property_address": "Flat 402, Green Glen Heights, Bellandur, Bengaluru",
+    "monthly_rent": 10000.00,
+    "payee": {
+      "name": "Suresh Mehta",
+      "account_number": "****4321", // Strictly masked to last 4 digits
+      "ifsc": "HDFC0001234",
+      "bank_name": "HDFC Bank"
+    },
+    "documents": [
+      {
+        "id": "019d1234-abcd-7000-8000-000000000030",
+        "doc_type": "rental_agreement",
+        "label": "Signed rental agreement, 11+ months",
+        "required": true,
+        "status": "verified",
+        "version": 1,
+        "review_comment": null
+      },
+      {
+        "id": "019d1234-abcd-7000-8000-000000000031",
+        "doc_type": "landlord_bank_proof",
+        "label": "Landlord cancelled cheque",
+        "required": true,
+        "status": "rejected",
+        "version": 1,
+        "review_comment": "Name on cancelled cheque is blurred. Please upload a clear photo or passbook."
+      }
+    ],
+    "created_at": "2026-11-12T10:00:00Z"
+  }
+}
+```
+
+---
+
+### 4.9 Get Redemption Messages
+- **Path**: `GET /api/v1/zero-deposit/redemptions/{redemption_id}/messages?before=&limit=50`
+- **Description**: Returns immutable chat messages for this redemption.
+- **Messages Security**: Messages can **never** be edited or deleted.
+
+---
+
+### 4.10 Send Message in Redemption Chat
+- **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/messages`
+- **Description**: Sends a message to the Livana team. Refused with `409 INVALID_STATE` once redemption is closed (`released`, `rejected`, `cancelled`, or `expired`).
+- **Request Body**:
+```json
+{
+  "text": "I have uploaded the re-scanned cancelled cheque. Please take a look."
+}
+```
+
+---
+
+### 4.11 Upload Redemption Document
+- **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/documents`
+- **Content-Type**: `multipart/form-data`
+- **Validation Rules**:
+  - Maximum size: **10 MB** (returns `413 FILE_TOO_LARGE` if exceeded).
+  - Allowed types: **PDF, JPG, PNG** validated via file magic bytes (`%PDF`, `\xFF\xD8\xFF`, `\x89PNG\r\n\x1a\n`) (returns `415 UNSUPPORTED_FILE_TYPE` otherwise).
+  - Cannot supersede an already `verified` document (`409 INVALID_STATE`).
+  - Superseding an unverified doc increments version number and updates the existing checklist item.
+- **Form Fields**:
+  - `doc_type`: `rental_agreement` | `landlord_pan` | `landlord_aadhaar` | `landlord_bank_proof` | `property_ownership_proof` (or any custom `doc_type` requested by admin).
+  - `file`: Binary file.
+  - `note`: Optional comment string.
+
+---
+
+### 4.12 Submit Redemption for Review
 - **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/submit`
-- **Description**: Locks the requested tokens in the ledger and shifts redemption status to `under_review`.
+- **Description**: Verifies all required checklist documents are uploaded/verified, locks tokens via ledger (`zd_token_service::lock`), sets redemption status to `under_review`, posts status message in chat, and automatically queues background AI document check.
+- **Validations**: If any required document is missing/un-uploaded, fails with `422 DOCUMENTS_MISSING` listing missing items.
+- **Request Body**:
+```json
+{
+  "tokens_requested": 30000.00
+}
+```
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "redemption_id": "019d1234-abcd-7000-8000-000000000010",
+  "status": "under_review",
+  "tokens_requested": 30000.00
+}
+```
+
+---
+
+### 4.13 Get Tripartite Agreement E-Sign Link
+- **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/esign`
+- **Description**: Returns e-sign link for the tripartite agreement (Tenant, Landlord, Livana).
+- **Prerequisite**: Fails with `422 PRECONDITION_FAILED` if all required documents are not yet `verified`.
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "esign_url": "https://esign.livana.eco/sign/019d1234-abcd-7000-8000-000000000010",
+    "expires_at": "2026-11-15T12:00:00Z"
+  }
+}
+```
+
+---
+
+### 4.14 Cancel Redemption
+- **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/cancel`
+- **Description**: Tenant cancels an open redemption. Unlocks locked tokens (or marks expired if past day 30), marks chat read-only, and sets status `cancelled`.
+- **Request Body**:
+```json
+{
+  "reason": "Decided on a different rental property."
+}
+```
 
 ---
 
@@ -717,15 +864,255 @@ interface ZdChatMessage {
 
 ---
 
-## 7. Admin Backoffice Endpoints (Maker-Checker)
+## 7. Admin Backoffice Endpoints (Maker-Checker Flow)
 
-All admin actions require Admin JWT and call `log_admin_action` inside a single transactional block:
+All admin actions require Admin JWT authentication (`Authorization: Bearer <ADMIN_JWT>`) and execute `log_admin_action` inside the same database transaction as the update.
 
-### 7.1 Maker Action: Approve Redemption
+### 7.1 Admin Redemptions Inbox
+- **Path**: `GET /api/admin/zero-deposit/redemptions?status=&limit=&offset=`
+- **Description**: Returns all redemption requests across applications, sorted by urgency:
+  1. `under_review` (highest priority)
+  2. `docs_pending` / `changes_requested`
+  3. All others sorted by `created_at ASC` (FIFO queue)
+- **Query Parameters**:
+  - `status` *(optional)*: Filter by status (`all`, `docs_pending`, `submitted`, `under_review`, `approved`, `released`, `rejected`, `cancelled`).
+  - `limit` *(optional)*: Items per page (default: 50, max: 200).
+  - `offset` *(optional)*: Pagination offset (default: 0).
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "zero_deposit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "status": "under_review",
+      "tokens_requested": 30000.0,
+      "tokens_locked": 30000.0,
+      "tokens_approved": 30000.0,
+      "released_amount": 0.0,
+      "property_address": "Flat 402, Green Glen Layout, Bellandur, Bengaluru",
+      "tenant_name": "Rahul Sharma",
+      "tokens_expire_at": "2026-11-20T10:00:00Z",
+      "unread_count": 2,
+      "last_message_at": "2026-11-12T10:30:00Z",
+      "created_at": "2026-11-12T09:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 7.2 Admin Redemption Detail & Precondition Verification
+- **Path**: `GET /api/admin/zero-deposit/redemptions/{id}`
+- **Description**: Fetches comprehensive verification data for a redemption request:
+  - Redemption status, token amounts, and landlord contact.
+  - Required checklist with **15-minute S3 signed URLs** (`signed_url`) for previewing PDFs and images.
+  - Automated precondition checks (`required_docs_verified`, `fee_and_first_rent_paid`, `mandate_active`, `agreement_esigned`).
+  - AI document check analysis (`ai_doc_check_result`) and fraud flags (`doc_check_flags`).
+  - Payee bank account details (unmasked for backoffice processing).
+  - Maker info (`approved_by`, `approved_at`) and Checker info (`utr`, `released_amount`).
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "redemption": {
+      "id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+      "zero_deposit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "status": "under_review",
+      "tokens_requested": 30000.0,
+      "tokens_locked": 30000.0,
+      "tokens_approved": 30000.0,
+      "released_amount": 0.0,
+      "property_address": "Flat 402, Green Glen Layout, Bellandur, Bengaluru",
+      "monthly_rent": 10000.0,
+      "landlord_name": "Suresh Mehta",
+      "payee_snapshot": {
+        "payee_name": "Suresh Mehta",
+        "account_number_masked": "••••••••9012",
+        "account_number": "123456789012",
+        "ifsc": "HDFC0001234"
+      },
+      "utr": null,
+      "approved_by": null,
+      "approved_at": null,
+      "admin_remarks": null,
+      "ai_doc_check_result": {
+        "overall_status": "passed",
+        "flags": [],
+        "recommendation": "approve",
+        "mismatches": []
+      },
+      "doc_check_flags": [],
+      "tokens_expire_at": "2026-11-20T10:00:00Z",
+      "created_at": "2026-11-12T09:00:00Z"
+    },
+    "documents": [
+      {
+        "id": "d1e2f3a4-b5c6-7890-abcd-ef1234567890",
+        "doc_type": "rental_agreement",
+        "label": "Signed rental agreement, 11+ months, with deposit refund assigned to Livana",
+        "required": true,
+        "status": "verified",
+        "version": 1,
+        "signed_url": "https://s3.ap-south-1.amazonaws.com/livana-docs/redemptions/...X-Amz-Expires=900",
+        "file_name": "rental_agreement_signed.pdf",
+        "mime_type": "application/pdf",
+        "review_comment": "Verified 11-month term and assignment clause",
+        "uploaded_at": "2026-11-12T09:15:00Z"
+      }
+    ],
+    "preconditions": {
+      "required_docs_verified": true,
+      "fee_and_first_rent_paid": true,
+      "mandate_active": true,
+      "agreement_esigned": true
+    }
+  }
+}
+```
+
+---
+
+### 7.3 Get Redemption Chat Messages (Admin)
+- **Path**: `GET /api/admin/zero-deposit/redemptions/{id}/messages?before=&limit=`
+- **Description**: Retrieves chat timeline for admin interface with custom event payloads.
+- **Query Parameters**:
+  - `before` *(optional ISO timestamp)*: Cursor for reverse chronological pagination.
+  - `limit` *(optional)*: Default 50, maximum 100.
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [
+      {
+        "id": "e1f2a3b4-c5d6-7890-abcd-ef1234567890",
+        "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+        "sender_id": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
+        "sender_type": "admin",
+        "sender_name": "Rohan (Livana Ops)",
+        "message_text": "Please provide the latest electricity bill for ownership verification.",
+        "message_type": "text",
+        "metadata": null,
+        "created_at": "2026-11-12T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 7.4 Send Admin Chat Message
+- **Path**: `POST /api/admin/zero-deposit/redemptions/{id}/messages`
+- **Description**: Sends a message to the tenant in the redemption chat.
+- **Presentation Rule**: Sent as "Livana team", but includes admin's name in `metadata` for auditability. Automatically broadcasts the message to the tenant via WebSocket (`/api/v1/ws`).
+- **Request Body**:
+```json
+{
+  "text": "We noticed the Landlord PAN name differs slightly from the Agreement. Can you confirm?"
+}
+```
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "message_id": "f2a3b4c5-d6e7-8901-bcde-f12345678901",
+    "created_at": "2026-11-12T10:05:00Z"
+  }
+}
+```
+
+---
+
+### 7.5 Request Additional Document (Admin)
+- **Path**: `POST /api/admin/zero-deposit/redemptions/{id}/document-requests`
+- **Description**: Adds an ad-hoc document request to the redemption checklist.
+- **Behavior**:
+  - Inserts new item into `zd_redemption_documents` with `status: "missing"`.
+  - Automatically posts a `doc_request` event card in the chat.
+  - Broadcasts WebSocket event to live chat.
+- **Request Body**:
+```json
+{
+  "doc_type": "electricity_bill",
+  "label": "Latest Electricity Bill in Landlord's Name",
+  "note": "Must be dated within the last 60 days",
+  "required": true
+}
+```
+- **Response `201 Created`**:
+```json
+{
+  "success": true,
+  "data": {
+    "document_id": "a2b3c4d5-e6f7-8901-bcde-f12345678902",
+    "doc_type": "electricity_bill",
+    "label": "Latest Electricity Bill in Landlord's Name",
+    "status": "missing",
+    "required": true
+  }
+}
+```
+
+---
+
+### 7.6 Review Document (Admin)
+- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/documents/{document_id}`
+- **Description**: Admin approves or rejects an uploaded document.
+- **Behavior**:
+  - Updates document status to `verified` or `rejected`.
+  - Injects a `doc_review` system card into the chat timeline.
+  - Broadcasts review decision to the tenant over WebSocket.
+- **Request Body**:
+```json
+{
+  "status": "verified",
+  "comment": "Name and address match property deed"
+}
+```
+*Or on rejection:*
+```json
+{
+  "status": "rejected",
+  "comment": "Document is blurry; please upload a clear scanned PDF."
+}
+```
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "document_id": "d1e2f3a4-b5c6-7890-abcd-ef1234567890",
+    "status": "verified",
+    "review_comment": "Name and address match property deed"
+  }
+}
+```
+
+---
+
+### 7.7 Maker Action: Approve Redemption
 - **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/approve`
-- **Description**: Admin 1 verifies documents and approves payee details. Moves status to `approved`.
-- **Precondition**: Caller `admin_id` is recorded as `approved_by`.
-
+- **Description**: **Admin 1 (Maker)** verifies all documentation, locks tokens, and enters/confirms verified Landlord payee bank details.
+- **Preconditions Checked**:
+  1. All required documents must be `verified`.
+  2. Tokens requested must not exceed token allocation.
+  3. Valid IFSC code format (`^[A-Z]{4}0[A-Z0-9]{6}$`).
+  4. Account number must be 9–18 digits.
+- **Security & DB Execution**:
+  - Account number is stored encrypted (`payee_account_number_encrypted`) and masked (`payee_account_number_masked`).
+  - Records `approved_by = caller.admin_id` and `approved_at = NOW()`.
+  - Locks allocation row via `SELECT ... FOR UPDATE`.
+  - Redemption status moves to `approved`.
+  - Transactional audit log inserted via `log_admin_action`.
+- **Request Body**:
 ```json
 {
   "tokens_approved": 30000.00,
@@ -735,20 +1122,118 @@ All admin actions require Admin JWT and call `log_admin_action` inside a single 
   "remarks": "Documents verified against Land Registry"
 }
 ```
-
-### 7.2 Checker Action: Mark Released (Pay Landlord)
-- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/release`
-- **Description**: Admin 2 (different admin) records external bank transfer.
-- **Enforcement**: If `caller_admin_id === approved_by`, returns `403 MAKER_CHECKER`.
-
+- **Response `200 OK`**:
 ```json
 {
-  "utr": "UTR202611119876543210",
-  "released_amount": 30000.00,
-  "payout_mode": "NEFT",
-  "notes": "Disbursed via HDFC Corporate NetBanking"
+  "success": true,
+  "data": {
+    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+    "status": "approved",
+    "tokens_approved": 30000.00,
+    "payee_name": "Suresh Mehta",
+    "payee_account_number_masked": "••••••••9012",
+    "payee_ifsc": "HDFC0001234",
+    "approved_by": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
+    "approved_at": "2026-11-12T11:00:00Z"
+  }
 }
 ```
+
+---
+
+### 7.8 Checker Action: Mark Released (Disburse Funds to Landlord)
+- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/mark-released`  
+  *(Alias: `PATCH /api/admin/zero-deposit/redemptions/{id}/release`)*
+- **Header**: `Idempotency-Key: <uuid>` **(REQUIRED)**
+- **Description**: **Admin 2 (Checker)** executes/confirms the external payout transfer to the landlord and records the UTR.
+- **Enforcement Rules**:
+  - **Maker-Checker Rule**: If `zd_ai_config.maker_checker_enabled` is `true`, the releasing admin (`released_by`) **CANNOT** be the same admin who approved (`approved_by`). Violations return:
+    ```json
+    {
+      "success": false,
+      "error": "MAKER_CHECKER",
+      "message": "Maker-checker violation: A different admin must release the payout."
+    }
+    ```
+  - **Idempotency**: Prevents duplicate bank payout logging.
+    - Same `Idempotency-Key` + identical payload $\rightarrow$ returns original response.
+    - Same `Idempotency-Key` + different payload $\rightarrow$ returns `409 DUPLICATE_REQUEST`.
+  - **Token Ledger Transition**: Executes `zd_tokens::lock_to_used` inside a database transaction, permanently deducting tokens.
+  - Updates redemption status to `released`, application status to `released`.
+  - Posts confirmation message in chat with UTR and broadcasts WebSocket event.
+- **Request Body**:
+```json
+{
+  "released_amount": 30000.00,
+  "payout_mode": "NEFT",
+  "utr": "UTR202611129876543210",
+  "notes": "Disbursed via HDFC Corporate NetBanking Batch #441"
+}
+```
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+    "status": "released",
+    "released_amount": 30000.00,
+    "payout_mode": "NEFT",
+    "utr": "UTR202611129876543210",
+    "released_by": "b8c7d6e5-f4a3-2109-8765-43210abcdef0",
+    "released_at": "2026-11-12T11:30:00Z"
+  }
+}
+```
+
+---
+
+### 7.9 Admin Action: Reject Redemption
+- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/reject`
+- **Description**: Admin rejects the redemption request (e.g. landlord unwilling to accept Credit Tokens, forged rental agreement).
+- **Behavior**:
+  - Unlocks all locked tokens back to available in the ledger (`zd_tokens::unlock_to_available`).
+  - Sets redemption status to `rejected`.
+  - Sets zero deposit application status back to `tokens_issued` so the tenant can create a new redemption for a different property if eligible.
+  - Injects rejection system message into chat and notifies tenant over WebSocket.
+- **Request Body**:
+```json
+{
+  "reason": "Property ownership document could not be validated with state registry."
+}
+```
+- **Response `200 OK`**:
+```json
+{
+  "success": true,
+  "data": {
+    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
+    "status": "rejected",
+    "reason": "Property ownership document could not be validated with state registry."
+  }
+}
+```
+
+---
+
+### 7.10 Security & Immutability Rules
+
+1. **Redemption Chat Immutability**:
+   - Redemption chats and their messages can **NEVER** be deleted or edited.
+   - Any attempt to call `DELETE /api/admin/chats/{id}` or `DELETE /api/admin/messages/{id}` on a redemption chat returns:
+     ```json
+     {
+       "success": false,
+       "error": "REDEMPTION_CHAT_IMMUTABLE",
+       "message": "Redemption chat records and messages are immutable and cannot be deleted."
+     }
+     ```
+2. **S3 Signed URL Lifetime**:
+   - All document preview URLs returned in admin endpoints expire after **15 minutes (900 seconds)**.
+   - Admin UI should dynamically re-fetch the redemption details or refresh signed links upon expiration.
+3. **Payee Masking**:
+   - Tenant-facing endpoints strictly mask landlord bank account numbers (`••••••••1234`).
+   - Admin endpoints display unmasked account numbers only to authorized admins for payout verification.
 
 ---
 
@@ -765,14 +1250,16 @@ All API errors return a standard JSON structure:
 
 | HTTP | Error Code | Description | Frontend Action Required |
 | :--- | :--- | :--- | :--- |
+| `400` | `INVALID_IDEMPOTENCY_KEY` | Provided `Idempotency-Key` is missing or not a valid UUID. | Generate a fresh UUID v4 header on retry. |
 | `401` | `BAD_HMAC` | Internal callback verification failed. | Check internal webhook signature and timestamp. |
 | `403` | `NOT_OWNER` | User attempted to read/modify an application belonging to another user. | Redirect or display unauthorized access banner. |
 | `403` | `MAKER_CHECKER` | The same admin attempted to both approve and release a payout. | Display: *"Maker-checker violation: A different admin must release funds."* |
+| `403` | `REDEMPTION_CHAT_IMMUTABLE` | Attempted to delete or modify a redemption chat or message. | Disable delete/edit buttons in redemption chat UI. |
 | `404` | `NOT_FOUND` | Application or redemption ID does not exist. | Return user to dashboard list. |
 | `409` | `INVALID_STATE` | Status does not allow this operation (e.g. approving a blocked application). | Re-fetch application status via `GET` and refresh UI. |
 | `409` | `INSUFFICIENT_TOKENS` | Requested redemption exceeds available wallet tokens. | Warn user to lower token request. |
 | `409` | `REDEMPTION_ALREADY_OPEN` | Application already has an active redemption pending. | Route user directly to existing redemption chat. |
-| `409` | `DUPLICATE_REQUEST` | Idempotency key already submitted. | Prevent double-clicks / redundant requests. |
+| `409` | `DUPLICATE_REQUEST` | Idempotency key already submitted with conflicting payload. | Generate a fresh idempotency key or re-query status. |
 | `410` | `TOKENS_EXPIRED` | 30-day token validity has lapsed. | Display expired badge; show "Re-Apply" button. |
 | `413` | `FILE_TOO_LARGE` | Uploaded document is larger than 10MB. | Block upload before sending; show limit alert. |
 | `415` | `UNSUPPORTED_FILE_TYPE` | Uploaded file is not PDF, JPG, or PNG. | Validate MIME type on client file picker. |
@@ -801,6 +1288,18 @@ export type ZeroDepositStatus =
 export type TenantTier = 'A' | 'B' | 'C';
 
 export type EmploymentType = 'salaried' | 'self_employed' | 'gig' | 'student';
+
+export type RedemptionStatus =
+  | 'docs_pending'
+  | 'submitted'
+  | 'under_review'
+  | 'changes_requested'
+  | 'approved'
+  | 'released'
+  | 'rejected'
+  | 'cancelled';
+
+export type RedemptionDocStatus = 'missing' | 'uploaded' | 'verified' | 'rejected';
 
 export interface OccupantsPayload {
   adults: number;
@@ -882,4 +1381,123 @@ export interface ZeroDepositApplication {
   created_at: string;
   updated_at: string;
 }
+
+export interface RedemptionChecklistItem {
+  id?: string;
+  doc_type: string;
+  label: string;
+  required: boolean;
+  status: RedemptionDocStatus;
+  version?: number;
+  signed_url?: string | null;
+  file_name?: string | null;
+  mime_type?: string | null;
+  review_comment?: string | null;
+  uploaded_at?: string | null;
+}
+
+export interface RedemptionDetail {
+  id: string;
+  zero_deposit_id: string;
+  chat_id: string;
+  status: RedemptionStatus;
+  tokens_requested: number;
+  tokens_locked: number;
+  tokens_approved?: number;
+  released_amount?: number;
+  tokens_expire_at: string;
+  property_address?: string;
+  monthly_rent?: number;
+  landlord_name?: string;
+  landlord_phone?: string;
+  payee_masked?: {
+    payee_name: string;
+    account_number_masked: string;
+    ifsc: string;
+  } | null;
+  checklist: RedemptionChecklistItem[];
+  created_at: string;
+}
+
+export interface RedemptionMessage {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  sender_type: 'tenant' | 'admin' | 'system';
+  sender_name?: string;
+  message_text: string;
+  message_type: 'text' | 'doc_request' | 'doc_review' | 'status';
+  metadata?: {
+    document_id?: string;
+    doc_type?: string;
+    status?: string;
+    rejection_reason?: string;
+    old_status?: string;
+    new_status?: string;
+    utr?: string;
+  } | null;
+  created_at: string;
+}
+
+export interface AdminRedemptionInboxItem {
+  id: string;
+  zero_deposit_id: string;
+  chat_id: string;
+  status: RedemptionStatus;
+  tokens_requested: number;
+  tokens_locked: number;
+  tokens_approved: number;
+  released_amount: number;
+  property_address?: string;
+  tenant_name: string;
+  tokens_expire_at: string;
+  unread_count: number;
+  last_message_at?: string;
+  created_at: string;
+}
+
+export interface AdminPreconditions {
+  required_docs_verified: boolean;
+  fee_and_first_rent_paid: boolean;
+  mandate_active: boolean;
+  agreement_esigned: boolean;
+}
+
+export interface AdminRedemptionDetail {
+  redemption: {
+    id: string;
+    zero_deposit_id: string;
+    chat_id: string;
+    status: RedemptionStatus;
+    tokens_requested: number;
+    tokens_locked: number;
+    tokens_approved: number;
+    released_amount: number;
+    property_address?: string;
+    monthly_rent?: number;
+    landlord_name?: string;
+    payee_snapshot?: {
+      payee_name: string;
+      account_number: string;
+      account_number_masked: string;
+      ifsc: string;
+    } | null;
+    utr?: string | null;
+    approved_by?: string | null;
+    approved_at?: string | null;
+    admin_remarks?: string | null;
+    ai_doc_check_result?: {
+      overall_status: string;
+      flags: string[];
+      recommendation: string;
+      mismatches: any[];
+    } | null;
+    doc_check_flags?: any[];
+    tokens_expire_at: string;
+    created_at: string;
+  };
+  documents: RedemptionChecklistItem[];
+  preconditions: AdminPreconditions;
+}
 ```
+
