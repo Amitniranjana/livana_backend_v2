@@ -544,13 +544,20 @@ pub fn zd_internal_routes() -> Router<AppState> {
 
 pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
     use crate::handlers::admin_zero_deposit::{
-        approve_zero_deposit, forfeit_default, get_defaulted_zero_deposits,
-        get_zero_deposit_detail, get_zero_deposit_ledger, get_zero_deposits,
-        recover_default, reject_zero_deposit, suspend_default,
+        approve_redemption, approve_zero_deposit, forfeit_default, get_admin_redemption_detail,
+        get_admin_redemptions, get_defaulted_zero_deposits, get_zero_deposit_detail,
+        get_zero_deposit_ledger, get_zero_deposits, recover_default, reject_redemption,
+        reject_zero_deposit, release_redemption, suspend_default,
     };
     use axum::routing::{get, patch};
 
     Router::new()
+        // Redemptions endpoints (must precede /{id} so static segment /redemptions matches cleanly)
+        .route("/api/admin/zero-deposit/redemptions", get(get_admin_redemptions))
+        .route("/api/admin/zero-deposit/redemptions/{id}", get(get_admin_redemption_detail))
+        .route("/api/admin/zero-deposit/redemptions/{id}/approve", patch(approve_redemption))
+        .route("/api/admin/zero-deposit/redemptions/{id}/release", patch(release_redemption))
+        .route("/api/admin/zero-deposit/redemptions/{id}/reject", patch(reject_redemption))
         // Zero Deposit endpoints
         .route("/api/admin/zero-deposit", get(get_zero_deposits))
         .route("/api/admin/zero-deposit/{id}", get(get_zero_deposit_detail))
