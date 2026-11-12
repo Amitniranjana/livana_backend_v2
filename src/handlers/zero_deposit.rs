@@ -27,7 +27,7 @@ fn extract_user_id_from_jwt(token: &str, key: &DecodingKey) -> Result<Uuid, Stri
     Uuid::parse_str(&data.claims.sub).map_err(|e| e.to_string())
 }
 
-fn require_auth(
+pub fn require_auth(
     headers: &HeaderMap,
     jwt_secret: &str,
 ) -> Result<Uuid, (StatusCode, axum::Json<serde_json::Value>)> {
@@ -436,15 +436,50 @@ pub async fn charge_fee(
         }
     };
 
-    // Hardcode flat fee of 500.0 for MVP as planned
-    let fee_amount = 500.0;
+    // Check application exists and verify ownership
+    let app_row = match sqlx::query(
+        "SELECT user_id, monthly_rent::FLOAT8 as rent FROM zero_deposits WHERE id = $1"
+    )
+    .bind(zero_deposit_id)
+    .fetch_optional(&app_state.db)
+    .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "message": "Zero deposit not found", "error_code": "NOT_FOUND"})),
+            );
+        }
+        Err(e) => {
+            log::error!("charge_fee query error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": "Database error", "error_code": "DB_ERROR"})),
+            );
+        }
+    };
+
+    let owner_id: Uuid = app_row.get("user_id");
+    if owner_id != user_id {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "message": "Not authorized to charge fee for this application", "error_code": "NOT_OWNER"})),
+        );
+    }
+
+    let monthly_rent: f64 = app_row.try_get("rent").unwrap_or(0.0);
+    // Spec: fee_amount = rent + ₹2,000; first_rent_amount = rent; total = fee_amount + first_rent_amount
+    let fee_amount = monthly_rent + 2000.0;
+    let first_rent_amount = monthly_rent;
+    let total_amount = fee_amount + first_rent_amount;
 
     match crate::services::zero_deposit_service::initiate_fee_charge(
         &app_state.db,
         zero_deposit_id,
         user_id,
         &payload.upi_vpa,
-        fee_amount,
+        total_amount,
     )
     .await
     {
@@ -452,8 +487,16 @@ pub async fn charge_fee(
             StatusCode::OK,
             Json(json!({
                 "success": true,
-                "message": "Fee charge initiated successfully",
-                "data": { "fee_transaction": fee_txn }
+                "message": "Fee and first rent charge initiated successfully",
+                "data": {
+                    "fee_transaction_id": fee_txn.id,
+                    "fee_amount": fee_amount,
+                    "first_rent_amount": first_rent_amount,
+                    "total_amount": total_amount,
+                    "status": fee_txn.status,
+                    "upi_vpa": fee_txn.upi_vpa,
+                    "created_at": fee_txn.created_at
+                }
             })),
         ),
         Ok(None) => (
@@ -500,6 +543,37 @@ pub async fn setup_autopay(
         }
     };
 
+    // Check application exists and verify ownership
+    let owner_id = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM zero_deposits WHERE id = $1"
+    )
+    .bind(zero_deposit_id)
+    .fetch_optional(&app_state.db)
+    .await
+    {
+        Ok(Some(uid)) => uid,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "message": "Zero deposit not found", "error_code": "NOT_FOUND"})),
+            );
+        }
+        Err(e) => {
+            log::error!("setup_autopay query error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": "Database error", "error_code": "DB_ERROR"})),
+            );
+        }
+    };
+
+    if owner_id != user_id {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "message": "Not authorized to setup autopay for this application", "error_code": "NOT_OWNER"})),
+        );
+    }
+
     // Validate payload conditionally
     match payload.mandate_type {
         crate::models::zero_deposit::MandateType::UpiAutopay => {
@@ -521,14 +595,19 @@ pub async fn setup_autopay(
     }
 
     match crate::services::zero_deposit_service::setup_autopay_mandate(&app_state.db, zero_deposit_id, user_id, &payload).await {
-        Ok(Some(mandate)) => (
-            StatusCode::OK,
-            Json(json!({
-                "success": true,
-                "message": "Autopay mandate setup initiated",
-                "data": { "autopay_mandate": mandate }
-            })),
-        ),
+        Ok(Some(mut mandate)) => {
+            if let Some(acc) = mandate.bank_account_number.as_ref() {
+                mandate.bank_account_number = Some(crate::handlers::zd_wallet_handler::mask_bank_account(acc));
+            }
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "success": true,
+                    "message": "Autopay mandate setup initiated",
+                    "data": { "autopay_mandate": mandate }
+                })),
+            )
+        }
         Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({
@@ -572,6 +651,36 @@ pub async fn get_repayment_schedule(
         }
     };
 
+    let owner_id = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM zero_deposits WHERE id = $1"
+    )
+    .bind(zero_deposit_id)
+    .fetch_optional(&app_state.db)
+    .await
+    {
+        Ok(Some(uid)) => uid,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "message": "Application not found", "error_code": "NOT_FOUND"})),
+            );
+        }
+        Err(e) => {
+            log::error!("get_repayment_schedule query error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": "Database error", "error_code": "DB_ERROR"})),
+            );
+        }
+    };
+
+    if owner_id != user_id {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "message": "Not authorized to access this repayment schedule", "error_code": "NOT_OWNER"})),
+        );
+    }
+
     match crate::services::zero_deposit_service::get_repayment_schedule(&app_state.db, zero_deposit_id, user_id).await {
         Ok(Some(schedule)) => (
             StatusCode::OK,
@@ -582,11 +691,11 @@ pub async fn get_repayment_schedule(
             })),
         ),
         Ok(None) => (
-            StatusCode::NOT_FOUND,
+            StatusCode::OK,
             Json(json!({
-                "success": false,
-                "message": "Zero deposit not found or unauthorized",
-                "error_code": "NOT_FOUND"
+                "success": true,
+                "message": "No repayment schedule found",
+                "data": { "repayment_schedule": [] }
             })),
         ),
         Err(e) => {
@@ -624,6 +733,36 @@ pub async fn get_ledger(
         }
     };
 
+    let owner_id = match sqlx::query_scalar::<_, Uuid>(
+        "SELECT user_id FROM zero_deposits WHERE id = $1"
+    )
+    .bind(zero_deposit_id)
+    .fetch_optional(&app_state.db)
+    .await
+    {
+        Ok(Some(uid)) => uid,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(json!({"success": false, "message": "Application not found", "error_code": "NOT_FOUND"})),
+            );
+        }
+        Err(e) => {
+            log::error!("get_ledger query error: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"success": false, "message": "Database error", "error_code": "DB_ERROR"})),
+            );
+        }
+    };
+
+    if owner_id != user_id {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"success": false, "message": "Not authorized to access this ledger", "error_code": "NOT_OWNER"})),
+        );
+    }
+
     match crate::services::zero_deposit_service::get_ledger_entries(&app_state.db, zero_deposit_id, user_id).await {
         Ok(Some(entries)) => (
             StatusCode::OK,
@@ -634,11 +773,11 @@ pub async fn get_ledger(
             })),
         ),
         Ok(None) => (
-            StatusCode::NOT_FOUND,
+            StatusCode::OK,
             Json(json!({
-                "success": false,
-                "message": "Zero deposit not found or unauthorized",
-                "error_code": "NOT_FOUND"
+                "success": true,
+                "message": "No ledger entries found",
+                "data": { "ledger": [] }
             })),
         ),
         Err(e) => {
