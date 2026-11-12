@@ -233,8 +233,8 @@ impl From<KycRow> for KycResponse {
             is_permanent_same_as_present: r.is_permanent_same_as_present,
             latitude: r.latitude,
             longitude: r.longitude,
-            govt_id_type: r.govt_id_type,
-            govt_id_number: r.govt_id_number,
+            govt_id_type: r.govt_id_type.clone(),
+            govt_id_number: crate::services::zd_verification_service::mask_govt_id(&r.govt_id_type, &r.govt_id_number),
             govt_id_document_url: r.govt_id_document_url,
             company_name: r.company_name,
             services,
@@ -260,8 +260,10 @@ pub struct FaceMatchRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FaceMatchResponse {
-    pub match_score: f64,
+    pub match_score: Option<f64>,
     pub match_status: bool,
+    pub status: String,
+    pub reason: Option<String>,
     pub message: String,
 }
 

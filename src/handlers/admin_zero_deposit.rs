@@ -216,6 +216,47 @@ pub async fn approve_zero_deposit(
         ));
     }
 
+    // Fail-Closed KYC Check: If any KYC check is incomplete, require explicit acknowledgement
+    let checks_json = sqlx::query_scalar::<_, Value>(
+        "SELECT checks FROM zero_deposit_ai_assessments WHERE zero_deposit_id = $1 AND is_current = true ORDER BY created_at DESC LIMIT 1"
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten();
+
+    let incomplete_checks: Vec<String> = if let Some(Value::Array(checks)) = checks_json {
+        checks
+            .iter()
+            .filter_map(|c| {
+                let name = c.get("check").and_then(|v| v.as_str()).unwrap_or("");
+                let result = c.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                if (name.contains("kyc") || name.contains("face") || name.contains("liveness") || name.contains("tamper") || name.contains("doc_extraction") || name.contains("match"))
+                    && result != "pass"
+                {
+                    Some(format!("{}: {}", name, result))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        vec!["kyc_assessment_missing".to_string()]
+    };
+
+    if !incomplete_checks.is_empty() && payload.acknowledge_incomplete_kyc != Some(true) {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "success": false,
+                "error": "KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED",
+                "message": "KYC verifications are incomplete or unverified. You must explicitly set acknowledge_incomplete_kyc: true to approve.",
+                "incomplete_checks": incomplete_checks
+            })),
+        ));
+    }
+
     // Update status to tokens_issued
     sqlx::query(
         "UPDATE zero_deposits
@@ -687,6 +728,46 @@ pub async fn override_assessment(
     })?;
 
     if payload.decision == "approve" {
+        // Fail-Closed KYC Check: If any KYC check is incomplete, require explicit acknowledgement
+        let checks_json = sqlx::query_scalar::<_, Value>(
+            "SELECT checks FROM zero_deposit_ai_assessments WHERE zero_deposit_id = $1 AND is_current = true ORDER BY created_at DESC LIMIT 1"
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await
+        .ok()
+        .flatten();
+
+        let incomplete_checks: Vec<String> = if let Some(Value::Array(checks)) = checks_json {
+            checks
+                .iter()
+                .filter_map(|c| {
+                    let name = c.get("check").and_then(|v| v.as_str()).unwrap_or("");
+                    let result = c.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                    if (name.contains("kyc") || name.contains("face") || name.contains("liveness") || name.contains("tamper") || name.contains("doc_extraction") || name.contains("match"))
+                        && result != "pass"
+                    {
+                        Some(format!("{}: {}", name, result))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            vec!["kyc_assessment_missing".to_string()]
+        };
+
+        if !incomplete_checks.is_empty() && payload.acknowledge_incomplete_kyc != Some(true) {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({
+                    "success": false,
+                    "error": "KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED",
+                    "message": "KYC verifications are incomplete or unverified. You must explicitly set acknowledge_incomplete_kyc: true to approve override.",
+                    "incomplete_checks": incomplete_checks
+                })),
+            ));
+        }
         let deposit_amount = monthly_rent * DEPOSIT_RENT_MULTIPLE;
 
         sqlx::query(
@@ -948,6 +1029,47 @@ pub async fn manual_issue_tokens(
                 "success": false,
                 "error": "INVALID_STATE",
                 "message": format!("Manual token issue allowed only in 'ai_manual_review' (current: '{}')", status)
+            })),
+        ));
+    }
+
+    // Fail-Closed KYC Check: If any KYC check is incomplete, require explicit acknowledgement
+    let checks_json = sqlx::query_scalar::<_, Value>(
+        "SELECT checks FROM zero_deposit_ai_assessments WHERE zero_deposit_id = $1 AND is_current = true ORDER BY created_at DESC LIMIT 1"
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten();
+
+    let incomplete_checks: Vec<String> = if let Some(Value::Array(checks)) = checks_json {
+        checks
+            .iter()
+            .filter_map(|c| {
+                let name = c.get("check").and_then(|v| v.as_str()).unwrap_or("");
+                let result = c.get("result").and_then(|v| v.as_str()).unwrap_or("");
+                if (name.contains("kyc") || name.contains("face") || name.contains("liveness") || name.contains("tamper") || name.contains("doc_extraction") || name.contains("match"))
+                    && result != "pass"
+                {
+                    Some(format!("{}: {}", name, result))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        vec!["kyc_assessment_missing".to_string()]
+    };
+
+    if !incomplete_checks.is_empty() && payload.acknowledge_incomplete_kyc != Some(true) {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({
+                "success": false,
+                "error": "KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED",
+                "message": "KYC verifications are incomplete or unverified. You must explicitly set acknowledge_incomplete_kyc: true to manually issue tokens.",
+                "incomplete_checks": incomplete_checks
             })),
         ));
     }

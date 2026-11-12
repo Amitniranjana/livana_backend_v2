@@ -47,6 +47,9 @@ pub struct StubBureauClient;
 #[async_trait]
 impl BureauClient for StubBureauClient {
     async fn pull_report(&self, _name: &str, _pan: &str, _app_id: Uuid) -> Result<BureauSummary, String> {
+        // Hard-gate mock provider in production
+        crate::services::zd_verification_service::assert_mock_provider_allowed();
+
         // Stub implementation returning a clean credit profile
         Ok(BureauSummary {
             score: Some(735),
@@ -272,7 +275,10 @@ pub async fn execute_ai_assessment_outbound(
             z.applicant_ip,
             z.device_fingerprint,
             k.full_name,
-            k.date_of_birth
+            k.date_of_birth,
+            k.profile_picture_url,
+            k.govt_id_document_url,
+            k.liveness_status
         FROM zero_deposits z
         LEFT JOIN kyc_submissions k ON k.id = z.kyc_id
         WHERE z.id = $1"#
@@ -300,6 +306,14 @@ pub async fn execute_ai_assessment_outbound(
     let full_name: Option<String> = app_row.try_get("full_name").ok();
     let dob: Option<String> = app_row.try_get("date_of_birth").ok();
 
+    let selfie_url: Option<String> = app_row.try_get("profile_picture_url").ok().flatten();
+    let id_photo_url: Option<String> = app_row.try_get("govt_id_document_url").ok().flatten();
+    let liveness_status: Option<String> = app_row.try_get("liveness_status").ok().flatten();
+
+    let selfie_present = selfie_url.map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let id_photo_present = id_photo_url.map(|s| !s.trim().is_empty()).unwrap_or(false);
+    let liveness_run = liveness_status.is_some();
+
     let callback_url = format!("{}/internal/zero-deposit/assessments/{}/result", callback_base.trim_end_matches('/'), assessment_id);
 
     let outbound_req = AiAssessmentOutboundRequest {
@@ -316,7 +330,12 @@ pub async fn execute_ai_assessment_outbound(
         kyc: json!({
             "name_on_id": full_name.unwrap_or_default(),
             "dob": dob.unwrap_or_default(),
-            "ocr_text": ""
+            "ocr_text": "",
+            "kyc_inputs_present": {
+                "selfie_present": selfie_present,
+                "id_photo_present": id_photo_present,
+                "liveness_run": liveness_run
+            }
         }),
         documents,
         bureau,

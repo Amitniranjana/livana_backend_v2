@@ -40,6 +40,9 @@ async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
 
+    // Hard-gate mock KYC / Bureau providers in production
+    crate::services::zd_verification_service::assert_mock_provider_allowed();
+
     // ——————————————— Load env vars ———————————————
     let database_user = env::var("DATABASE_USER").expect("DATABASE_USER must be set");
     let database_host = env::var("DATABASE_HOST").expect("DATABASE_HOST must be set");

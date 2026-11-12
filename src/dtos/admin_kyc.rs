@@ -73,3 +73,23 @@ pub struct AdminKycDetailResponse {
 pub struct AdminKycRejectRequest {
     pub reason: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct OverrideKycImagesReq {
+    pub selfie_url: Option<String>,
+    pub id_photo_url: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RevealGovtIdReq {
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RevealGovtIdResponse {
+    pub kyc_id: Uuid,
+    pub user_id: Uuid,
+    pub govt_id_type: String,
+    pub govt_id_number: String,
+}

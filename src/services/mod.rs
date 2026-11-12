@@ -24,4 +24,5 @@ pub mod zd_actions_service;
 pub mod zd_redemption_service;
 pub mod zd_notifications;
 pub mod zd_jobs;
+pub mod zd_verification_service;
 

@@ -22,6 +22,14 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::services::zd_token_service;
+use crate::services::zd_verification_service::{
+    self, VerificationCheckResult, VerificationStatusTriState,
+    REASON_SELFIE_MISSING, REASON_ID_PHOTO_MISSING,
+    REASON_FACE_MISMATCH, REASON_KYC_INCOMPLETE, PENDING_ACTION_COMPLETE_KYC,
+    REASON_NO_DOCUMENTS_ANALYZED, REASON_DOC_TAMPER_SUSPECTED, REASON_DECLARED_VALUE_MISSING,
+    REASON_LIVENESS_NOT_RUN, REASON_EXTRACTION_MISSING,
+    REASON_PROVIDER_ERROR, REASON_TIMEOUT,
+};
 
 pub const RULES_VERSION: &str = "elig-2026-09";
 
@@ -47,6 +55,10 @@ pub const DPD_RECENT: &str = "DPD_RECENT";
 pub const HIGH_ENQUIRIES: &str = "HIGH_ENQUIRIES";
 pub const NTC_ALT_SCORING: &str = "NTC_ALT_SCORING";
 pub const LANDLORD_REFERENCE_NEGATIVE: &str = "LANDLORD_REFERENCE_NEGATIVE";
+pub const KYC_INCOMPLETE: &str = "KYC_INCOMPLETE";
+pub const FACE_MISMATCH: &str = "FACE_MISMATCH";
+pub const ADMIN_OVERRIDE_INPUTS: &str = "ADMIN_OVERRIDE_INPUTS";
+pub const COMPLETE_KYC: &str = "complete_kyc";
 
 // ---------------------------------------------------------------------------
 // AI Reason Codes (Flags from AI Callback)
@@ -112,8 +124,40 @@ impl TenantTier {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssessmentCheckItem {
     pub check: String,
-    pub result: String, // "pass" | "review" | "fail"
+    pub result: String, // "pass" | "review" | "fail" | "not_evaluated"
     pub detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<serde_json::Value>,
+}
+
+impl Default for AssessmentCheckItem {
+    fn default() -> Self {
+        Self {
+            check: String::new(),
+            result: String::new(),
+            detail: String::new(),
+            reason: None,
+            score: None,
+            provenance: None,
+        }
+    }
+}
+
+impl AssessmentCheckItem {
+    pub fn new(check: impl Into<String>, result: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            check: check.into(),
+            result: result.into(),
+            detail: detail.into(),
+            reason: None,
+            score: None,
+            provenance: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,11 +204,47 @@ pub struct KycInput {
     pub has_aadhaar: bool,
     pub has_pan: bool,
     pub mobile_linked_to_aadhaar: bool,
-    pub selfie_liveness_passed: bool,
-    pub face_match_passed: bool,
     pub address_proof_verified: bool,
     pub bank_account_matches_name: bool,
     pub kyc_mismatch: bool,
+
+    // Tri-state checks (Fail-Closed)
+    pub face_match: VerificationCheckResult,
+    pub liveness: VerificationCheckResult,
+    pub doc_extraction: VerificationCheckResult,
+    pub tamper_check: VerificationCheckResult,
+    pub name_match: VerificationCheckResult,
+    pub dob_match: VerificationCheckResult,
+    pub pan_match: VerificationCheckResult,
+    pub aadhaar_match: VerificationCheckResult,
+
+    // Source tracking
+    pub input_source: String, // "provider", "mock", "admin_override_inputs"
+}
+
+impl KycInput {
+    pub fn default_valid() -> Self {
+        Self {
+            name_on_id: "Aman Verma".into(),
+            dob: Some(NaiveDate::from_ymd_opt(1996, 5, 10).unwrap()),
+            is_indian_resident: true,
+            has_aadhaar: true,
+            has_pan: true,
+            mobile_linked_to_aadhaar: true,
+            address_proof_verified: true,
+            bank_account_matches_name: true,
+            kyc_mismatch: false,
+            face_match: VerificationCheckResult::pass("face_match", "98.5% match", Some(98.5)),
+            liveness: VerificationCheckResult::pass("liveness", "Liveness confirmed", None),
+            doc_extraction: VerificationCheckResult::pass("doc_extraction", "Clean extraction", None),
+            tamper_check: VerificationCheckResult::pass("tamper_check", "Documents clean", None),
+            name_match: VerificationCheckResult::pass("name_match", "Name matches", Some(100.0)),
+            dob_match: VerificationCheckResult::pass("dob_match", "DOB matches", Some(100.0)),
+            pan_match: VerificationCheckResult::pass("pan_match", "PAN matches", Some(100.0)),
+            aadhaar_match: VerificationCheckResult::pass("aadhaar_match", "Aadhaar matches", Some(100.0)),
+            input_source: "provider".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -239,6 +319,7 @@ pub struct ZdAiConfig {
     pub max_overdraft_days_6m: i32,
     pub max_unexplained_cash_pct: f64,
     pub max_loan_apps: i32,
+    pub face_match_min_confidence: f32,
 }
 
 impl Default for ZdAiConfig {
@@ -262,6 +343,7 @@ impl Default for ZdAiConfig {
             max_overdraft_days_6m: 5,
             max_unexplained_cash_pct: 50.0,
             max_loan_apps: 2,
+            face_match_min_confidence: 85.0,
         }
     }
 }
@@ -271,6 +353,9 @@ impl ZdAiConfig {
         let mut cfg = Self::default();
         if let Some(b) = v.get("auto_issue_enabled").and_then(|x| x.as_bool()) {
             cfg.auto_issue_enabled = b;
+        }
+        if let Some(f) = v.get("face_match_min_confidence").and_then(|x| x.as_f64()) {
+            cfg.face_match_min_confidence = f as f32;
         }
         if let Some(a) = v.get("age_min").and_then(|x| x.as_i64()) {
             cfg.age_min = a as i32;
@@ -363,59 +448,167 @@ pub fn evaluate_rules(
     // ────────────────────────────────────────────────────────────────────────
     // Step 1: KYC & Fraud
     // ────────────────────────────────────────────────────────────────────────
-    if kyc.kyc_mismatch {
+    
+    // Check 1.1: Name Match
+    checks.push(AssessmentCheckItem {
+        check: "name_match".into(),
+        result: kyc.name_match.result.as_str().into(),
+        detail: kyc.name_match.detail.clone(),
+        reason: kyc.name_match.reason.clone(),
+        score: kyc.name_match.score,
+        provenance: kyc.name_match.provenance.clone(),
+    });
+    if kyc.name_match.result == VerificationStatusTriState::Fail {
         auto_reject_reasons.push(KYC_MISMATCH.into());
-        checks.push(AssessmentCheckItem {
-            check: "kyc_match".into(),
-            result: "fail".into(),
-            detail: "Name, DOB, or PAN mismatch across documents".into(),
-        });
-    } else {
-        checks.push(AssessmentCheckItem {
-            check: "kyc_match".into(),
-            result: "pass".into(),
-            detail: "KYC credentials matched successfully".into(),
-        });
     }
 
+    // Check 1.2: Date of Birth Match
+    checks.push(AssessmentCheckItem {
+        check: "dob_match".into(),
+        result: kyc.dob_match.result.as_str().into(),
+        detail: kyc.dob_match.detail.clone(),
+        reason: kyc.dob_match.reason.clone(),
+        score: kyc.dob_match.score,
+        provenance: kyc.dob_match.provenance.clone(),
+    });
+    if kyc.dob_match.result == VerificationStatusTriState::Fail {
+        auto_reject_reasons.push(KYC_MISMATCH.into());
+    }
+
+    // Check 1.3: PAN Match
+    checks.push(AssessmentCheckItem {
+        check: "pan_match".into(),
+        result: kyc.pan_match.result.as_str().into(),
+        detail: kyc.pan_match.detail.clone(),
+        reason: kyc.pan_match.reason.clone(),
+        score: kyc.pan_match.score,
+        provenance: kyc.pan_match.provenance.clone(),
+    });
+    if kyc.pan_match.result == VerificationStatusTriState::Fail {
+        auto_reject_reasons.push(KYC_MISMATCH.into());
+    }
+
+    // Check 1.4: Aadhaar Match
+    checks.push(AssessmentCheckItem {
+        check: "aadhaar_match".into(),
+        result: kyc.aadhaar_match.result.as_str().into(),
+        detail: kyc.aadhaar_match.detail.clone(),
+        reason: kyc.aadhaar_match.reason.clone(),
+        score: kyc.aadhaar_match.score,
+        provenance: kyc.aadhaar_match.provenance.clone(),
+    });
+    if kyc.aadhaar_match.result == VerificationStatusTriState::Fail {
+        auto_reject_reasons.push(KYC_MISMATCH.into());
+    }
+
+    // Check 1.5: Selfie Liveness
+    checks.push(AssessmentCheckItem {
+        check: "selfie_liveness".into(),
+        result: kyc.liveness.result.as_str().into(),
+        detail: kyc.liveness.detail.clone(),
+        reason: kyc.liveness.reason.clone(),
+        score: kyc.liveness.score,
+        provenance: kyc.liveness.provenance.clone(),
+    });
+    if kyc.liveness.result == VerificationStatusTriState::Fail {
+        manual_review_reasons.push("LIVENESS_FAILED".into());
+    }
+
+    // Check 1.6: Face Match
+    checks.push(AssessmentCheckItem {
+        check: "face_match".into(),
+        result: kyc.face_match.result.as_str().into(),
+        detail: kyc.face_match.detail.clone(),
+        reason: kyc.face_match.reason.clone(),
+        score: kyc.face_match.score,
+        provenance: kyc.face_match.provenance.clone(),
+    });
+    if kyc.face_match.result == VerificationStatusTriState::Review || kyc.face_match.result == VerificationStatusTriState::Fail {
+        manual_review_reasons.push(FACE_MISMATCH.into());
+    }
+
+    // Missing selfie / ID photo / incomplete KYC => action_required with complete_kyc
+    let is_missing_selfie_or_id = kyc.face_match.result == VerificationStatusTriState::NotEvaluated
+        && (kyc.face_match.reason.as_deref() == Some(REASON_SELFIE_MISSING)
+            || kyc.face_match.reason.as_deref() == Some(REASON_ID_PHOTO_MISSING)
+            || kyc.liveness.result == VerificationStatusTriState::NotEvaluated
+            || !kyc.has_aadhaar || !kyc.has_pan);
+
+    if is_missing_selfie_or_id {
+        action_required_reasons.push(KYC_INCOMPLETE.into());
+        pending_actions.push(PENDING_ACTION_COMPLETE_KYC.into());
+    } else if kyc.face_match.result == VerificationStatusTriState::NotEvaluated {
+        manual_review_reasons.push(KYC_INCOMPLETE.into());
+    }
+
+    // Check 1.7: Document Tamper Check
+    checks.push(AssessmentCheckItem {
+        check: "tamper_check".into(),
+        result: kyc.tamper_check.result.as_str().into(),
+        detail: kyc.tamper_check.detail.clone(),
+        reason: kyc.tamper_check.reason.clone(),
+        score: kyc.tamper_check.score,
+        provenance: kyc.tamper_check.provenance.clone(),
+    });
+    if kyc.tamper_check.result == VerificationStatusTriState::Review {
+        manual_review_reasons.push(DOC_TAMPER_SUSPECTED.into());
+    }
+
+    // Check 1.8: Indian Resident
     if !kyc.is_indian_resident {
         auto_reject_reasons.push(NOT_INDIAN_RESIDENT.into());
-        checks.push(AssessmentCheckItem {
-            check: "indian_resident".into(),
-            result: "fail".into(),
-            detail: "Applicant is not an Indian resident".into(),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "indian_resident",
+            "fail",
+            "Applicant is not an Indian resident",
+        ));
+    } else {
+        checks.push(AssessmentCheckItem::new(
+            "indian_resident",
+            "pass",
+            "Applicant confirmed Indian resident",
+        ));
     }
 
-    // Age calculation
+    // Check 1.9: Age calculation
     let age = kyc.dob.map(|dob| {
         let now = Utc::now().date_naive();
         now.year() - dob.year()
-    }).unwrap_or(30);
+    });
 
-    if age < config.age_min || age > config.age_max {
-        auto_reject_reasons.push(AGE_OUT_OF_RANGE.into());
-        checks.push(AssessmentCheckItem {
-            check: "age_range".into(),
-            result: "fail".into(),
-            detail: format!("Age {} is outside permitted range {}-{}", age, config.age_min, config.age_max),
-        });
-    } else {
-        checks.push(AssessmentCheckItem {
-            check: "age_range".into(),
-            result: "pass".into(),
-            detail: format!("Age {} is within permitted range {}-{}", age, config.age_min, config.age_max),
-        });
-    }
-
-    // Mandatory identity documents
-    if !kyc.has_aadhaar || !kyc.has_pan || !kyc.address_proof_verified || !kyc.selfie_liveness_passed || !kyc.face_match_passed {
-        auto_reject_reasons.push(KYC_MISMATCH.into());
-        checks.push(AssessmentCheckItem {
-            check: "kyc_documents".into(),
-            result: "fail".into(),
-            detail: "Missing Aadhaar/PAN or failed selfie liveness/face match".into(),
-        });
+    match age {
+        Some(a) if a < config.age_min || a > config.age_max => {
+            auto_reject_reasons.push(AGE_OUT_OF_RANGE.into());
+            checks.push(AssessmentCheckItem {
+                check: "age_range".into(),
+                result: "fail".into(),
+                detail: format!("Age {} is outside permitted range {}-{}", a, config.age_min, config.age_max),
+                reason: Some(AGE_OUT_OF_RANGE.into()),
+                score: None,
+                provenance: None,
+            });
+        }
+        Some(a) => {
+            checks.push(AssessmentCheckItem {
+                check: "age_range".into(),
+                result: "pass".into(),
+                detail: format!("Age {} is within permitted range {}-{}", a, config.age_min, config.age_max),
+                reason: None,
+                score: None,
+                provenance: None,
+            });
+        }
+        None => {
+            checks.push(AssessmentCheckItem {
+                check: "age_range".into(),
+                result: "not_evaluated".into(),
+                detail: "Date of birth not declared; age could not be calculated".into(),
+                reason: Some(REASON_DECLARED_VALUE_MISSING.into()),
+                score: None,
+                provenance: None,
+            });
+            manual_review_reasons.push(KYC_INCOMPLETE.into());
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -423,50 +616,50 @@ pub fn evaluate_rules(
     // ────────────────────────────────────────────────────────────────────────
     if bureau.write_offs > 0 || bureau.settlements > 0 || bureau.suit_filed {
         auto_reject_reasons.push(WRITE_OFF_OR_SETTLED.into());
-        checks.push(AssessmentCheckItem {
-            check: "bureau_adverse_records".into(),
-            result: "fail".into(),
-            detail: format!(
+        checks.push(AssessmentCheckItem::new(
+            "bureau_adverse_records",
+            "fail",
+            format!(
                 "Write-offs: {}, Settlements: {}, Suit filed: {}",
                 bureau.write_offs, bureau.settlements, bureau.suit_filed
             ),
-        });
+        ));
     } else {
-        checks.push(AssessmentCheckItem {
-            check: "bureau_adverse_records".into(),
-            result: "pass".into(),
-            detail: "No write-offs, settlements, or suits filed".into(),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "bureau_adverse_records",
+            "pass",
+            "No write-offs, settlements, or suits filed",
+        ));
     }
 
     if bureau.max_dpd_12m >= 30 || bureau.max_dpd_24m >= 60 {
         manual_review_reasons.push(DPD_RECENT.into());
-        checks.push(AssessmentCheckItem {
-            check: "dpd_recent".into(),
-            result: "review".into(),
-            detail: format!("Max DPD 12m: {}, 24m: {}", bureau.max_dpd_12m, bureau.max_dpd_24m),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "dpd_recent",
+            "review",
+            format!("Max DPD 12m: {}, 24m: {}", bureau.max_dpd_12m, bureau.max_dpd_24m),
+        ));
     } else {
-        checks.push(AssessmentCheckItem {
-            check: "dpd_recent".into(),
-            result: "pass".into(),
-            detail: format!("DPD records clean (12m: {}, 24m: {})", bureau.max_dpd_12m, bureau.max_dpd_24m),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "dpd_recent",
+            "pass",
+            format!("DPD records clean (12m: {}, 24m: {})", bureau.max_dpd_12m, bureau.max_dpd_24m),
+        ));
     }
 
     if bureau.enquiries_3m > config.max_enquiries_3m {
         manual_review_reasons.push(HIGH_ENQUIRIES.into());
-        checks.push(AssessmentCheckItem {
-            check: "bureau_enquiries".into(),
-            result: "review".into(),
-            detail: format!("{} enquiries in last 3 months (max: {})", bureau.enquiries_3m, config.max_enquiries_3m),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "bureau_enquiries",
+            "review",
+            format!("{} enquiries in last 3 months (max: {})", bureau.enquiries_3m, config.max_enquiries_3m),
+        ));
     } else {
-        checks.push(AssessmentCheckItem {
-            check: "bureau_enquiries".into(),
-            result: "pass".into(),
-            detail: format!("{} enquiries in last 3 months (within limit)", bureau.enquiries_3m),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "bureau_enquiries",
+            "pass",
+            format!("{} enquiries in last 3 months (within limit)", bureau.enquiries_3m),
+        ));
     }
 
     // CIBIL Score & Tier Determination
@@ -490,11 +683,11 @@ pub fn evaluate_rules(
         Some(score) if score >= 650 => (Some(TenantTier::C), false),
         Some(score) if score > 0 => {
             auto_reject_reasons.push(CIBIL_BELOW_650.into());
-            checks.push(AssessmentCheckItem {
-                check: "cibil_score".into(),
-                result: "fail".into(),
-                detail: format!("CIBIL score {} is below minimum threshold 650", score),
-            });
+            checks.push(AssessmentCheckItem::new(
+                "cibil_score",
+                "fail",
+                format!("CIBIL score {} is below minimum threshold 650", score),
+            ));
             (None, false)
         }
         _ => {
@@ -505,18 +698,18 @@ pub fn evaluate_rules(
 
     if is_ntc {
         manual_review_reasons.push(NTC_ALT_SCORING.into());
-        checks.push(AssessmentCheckItem {
-            check: "cibil_score".into(),
-            result: "review".into(),
-            detail: "New-to-credit (NTC) applicant routed to alternative scoring".into(),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "cibil_score",
+            "review",
+            "New-to-credit (NTC) applicant routed to alternative scoring",
+        ));
     } else if let Some(score) = bureau.cibil_score {
         if score >= 650 {
-            checks.push(AssessmentCheckItem {
-                check: "cibil_score".into(),
-                result: "pass".into(),
-                detail: format!("CIBIL score: {}", score),
-            });
+            checks.push(AssessmentCheckItem::new(
+                "cibil_score",
+                "pass",
+                format!("CIBIL score: {}", score),
+            ));
         }
     }
 
@@ -565,17 +758,17 @@ pub fn evaluate_rules(
                 if co_cibil_ok {
                     income_considered += co.income;
                     total_obligations += co.emi_total;
-                    checks.push(AssessmentCheckItem {
-                        check: "co_applicant".into(),
-                        result: "pass".into(),
-                        detail: format!("Co-applicant accepted with CIBIL {:?}", co.cibil_score),
-                    });
+                    checks.push(AssessmentCheckItem::new(
+                        "co_applicant",
+                        "pass",
+                        format!("Co-applicant accepted with CIBIL {:?}", co.cibil_score),
+                    ));
                 } else {
-                    checks.push(AssessmentCheckItem {
-                        check: "co_applicant".into(),
-                        result: "fail".into(),
-                        detail: format!("Co-applicant CIBIL {:?} is below required {}", co.cibil_score, config.co_applicant_min_cibil),
-                    });
+                    checks.push(AssessmentCheckItem::new(
+                        "co_applicant",
+                        "fail",
+                        format!("Co-applicant CIBIL {:?} is below required {}", co.cibil_score, config.co_applicant_min_cibil),
+                    ));
                     if days_since_application > config.co_applicant_window_days {
                         auto_reject_reasons.push(INCOME_BELOW_MIN_NO_COAPPLICANT.into());
                     } else {
@@ -587,19 +780,19 @@ pub fn evaluate_rules(
             _ => {
                 if days_since_application > config.co_applicant_window_days {
                     auto_reject_reasons.push(INCOME_BELOW_MIN_NO_COAPPLICANT.into());
-                    checks.push(AssessmentCheckItem {
-                        check: "co_applicant".into(),
-                        result: "fail".into(),
-                        detail: format!("Co-applicant not provided within {} days", config.co_applicant_window_days),
-                    });
+                    checks.push(AssessmentCheckItem::new(
+                        "co_applicant",
+                        "fail",
+                        format!("Co-applicant not provided within {} days", config.co_applicant_window_days),
+                    ));
                 } else {
                     action_required_reasons.push("co_applicant".into());
                     pending_actions.push("co_applicant".into());
-                    checks.push(AssessmentCheckItem {
-                        check: "co_applicant".into(),
-                        result: "review".into(),
-                        detail: "Co-applicant required for qualification".into(),
-                    });
+                    checks.push(AssessmentCheckItem::new(
+                        "co_applicant",
+                        "review",
+                        "Co-applicant required for qualification",
+                    ));
                 }
             }
         }
@@ -609,44 +802,44 @@ pub fn evaluate_rules(
     let final_obligations_pct = if income_considered > 0.0 { (total_obligations / income_considered) * 100.0 } else { 100.0 };
     let final_rent_pct = if income_considered > 0.0 { (app.monthly_rent / income_considered) * 100.0 } else { 100.0 };
 
-    checks.push(AssessmentCheckItem {
-        check: "obligations_50pct".into(),
-        result: if final_obligations_pct <= config.max_obligations_pct { "pass".into() } else { "review".into() },
-        detail: format!("₹{:.0} of ₹{:.0} max ({:.1}%)", total_obligations, income_considered * 0.50, final_obligations_pct),
-    });
+    checks.push(AssessmentCheckItem::new(
+        "obligations_50pct",
+        if final_obligations_pct <= config.max_obligations_pct { "pass" } else { "review" },
+        format!("₹{:.0} of ₹{:.0} max ({:.1}%)", total_obligations, income_considered * 0.50, final_obligations_pct),
+    ));
 
-    checks.push(AssessmentCheckItem {
-        check: "rent_35pct".into(),
-        result: if final_rent_pct <= config.max_rent_pct { "pass".into() } else { "review".into() },
-        detail: format!("₹{:.0} is {:.1}% of income (max {}%)", app.monthly_rent, final_rent_pct, config.max_rent_pct),
-    });
+    checks.push(AssessmentCheckItem::new(
+        "rent_35pct",
+        if final_rent_pct <= config.max_rent_pct { "pass" } else { "review" },
+        format!("₹{:.0} is {:.1}% of income (max {}%)", app.monthly_rent, final_rent_pct, config.max_rent_pct),
+    ));
 
     // Employer Verification Check
     match employer_verif.map(|v| v.status.as_str()) {
         Some("verified") => {
-            checks.push(AssessmentCheckItem {
-                check: "employer_verification".into(),
-                result: "pass".into(),
-                detail: "Employer verified via official email OTP / HR".into(),
-            });
+            checks.push(AssessmentCheckItem::new(
+                "employer_verification",
+                "pass",
+                "Employer verified via official email OTP / HR",
+            ));
         }
         Some("failed") => {
             auto_reject_reasons.push(EMPLOYER_VERIFICATION_FAILED.into());
-            checks.push(AssessmentCheckItem {
-                check: "employer_verification".into(),
-                result: "fail".into(),
-                detail: "Official employer verification failed".into(),
-            });
+            checks.push(AssessmentCheckItem::new(
+                "employer_verification",
+                "fail",
+                "Official employer verification failed",
+            ));
         }
         _ => {
             // Missing or pending
             action_required_reasons.push("employer_email".into());
             pending_actions.push("employer_email".into());
-            checks.push(AssessmentCheckItem {
-                check: "employer_verification".into(),
-                result: "review".into(),
-                detail: "Employer email OTP verification pending".into(),
-            });
+            checks.push(AssessmentCheckItem::new(
+                "employer_verification",
+                "review",
+                "Employer email OTP verification pending",
+            ));
         }
     }
 
@@ -655,17 +848,17 @@ pub fn evaluate_rules(
     // ────────────────────────────────────────────────────────────────────────
     if extracted.bounces_3m > 0 {
         auto_reject_reasons.push(BOUNCE_LAST_3M.into());
-        checks.push(AssessmentCheckItem {
-            check: "bank_bounces".into(),
-            result: "fail".into(),
-            detail: format!("{} cheque/NACH bounce(s) in last 3 months", extracted.bounces_3m),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "bank_bounces",
+            "fail",
+            format!("{} cheque/NACH bounce(s) in last 3 months", extracted.bounces_3m),
+        ));
     } else {
-        checks.push(AssessmentCheckItem {
-            check: "bank_bounces".into(),
-            result: "pass".into(),
-            detail: "Zero cheque or NACH bounces in last 3 months".into(),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "bank_bounces",
+            "pass",
+            "Zero cheque or NACH bounces in last 3 months",
+        ));
     }
 
     if extracted.salary_regular == Some(false) {
@@ -693,38 +886,38 @@ pub fn evaluate_rules(
     // ────────────────────────────────────────────────────────────────────────
     if prior_livana_default {
         auto_reject_reasons.push(PRIOR_LIVANA_DEFAULT.into());
-        checks.push(AssessmentCheckItem {
-            check: "prior_default".into(),
-            result: "fail".into(),
-            detail: "Applicant defaulted on an earlier Zero Deposit agreement".into(),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "prior_default",
+            "fail",
+            "Applicant defaulted on an earlier Zero Deposit agreement",
+        ));
     }
 
     if app.is_repeat_renter || computed_tier == Some(TenantTier::C) {
         match landlord_ref.map(|l| l.status.as_str()) {
             Some("negative") => {
                 manual_review_reasons.push(LANDLORD_REFERENCE_NEGATIVE.into());
-                checks.push(AssessmentCheckItem {
-                    check: "landlord_reference".into(),
-                    result: "review".into(),
-                    detail: "Negative landlord reference reported".into(),
-                });
+                checks.push(AssessmentCheckItem::new(
+                    "landlord_reference",
+                    "review",
+                    "Negative landlord reference reported",
+                ));
             }
             Some("verified") => {
-                checks.push(AssessmentCheckItem {
-                    check: "landlord_reference".into(),
-                    result: "pass".into(),
-                    detail: "Landlord reference verified".into(),
-                });
+                checks.push(AssessmentCheckItem::new(
+                    "landlord_reference",
+                    "pass",
+                    "Landlord reference verified",
+                ));
             }
             _ => {
                 action_required_reasons.push("landlord_reference".into());
                 pending_actions.push("landlord_reference".into());
-                checks.push(AssessmentCheckItem {
-                    check: "landlord_reference".into(),
-                    result: "review".into(),
-                    detail: "Previous landlord reference or rent receipts required".into(),
-                });
+                checks.push(AssessmentCheckItem::new(
+                    "landlord_reference",
+                    "review",
+                    "Previous landlord reference or rent receipts required",
+                ));
             }
         }
     }
@@ -752,17 +945,17 @@ pub fn evaluate_rules(
 
     if app.monthly_rent > tier_max_rent && computed_tier.is_some() {
         manual_review_reasons.push(RENT_ABOVE_TIER_CAP.into());
-        checks.push(AssessmentCheckItem {
-            check: "tier_rent_cap".into(),
-            result: "review".into(),
-            detail: format!("Rent ₹{:.0} exceeds Tier {:?} cap ₹{:.0}", app.monthly_rent, computed_tier.unwrap(), tier_max_rent),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "tier_rent_cap",
+            "review",
+            format!("Rent ₹{:.0} exceeds Tier {:?} cap ₹{:.0}", app.monthly_rent, computed_tier.unwrap(), tier_max_rent),
+        ));
     } else if computed_tier.is_some() {
-        checks.push(AssessmentCheckItem {
-            check: "tier_rent_cap".into(),
-            result: "pass".into(),
-            detail: format!("Rent ₹{:.0} within Tier {:?} cap ₹{:.0}", app.monthly_rent, computed_tier.unwrap(), tier_max_rent),
-        });
+        checks.push(AssessmentCheckItem::new(
+            "tier_rent_cap",
+            "pass",
+            format!("Rent ₹{:.0} within Tier {:?} cap ₹{:.0}", app.monthly_rent, computed_tier.unwrap(), tier_max_rent),
+        ));
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -770,10 +963,25 @@ pub fn evaluate_rules(
     // ────────────────────────────────────────────────────────────────────────
     let recommended_token_amount = app.monthly_rent * config.deposit_rent_multiple;
 
+    let has_not_evaluated_checks = checks.iter().any(|c| c.result == "not_evaluated");
+    let is_untrusted_input_source = kyc.input_source == "mock" || kyc.input_source == "admin_override_inputs";
+
     let (decision, mut combined_reasons) = if !auto_reject_reasons.is_empty() {
         (AssessmentDecision::AutoReject, auto_reject_reasons)
     } else if !action_required_reasons.is_empty() {
         (AssessmentDecision::ActionRequired, action_required_reasons)
+    } else if has_not_evaluated_checks {
+        let mut r = manual_review_reasons;
+        r.push(KYC_INCOMPLETE.into());
+        (AssessmentDecision::ManualReview, r)
+    } else if is_untrusted_input_source {
+        let mut r = manual_review_reasons;
+        if kyc.input_source == "admin_override_inputs" {
+            r.push(ADMIN_OVERRIDE_INPUTS.into());
+        } else {
+            r.push("MOCK_INPUTS_REVIEW".into());
+        }
+        (AssessmentDecision::ManualReview, r)
     } else if !config.auto_issue_enabled {
         let mut r = manual_review_reasons;
         r.push("AUTO_ISSUE_DISABLED".into());
@@ -792,7 +1000,13 @@ pub fn evaluate_rules(
 
     let tenant_message = match decision {
         AssessmentDecision::AutoApprove => "Your monthly income comfortably covers the rent. Tokens issued!".to_string(),
-        AssessmentDecision::ActionRequired => "Action required: please provide the requested verification or documents.".to_string(),
+        AssessmentDecision::ActionRequired => {
+            if pending_actions.contains(&PENDING_ACTION_COMPLETE_KYC.to_string()) {
+                "Action required: please complete your KYC and upload your selfie and ID photo.".to_string()
+            } else {
+                "Action required: please provide the requested verification or documents.".to_string()
+            }
+        }
         AssessmentDecision::ManualReview => "Your application is under standard review by our underwriting team.".to_string(),
         AssessmentDecision::AutoReject => "Based on our underwriting criteria, your application could not be approved at this time.".to_string(),
     };
@@ -880,7 +1094,15 @@ pub async fn run_rules_engine_for_application(
 
     // 2. Fetch KYC
     let kyc_row = sqlx::query(
-        "SELECT full_name, date_of_birth, govt_id_type, govt_id_number, govt_id_document_url, country FROM kyc_submissions WHERE user_id = $1 LIMIT 1"
+        r#"SELECT
+            id, full_name, date_of_birth, profile_picture_url,
+            govt_id_type, govt_id_number, govt_id_document_url, country,
+            extracted_name, extracted_doc_number, extracted_dob,
+            document_integrity_status::TEXT as document_integrity_status,
+            face_match_score, face_match_status, face_match_reason,
+            liveness_score, liveness_status,
+            image_override_urls
+        FROM kyc_submissions WHERE user_id = $1 LIMIT 1"#
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -893,20 +1115,199 @@ pub async fn run_rules_engine_for_application(
             let dob = dob_str.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok());
             let country: Option<String> = r.try_get("country").ok();
             let is_indian = country.map(|c| c.to_lowercase() == "india" || c.to_lowercase() == "in").unwrap_or(true);
-            let has_id = r.try_get::<String, _>("govt_id_document_url").is_ok();
+
+            let profile_picture_url: Option<String> = r.try_get("profile_picture_url").ok();
+            let govt_id_type: String = r.try_get("govt_id_type").unwrap_or_default();
+            let govt_id_number: String = r.try_get("govt_id_number").unwrap_or_default();
+            let govt_id_document_url: Option<String> = r.try_get("govt_id_document_url").ok();
+
+            let extracted_name: Option<String> = r.try_get("extracted_name").ok();
+            let extracted_doc_number: Option<String> = r.try_get("extracted_doc_number").ok();
+            let extracted_dob: Option<NaiveDate> = r.try_get("extracted_dob").ok();
+            let doc_integrity: Option<String> = r.try_get("document_integrity_status").ok();
+
+            let face_match_score: Option<f64> = r.try_get("face_match_score").ok();
+            let face_match_reason: Option<String> = r.try_get("face_match_reason").ok();
+            let liveness_score: Option<f64> = r.try_get("liveness_score").ok();
+            let liveness_status: Option<String> = r.try_get("liveness_status").ok();
+            let image_override_urls: Option<Value> = r.try_get("image_override_urls").ok();
+
+            let input_source = if image_override_urls.is_some() && !image_override_urls.as_ref().unwrap().is_null() {
+                "admin_override_inputs".to_string()
+            } else {
+                "production".to_string()
+            };
+
+            // Evaluate Face Match
+            let face_match = if profile_picture_url.as_deref().unwrap_or("").trim().is_empty() {
+                VerificationCheckResult::not_evaluated(
+                    "face_match",
+                    REASON_SELFIE_MISSING,
+                    "Selfie photo is missing",
+                )
+            } else if govt_id_document_url.as_deref().unwrap_or("").trim().is_empty() {
+                VerificationCheckResult::not_evaluated(
+                    "face_match",
+                    REASON_ID_PHOTO_MISSING,
+                    "Government ID photo is missing",
+                )
+            } else if let Some(score) = face_match_score {
+                let s = score as f32;
+                if let Some(ref rsn) = face_match_reason {
+                    if rsn == REASON_PROVIDER_ERROR || rsn == REASON_TIMEOUT {
+                        VerificationCheckResult::not_evaluated(
+                            "face_match",
+                            rsn.as_str(),
+                            "Provider error during face match evaluation",
+                        )
+                    } else if s >= config.face_match_min_confidence {
+                        VerificationCheckResult::pass("face_match", "Faces match with high confidence", Some(s))
+                    } else {
+                        VerificationCheckResult::review(
+                            "face_match",
+                            REASON_FACE_MISMATCH,
+                            format!("Face match score {:.1}% is below threshold {:.1}%", s, config.face_match_min_confidence),
+                            Some(s),
+                        )
+                    }
+                } else if s >= config.face_match_min_confidence {
+                    VerificationCheckResult::pass("face_match", "Faces match with high confidence", Some(s))
+                } else {
+                    VerificationCheckResult::review(
+                        "face_match",
+                        REASON_FACE_MISMATCH,
+                        format!("Face match score {:.1}% is below threshold {:.1}%", s, config.face_match_min_confidence),
+                        Some(s),
+                    )
+                }
+            } else {
+                VerificationCheckResult::not_evaluated(
+                    "face_match",
+                    REASON_KYC_INCOMPLETE,
+                    "Face match has not been computed yet",
+                )
+            };
+
+            // Evaluate Liveness
+            let liveness = if profile_picture_url.as_deref().unwrap_or("").trim().is_empty() {
+                VerificationCheckResult::not_evaluated(
+                    "liveness",
+                    REASON_LIVENESS_NOT_RUN,
+                    "Liveness check not run: selfie missing",
+                )
+            } else if let Some(status) = liveness_status {
+                match status.to_lowercase().as_str() {
+                    "passed" | "pass" => VerificationCheckResult::pass("liveness", "Liveness check passed", liveness_score.map(|s| s as f32)),
+                    "failed" | "fail" => VerificationCheckResult::review(
+                        "liveness",
+                        "LIVENESS_FAILED",
+                        "Liveness check failed",
+                        liveness_score.map(|s| s as f32),
+                    ),
+                    _ => VerificationCheckResult::not_evaluated(
+                        "liveness",
+                        REASON_LIVENESS_NOT_RUN,
+                        "Liveness status pending or unknown",
+                    ),
+                }
+            } else {
+                VerificationCheckResult::not_evaluated(
+                    "liveness",
+                    REASON_LIVENESS_NOT_RUN,
+                    "Liveness check has not been run",
+                )
+            };
+
+            // Evaluate Document Extraction
+            let doc_extraction = if govt_id_document_url.as_deref().unwrap_or("").trim().is_empty() {
+                VerificationCheckResult::not_evaluated(
+                    "doc_extraction",
+                    REASON_EXTRACTION_MISSING,
+                    "Government ID photo is missing",
+                )
+            } else if extracted_name.is_none() && extracted_doc_number.is_none() && extracted_dob.is_none() {
+                VerificationCheckResult::not_evaluated(
+                    "doc_extraction",
+                    REASON_EXTRACTION_MISSING,
+                    "Document data extraction has not completed",
+                )
+            } else {
+                VerificationCheckResult::pass("doc_extraction", "Document fields extracted", None)
+            };
+
+            // Evaluate Tamper Check
+            let tamper_check = if govt_id_document_url.as_deref().unwrap_or("").trim().is_empty() {
+                VerificationCheckResult::not_evaluated(
+                    "tamper_check",
+                    REASON_NO_DOCUMENTS_ANALYZED,
+                    "No document uploaded for tamper analysis",
+                )
+            } else if let Some(status) = doc_integrity {
+                match status.to_uppercase().as_str() {
+                    "CLEAN" => VerificationCheckResult::pass("tamper_check", "No signs of tampering detected", None),
+                    "SUSPICIOUS" | "FLAGGED" => VerificationCheckResult::review(
+                        "tamper_check",
+                        REASON_DOC_TAMPER_SUSPECTED,
+                        format!("Document integrity status is {}", status),
+                        None,
+                    ),
+                    _ => VerificationCheckResult::not_evaluated(
+                        "tamper_check",
+                        REASON_NO_DOCUMENTS_ANALYZED,
+                        "Tamper check pending",
+                    ),
+                }
+            } else {
+                VerificationCheckResult::not_evaluated(
+                    "tamper_check",
+                    REASON_NO_DOCUMENTS_ANALYZED,
+                    "Document tamper analysis not run",
+                )
+            };
+
+            // Evaluate Field Matches via zd_verification_service
+            let name_match = zd_verification_service::evaluate_name_match(Some(&full_name), extracted_name.as_deref());
+            let dob_match = zd_verification_service::evaluate_dob_match(dob, extracted_dob);
+            let pan_match = if govt_id_type.to_lowercase() == "pan" {
+                zd_verification_service::evaluate_pan_match(Some(&govt_id_number), extracted_doc_number.as_deref())
+            } else {
+                VerificationCheckResult::not_evaluated(
+                    "pan_match",
+                    REASON_DECLARED_VALUE_MISSING,
+                    "PAN not declared as government ID",
+                )
+            };
+            let aadhaar_match = if govt_id_type.to_lowercase() == "aadhaar" {
+                zd_verification_service::evaluate_aadhaar_match(Some(&govt_id_number), extracted_doc_number.as_deref())
+            } else {
+                VerificationCheckResult::not_evaluated(
+                    "aadhaar_match",
+                    REASON_DECLARED_VALUE_MISSING,
+                    "Aadhaar not declared as government ID",
+                )
+            };
+
+            let kyc_mismatch = name_match.result == VerificationStatusTriState::Fail || dob_match.result == VerificationStatusTriState::Fail;
 
             KycInput {
                 name_on_id: full_name,
                 dob,
                 is_indian_resident: is_indian,
-                has_aadhaar: has_id,
-                has_pan: has_id,
+                has_aadhaar: govt_id_type.to_lowercase() == "aadhaar",
+                has_pan: govt_id_type.to_lowercase() == "pan",
                 mobile_linked_to_aadhaar: true,
-                selfie_liveness_passed: true,
-                face_match_passed: true,
                 address_proof_verified: true,
                 bank_account_matches_name: true,
-                kyc_mismatch: false,
+                kyc_mismatch,
+                face_match,
+                liveness,
+                doc_extraction,
+                tamper_check,
+                name_match,
+                dob_match,
+                pan_match,
+                aadhaar_match,
+                input_source,
             }
         }
         None => KycInput {
@@ -915,12 +1316,19 @@ pub async fn run_rules_engine_for_application(
             is_indian_resident: true,
             has_aadhaar: false,
             has_pan: false,
-            mobile_linked_to_aadhaar: true,
-            selfie_liveness_passed: true,
-            face_match_passed: true,
-            address_proof_verified: true,
-            bank_account_matches_name: true,
+            mobile_linked_to_aadhaar: false,
+            address_proof_verified: false,
+            bank_account_matches_name: false,
             kyc_mismatch: false,
+            face_match: VerificationCheckResult::not_evaluated("face_match", REASON_SELFIE_MISSING, "No KYC or selfie uploaded"),
+            liveness: VerificationCheckResult::not_evaluated("liveness", REASON_LIVENESS_NOT_RUN, "No selfie uploaded"),
+            doc_extraction: VerificationCheckResult::not_evaluated("doc_extraction", REASON_EXTRACTION_MISSING, "No government ID uploaded"),
+            tamper_check: VerificationCheckResult::not_evaluated("tamper_check", REASON_NO_DOCUMENTS_ANALYZED, "No documents uploaded"),
+            name_match: VerificationCheckResult::not_evaluated("name_match", REASON_DECLARED_VALUE_MISSING, "KYC not submitted"),
+            dob_match: VerificationCheckResult::not_evaluated("dob_match", REASON_DECLARED_VALUE_MISSING, "KYC not submitted"),
+            pan_match: VerificationCheckResult::not_evaluated("pan_match", REASON_DECLARED_VALUE_MISSING, "KYC not submitted"),
+            aadhaar_match: VerificationCheckResult::not_evaluated("aadhaar_match", REASON_DECLARED_VALUE_MISSING, "KYC not submitted"),
+            input_source: "production".into(),
         },
     };
 
@@ -1284,19 +1692,7 @@ mod tests {
     use super::*;
 
     fn base_kyc() -> KycInput {
-        KycInput {
-            name_on_id: "Aman Verma".into(),
-            dob: Some(NaiveDate::from_ymd_opt(1996, 5, 10).unwrap()),
-            is_indian_resident: true,
-            has_aadhaar: true,
-            has_pan: true,
-            mobile_linked_to_aadhaar: true,
-            selfie_liveness_passed: true,
-            face_match_passed: true,
-            address_proof_verified: true,
-            bank_account_matches_name: true,
-            kyc_mismatch: false,
-        }
+        KycInput::default_valid()
     }
 
     fn base_bureau() -> BureauInput {

@@ -156,3 +156,4 @@ pub async fn notify_funds_released(
     .execute(pool)
     .await;
 }
+

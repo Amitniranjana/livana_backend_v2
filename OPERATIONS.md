@@ -1,7 +1,7 @@
 # Livana Zero Deposit (Credit Tokens) v2 — Operations & Deployment Guide
 
-> **Audience**: Backend Engineers, DevOps, Underwriting Admins, Legal & Compliance  
-> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)  
+> **Audience**: Backend Engineers, DevOps, Underwriting Admins, Legal & Compliance
+> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)
 > **Status**: Production-Ready / Pre-Launch
 
 ---
@@ -9,7 +9,7 @@
 ## 1. Regulatory & Legal Pre-Flight Notice
 
 > [!CAUTION]
-> **LEGAL / REGULATORY MANDATE — CONFIRM WITH LEGAL BEFORE LAUNCH**:  
+> **LEGAL / REGULATORY MANDATE — CONFIRM WITH LEGAL BEFORE LAUNCH**:
 > The regulatory position of Livana funding security deposits directly on behalf of tenants without a partner NBFC is subject to local lending regulations and rental tenancy legislation. Prior to activating live payouts (`auto_issue_enabled: true` or admin disbursements), written legal confirmation must be obtained from counsel regarding RBI Digital Lending Guidelines and Non-Banking Financial Company exemptions.
 
 ---

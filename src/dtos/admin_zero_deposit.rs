@@ -13,6 +13,7 @@ pub struct ZeroDepositQuery {
 pub struct ZeroDepositApproveReq {
     pub approved_deposit_amount: f64,
     pub remarks: Option<String>,
+    pub acknowledge_incomplete_kyc: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +37,7 @@ pub struct AssessmentOverrideReq {
     pub decision: String, // "approve" | "reject"
     pub tier: Option<String>, // "A" | "B" | "C"
     pub reason: String,
+    pub acknowledge_incomplete_kyc: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +55,7 @@ pub struct UserTierUpdateReq {
 pub struct ManualIssueReq {
     pub tier: String, // "A" | "B" | "C"
     pub remarks: Option<String>,
+    pub acknowledge_incomplete_kyc: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
