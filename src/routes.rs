@@ -546,9 +546,12 @@ pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
     use crate::handlers::admin_zero_deposit::{
         admin_add_document_request, admin_get_redemption_messages, admin_review_document,
         admin_send_redemption_message, approve_redemption, approve_zero_deposit, forfeit_default,
-        get_admin_redemption_detail, get_admin_redemptions, get_defaulted_zero_deposits,
-        get_zero_deposit_detail, get_zero_deposit_ledger, get_zero_deposits, recover_default,
-        reject_redemption, reject_zero_deposit, release_redemption, suspend_default,
+        get_admin_redemption_detail, get_admin_redemptions, get_ai_config, get_assessment,
+        get_dashboard_counters, get_defaulted_zero_deposits, get_monthly_reports,
+        get_token_transactions, get_zero_deposit_detail, get_zero_deposit_ledger,
+        get_zero_deposits, manual_issue_tokens, override_assessment, patch_ai_config,
+        recover_default, reject_redemption, reject_zero_deposit, release_redemption,
+        rerun_assessment, revoke_tokens, suspend_default, update_user_tier,
     };
     use axum::routing::{get, patch, post};
 
@@ -563,17 +566,30 @@ pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
         .route("/api/admin/zero-deposit/redemptions/{id}/mark-released", patch(release_redemption))
         .route("/api/admin/zero-deposit/redemptions/{id}/release", patch(release_redemption))
         .route("/api/admin/zero-deposit/redemptions/{id}/reject", patch(reject_redemption))
-        // Zero Deposit endpoints
+
+        // Static configuration, dashboard, tokens, and report endpoints (must precede /{id})
+        .route("/api/admin/zero-deposit/defaults", get(get_defaulted_zero_deposits))
+        .route("/api/admin/zero-deposit/ai-config", get(get_ai_config).patch(patch_ai_config))
+        .route("/api/admin/zero-deposit/dashboard-counters", get(get_dashboard_counters))
+        .route("/api/admin/zero-deposit/tokens/{allocation_id}/revoke", patch(revoke_tokens))
+        .route("/api/admin/zero-deposit/tokens/{allocation_id}/transactions", get(get_token_transactions))
+        .route("/api/admin/zero-deposit/users/{user_id}/tier", patch(update_user_tier))
+        .route("/api/admin/zero-deposit/reports/monthly", get(get_monthly_reports))
+
+        // Zero Deposit application lifecycle endpoints
         .route("/api/admin/zero-deposit", get(get_zero_deposits))
         .route("/api/admin/zero-deposit/{id}", get(get_zero_deposit_detail))
         .route("/api/admin/zero-deposit/{id}/approve", patch(approve_zero_deposit))
         .route("/api/admin/zero-deposit/{id}/reject", patch(reject_zero_deposit))
+        .route("/api/admin/zero-deposit/{id}/assessment", get(get_assessment))
+        .route("/api/admin/zero-deposit/{id}/assessment/rerun", post(rerun_assessment))
+        .route("/api/admin/zero-deposit/{id}/assessment/override", patch(override_assessment))
+        .route("/api/admin/zero-deposit/{id}/tokens/issue", post(manual_issue_tokens))
         .route("/api/admin/zero-deposit/{id}/ledger", get(get_zero_deposit_ledger))
-        // Default / delinquency endpoints
-        .route("/api/admin/zero-deposit/defaults", get(get_defaulted_zero_deposits))
         .route("/api/admin/zero-deposit/{id}/default/suspend", patch(suspend_default))
         .route("/api/admin/zero-deposit/{id}/default/forfeit", patch(forfeit_default))
         .route("/api/admin/zero-deposit/{id}/default/recover", patch(recover_default))
+
         // Pending actions admin endpoints
         .route("/api/admin/zero-deposit/{id}/employer-verification", patch(crate::handlers::zd_actions_handler::admin_verify_employer))
         .route("/api/admin/zero-deposit/{id}/co-applicants", get(crate::handlers::zd_actions_handler::admin_get_co_applicants))

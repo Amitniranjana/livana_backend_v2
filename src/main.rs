@@ -79,6 +79,9 @@ async fn main() {
         .expect("Failed to run database migrations");
     log::info!("Database migrations applied successfully.");
 
+    // ————————————— Zero Deposit v2 Background Workers —————————————
+    crate::services::zd_jobs::start_zd_background_workers(pool.clone());
+
     // ———————————— Wire up repository & service ————————————
     let user_repo = UserRepository::new(pool.clone());
     let user_svc = UserService::new(user_repo);

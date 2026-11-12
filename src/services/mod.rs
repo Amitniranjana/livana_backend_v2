@@ -22,3 +22,6 @@ pub mod zd_ai_client_service; // Issue 111, 112, 114
 pub mod zd_tier_job;          // Nightly Tier Job
 pub mod zd_actions_service;
 pub mod zd_redemption_service;
+pub mod zd_notifications;
+pub mod zd_jobs;
+

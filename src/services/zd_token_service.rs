@@ -11,6 +11,9 @@
 //! - After day 30, reject or cancel EXPIRES them instead of returning them to available.
 //! - Revoke revokes AVAILABLE balance only; locked tokens remain locked until redemption is rejected or released.
 //! - Amounts: fee_amount = rent + ₹2,000 (fee_flat_amount), first_rent_amount = rent, deposit_amount = 3 x rent.
+//!
+//! TODO: confirm with legal before launch — regulatory position of Livana funding deposits is unresolved.
+
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};

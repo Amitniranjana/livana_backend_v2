@@ -864,39 +864,31 @@ interface ZdChatMessage {
 
 ---
 
-## 7. Admin Backoffice Endpoints (Maker-Checker Flow)
+## 7. Admin Backoffice Endpoints (Full Lifecycle & Maker-Checker)
 
-All admin actions require Admin JWT authentication (`Authorization: Bearer <ADMIN_JWT>`) and execute `log_admin_action` inside the same database transaction as the update.
+All admin endpoints require an Admin JWT header (`Authorization: Bearer <ADMIN_JWT>`), run behind `admin_auth_guard`, and record audit logs via `log_admin_action` in the same database transaction. With NBFC removed, the admin backoffice owns the complete lifecycle: application underwriting, token issuance, redemption maker-checker, payout disbursement, defaults, and recovery.
 
-### 7.1 Admin Redemptions Inbox
-- **Path**: `GET /api/admin/zero-deposit/redemptions?status=&limit=&offset=`
-- **Description**: Returns all redemption requests across applications, sorted by urgency:
-  1. `under_review` (highest priority)
-  2. `docs_pending` / `changes_requested`
-  3. All others sorted by `created_at ASC` (FIFO queue)
-- **Query Parameters**:
-  - `status` *(optional)*: Filter by status (`all`, `docs_pending`, `submitted`, `under_review`, `approved`, `released`, `rejected`, `cancelled`).
-  - `limit` *(optional)*: Items per page (default: 50, max: 200).
-  - `offset` *(optional)*: Pagination offset (default: 0).
+### 7.1 Applications Overview (Filtered List)
+- **Path**: `GET /api/admin/zero-deposit?status=&decision=&tier=&limit=&offset=`
+- **Description**: Returns all Zero Deposit applications with bound query parameters. Supports filtering by application status, AI decision (`auto_approve`, `action_required`, `manual_review`, `auto_reject`), and tenant tier (`A`, `B`, `C`).
 - **Response `200 OK`**:
 ```json
 {
   "success": true,
   "data": [
     {
-      "id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
-      "zero_deposit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-      "status": "under_review",
-      "tokens_requested": 30000.0,
-      "tokens_locked": 30000.0,
-      "tokens_approved": 30000.0,
-      "released_amount": 0.0,
-      "property_address": "Flat 402, Green Glen Layout, Bellandur, Bengaluru",
-      "tenant_name": "Rahul Sharma",
-      "tokens_expire_at": "2026-11-20T10:00:00Z",
-      "unread_count": 2,
-      "last_message_at": "2026-11-12T10:30:00Z",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "user_id": "u1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "monthly_rent": 10000.0,
+      "deposit_amount": 30000.0,
+      "status": "ai_manual_review",
+      "tier": "C",
+      "decision": "manual_review",
+      "reason_codes": ["TIER_C_REVIEW"],
+      "user_first_name": "Rahul",
+      "user_last_name": "Sharma",
+      "user_email": "rahul.sharma@example.com",
+      "user_phone": "+919876543210",
       "created_at": "2026-11-12T09:00:00Z"
     }
   ]
@@ -905,318 +897,284 @@ All admin actions require Admin JWT authentication (`Authorization: Bearer <ADMI
 
 ---
 
-### 7.2 Admin Redemption Detail & Precondition Verification
-- **Path**: `GET /api/admin/zero-deposit/redemptions/{id}`
-- **Description**: Fetches comprehensive verification data for a redemption request:
-  - Redemption status, token amounts, and landlord contact.
-  - Required checklist with **15-minute S3 signed URLs** (`signed_url`) for previewing PDFs and images.
-  - Automated precondition checks (`required_docs_verified`, `fee_and_first_rent_paid`, `mandate_active`, `agreement_esigned`).
-  - AI document check analysis (`ai_doc_check_result`) and fraud flags (`doc_check_flags`).
-  - Payee bank account details (unmasked for backoffice processing).
-  - Maker info (`approved_by`, `approved_at`) and Checker info (`utr`, `released_amount`).
+### 7.2 Application Detail
+- **Path**: `GET /api/admin/zero-deposit/{id}`
+- **Description**: Full application detail, KYC documents, active token allocation, and current AI assessment.
+
+---
+
+### 7.3 Approve Application & Issue Tokens
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/approve`
+- **Description**: Admin approves application from `ai_review` or `ai_manual_review`. **ALSO issues Credit Tokens** equal to `approved_deposit_amount` (via `zd_tokens::issue`, fixed 30-day validity, `source: admin_manual`). Status moves directly to `tokens_issued`.
+- **Request Body**:
+```json
+{
+  "approved_deposit_amount": 30000.00,
+  "remarks": "Documents verified, salary slips match bank statements"
+}
+```
 - **Response `200 OK`**:
 ```json
 {
   "success": true,
+  "message": "Zero Deposit approved and tokens issued",
+  "tokens_issued": 30000.00,
+  "expires_at": "2026-12-12T09:00:00Z"
+}
+```
+
+---
+
+### 7.4 Reject Application
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/reject`
+- **Description**: Rejects the application with a reason visible to the tenant.
+- **Request Body**:
+```json
+{
+  "reason": "Unable to verify current employment status with HR."
+}
+```
+
+---
+
+### 7.5 AI Assessment Underwriter View
+- **Path**: `GET /api/admin/zero-deposit/{id}/assessment`
+- **Description**: Returns the comprehensive underwriter dashboard output:
+```json
+{
+  "success": true,
   "data": {
-    "redemption": {
-      "id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
-      "zero_deposit_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-      "status": "under_review",
-      "tokens_requested": 30000.0,
-      "tokens_locked": 30000.0,
-      "tokens_approved": 30000.0,
-      "released_amount": 0.0,
-      "property_address": "Flat 402, Green Glen Layout, Bellandur, Bengaluru",
-      "monthly_rent": 10000.0,
-      "landlord_name": "Suresh Mehta",
-      "payee_snapshot": {
-        "payee_name": "Suresh Mehta",
-        "account_number_masked": "••••••••9012",
-        "account_number": "123456789012",
-        "ifsc": "HDFC0001234"
-      },
-      "utr": null,
-      "approved_by": null,
-      "approved_at": null,
-      "admin_remarks": null,
-      "ai_doc_check_result": {
-        "overall_status": "passed",
-        "flags": [],
-        "recommendation": "approve",
-        "mismatches": []
-      },
-      "doc_check_flags": [],
-      "tokens_expire_at": "2026-11-20T10:00:00Z",
-      "created_at": "2026-11-12T09:00:00Z"
-    },
-    "documents": [
-      {
-        "id": "d1e2f3a4-b5c6-7890-abcd-ef1234567890",
-        "doc_type": "rental_agreement",
-        "label": "Signed rental agreement, 11+ months, with deposit refund assigned to Livana",
-        "required": true,
-        "status": "verified",
-        "version": 1,
-        "signed_url": "https://s3.ap-south-1.amazonaws.com/livana-docs/redemptions/...X-Amz-Expires=900",
-        "file_name": "rental_agreement_signed.pdf",
-        "mime_type": "application/pdf",
-        "review_comment": "Verified 11-month term and assignment clause",
-        "uploaded_at": "2026-11-12T09:15:00Z"
-      }
+    "assessment_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "rules_version": "elig-2026-09",
+    "model_version": "zd-extract-v1.0",
+    "status": "completed",
+    "decision": "manual_review",
+    "tier": "C",
+    "tier_max_rent": 15000.0,
+    "token_amount": 30000.0,
+    "checks": [
+      { "check": "age_21_55", "result": "pass" },
+      { "check": "income_multiple", "result": "pass", "detail": "₹34,000 vs ₹30,000 required" },
+      { "check": "obligations_50pct", "result": "pass", "detail": "₹15,500 of ₹17,000" },
+      { "check": "cibil", "result": "review", "detail": "Score 668" },
+      { "check": "bounces_3m", "result": "pass" },
+      { "check": "co_applicant", "result": "pass", "detail": "Parent, score 742" }
     ],
-    "preconditions": {
-      "required_docs_verified": true,
-      "fee_and_first_rent_paid": true,
-      "mandate_active": true,
-      "agreement_esigned": true
-    }
+    "reason_codes": ["TIER_C_REVIEW"],
+    "ai_flags": [],
+    "income_considered": 34000.0,
+    "bureau": {
+      "cibil_score": 668,
+      "max_dpd_12m": 0,
+      "enquiries_3m": 2,
+      "write_offs": 0
+    },
+    "admin_summary": "Salaried 8 months, stable credits; score in Tier C band; co-applicant verified.",
+    "history": [],
+    "override": null
   }
 }
 ```
 
 ---
 
-### 7.3 Get Redemption Chat Messages (Admin)
-- **Path**: `GET /api/admin/zero-deposit/redemptions/{id}/messages?before=&limit=`
-- **Description**: Retrieves chat timeline for admin interface with custom event payloads.
-- **Query Parameters**:
-  - `before` *(optional ISO timestamp)*: Cursor for reverse chronological pagination.
-  - `limit` *(optional)*: Default 50, maximum 100.
+### 7.6 Rerun AI Assessment
+- **Path**: `POST /api/admin/zero-deposit/{id}/assessment/rerun`
+- **Description**: Re-queues the AI scoring job. Allowed **ONLY** in `ai_review`, `ai_manual_review`, or `tokens_issued` with nothing locked or redeemed (returns `409 INVALID_STATE` otherwise). Sets status to `ai_review` and never stacks allocations.
+- **Request Body**:
+```json
+{
+  "remarks": "Tenant submitted updated bank statement reflecting recent increment"
+}
+```
+
+---
+
+### 7.7 Override AI Decision
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/assessment/override`
+- **Description**: Replaces the AI decision.
+  - `decision: "approve"` $\rightarrow$ issues 3 × rent tokens (`source: admin_override`), moves status to `tokens_issued`. May approve rent above tier cap.
+  - `decision: "reject"` $\rightarrow$ marks application `rejected` and revokes tokens.
+- **Request Body**:
+```json
+{
+  "decision": "approve",
+  "tier": "B",
+  "reason": "Verified salary slips directly with payroll coordinator."
+}
+```
+
+---
+
+### 7.8 Manual Tier Change
+- **Path**: `PATCH /api/admin/zero-deposit/users/{user_id}/tier`
+- **Description**: Overrides the tenant's tier (`A`, `B`, `C`) with `source: 'admin'`. Admin tier changes are permanently protected from being overwritten by the nightly tier recalculation job.
+- **Request Body**:
+```json
+{
+  "tier": "A",
+  "reason": "High net-worth guarantor documentation provided."
+}
+```
+
+---
+
+### 7.9 Manual Token Issuance
+- **Path**: `POST /api/admin/zero-deposit/{id}/tokens/issue`
+- **Description**: Manual issuance for applications in `ai_manual_review`. Token amount is **ALWAYS 3 × rent**. Admin confirms the tier. Expiry is **always issue + 30 days** and is never accepted as input.
+- **Request Body**:
+```json
+{
+  "tier": "C",
+  "remarks": "Manual underwriter approval after guarantor verification."
+}
+```
+
+---
+
+### 7.10 Revoke Token Allocation
+- **Path**: `PATCH /api/admin/zero-deposit/tokens/{allocation_id}/revoke`
+- **Description**: Revokes the **AVAILABLE balance only**. Locked tokens stay locked until their redemption closes. If nothing was released, the application becomes `expired`.
+- **Request Body**:
+```json
+{
+  "reason": "Tenant reported leasing cancelled."
+}
+```
+
+---
+
+### 7.11 Token Transactions Ledger
+- **Path**: `GET /api/admin/zero-deposit/tokens/{allocation_id}/transactions`
+- **Description**: Returns immutable audit trail of token ledger operations (`issue`, `lock`, `unlock`, `redeem`, `expire`, `revoke`) with balance snapshots.
+
+---
+
+### 7.12 AI Configuration Management
+- **GET**: `GET /api/admin/zero-deposit/ai-config`
+- **PATCH**: `PATCH /api/admin/zero-deposit/ai-config`
+- **Description**: Manages live underwriting rules and thresholds. Setting `auto_issue_enabled: false` routes all applications to manual review. Token validity is **immutable** (30 days). Every change records old and new values in the audit log.
+- **Request Body (Partial or Full)**:
+```json
+{
+  "auto_issue_enabled": false,
+  "max_obligations_pct": 50,
+  "max_enquiries_3m": 4,
+  "maker_checker_enabled": true
+}
+```
+
+---
+
+### 7.13 Operations Dashboard Counters
+- **Path**: `GET /api/admin/zero-deposit/dashboard-counters`
+- **Description**: Real-time operational metrics across underwriting, redemptions, and collections:
+```json
+{
+  "success": true,
+  "data": {
+    "applications_in_manual_review": 3,
+    "redemptions_under_review": 2,
+    "redemptions_approved_awaiting_payout": 1,
+    "oldest_unanswered_tenant_message": "2026-11-12T10:15:00Z",
+    "oldest_unanswered_tenant_message_age_seconds": 1850,
+    "amount_released_this_month": 90000.0,
+    "outstanding_exposure": 150000.0,
+    "active_defaults": 0
+  }
+}
+```
+
+---
+
+### 7.14 Monthly Underwriting & Fair Housing Report
+- **Path**: `GET /api/admin/zero-deposit/reports/monthly?year=2026&month=11`
+- **Description**: Approval and rejection rates grouped by property city and applicant income band (`< ₹25k`, `₹25k - ₹50k`, `₹50k - ₹100k`, `> ₹100k`).
+
+---
+
+### 7.15 Redemption Chat & Maker-Checker Endpoints
+
+The endpoints below govern the Maker-Checker payout and redemption chat workflows:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/admin/zero-deposit/redemptions` | Inbox sorted by urgency (`under_review` $\rightarrow$ `docs_pending` $\rightarrow$ oldest first). |
+| `GET` | `/api/admin/zero-deposit/redemptions/{id}` | Full review view: document checklist with **15-minute S3 signed URLs**, preconditions, payee info. |
+| `GET` | `/api/admin/zero-deposit/redemptions/{id}/messages` | Paginated redemption chat stream. |
+| `POST` | `/api/admin/zero-deposit/redemptions/{id}/messages` | Sends message as "Livana team" (with admin name in metadata). |
+| `POST` | `/api/admin/zero-deposit/redemptions/{id}/document-requests` | Adds an ad-hoc checklist document and inserts a `doc_request` card. |
+| `PATCH` | `/api/admin/zero-deposit/redemptions/{id}/documents/{doc_id}` | Approves or rejects a document with review comment. |
+| `PATCH` | `/api/admin/zero-deposit/redemptions/{id}/approve` | **Maker Action (Admin 1)**: Verifies documents, locks approved tokens, and stores encrypted + masked landlord account details. |
+| `PATCH` | `/api/admin/zero-deposit/redemptions/{id}/mark-released` | **Checker Action (Admin 2)**: Requires `Idempotency-Key`. Enforces **Maker-Checker** (`403 MAKER_CHECKER` if Admin 2 == Admin 1). Disburses funds and logs bank UTR. |
+| `PATCH` | `/api/admin/zero-deposit/redemptions/{id}/reject` | Unlocks tokens and returns application to `tokens_issued`. |
+
+---
+
+### 7.16 Application-Scoped Ledger Entries
+- **Path**: `GET /api/admin/zero-deposit/{id}/ledger`
+- **Description**: Returns all double-entry ledger transactions (`fee`, `disbursement`, `repayment`, etc.) associated with this zero deposit application.
 - **Response `200 OK`**:
 ```json
 {
   "success": true,
-  "data": {
-    "messages": [
-      {
-        "id": "e1f2a3b4-c5d6-7890-abcd-ef1234567890",
-        "chat_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
-        "sender_id": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
-        "sender_type": "admin",
-        "sender_name": "Rohan (Livana Ops)",
-        "message_text": "Please provide the latest electricity bill for ownership verification.",
-        "message_type": "text",
-        "metadata": null,
-        "created_at": "2026-11-12T10:00:00Z"
-      }
-    ]
-  }
-}
-```
-
----
-
-### 7.4 Send Admin Chat Message
-- **Path**: `POST /api/admin/zero-deposit/redemptions/{id}/messages`
-- **Description**: Sends a message to the tenant in the redemption chat.
-- **Presentation Rule**: Sent as "Livana team", but includes admin's name in `metadata` for auditability. Automatically broadcasts the message to the tenant via WebSocket (`/api/v1/ws`).
-- **Request Body**:
-```json
-{
-  "text": "We noticed the Landlord PAN name differs slightly from the Agreement. Can you confirm?"
-}
-```
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "message_id": "f2a3b4c5-d6e7-8901-bcde-f12345678901",
-    "created_at": "2026-11-12T10:05:00Z"
-  }
-}
-```
-
----
-
-### 7.5 Request Additional Document (Admin)
-- **Path**: `POST /api/admin/zero-deposit/redemptions/{id}/document-requests`
-- **Description**: Adds an ad-hoc document request to the redemption checklist.
-- **Behavior**:
-  - Inserts new item into `zd_redemption_documents` with `status: "missing"`.
-  - Automatically posts a `doc_request` event card in the chat.
-  - Broadcasts WebSocket event to live chat.
-- **Request Body**:
-```json
-{
-  "doc_type": "electricity_bill",
-  "label": "Latest Electricity Bill in Landlord's Name",
-  "note": "Must be dated within the last 60 days",
-  "required": true
-}
-```
-- **Response `201 Created`**:
-```json
-{
-  "success": true,
-  "data": {
-    "document_id": "a2b3c4d5-e6f7-8901-bcde-f12345678902",
-    "doc_type": "electricity_bill",
-    "label": "Latest Electricity Bill in Landlord's Name",
-    "status": "missing",
-    "required": true
-  }
-}
-```
-
----
-
-### 7.6 Review Document (Admin)
-- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/documents/{document_id}`
-- **Description**: Admin approves or rejects an uploaded document.
-- **Behavior**:
-  - Updates document status to `verified` or `rejected`.
-  - Injects a `doc_review` system card into the chat timeline.
-  - Broadcasts review decision to the tenant over WebSocket.
-- **Request Body**:
-```json
-{
-  "status": "verified",
-  "comment": "Name and address match property deed"
-}
-```
-*Or on rejection:*
-```json
-{
-  "status": "rejected",
-  "comment": "Document is blurry; please upload a clear scanned PDF."
-}
-```
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "document_id": "d1e2f3a4-b5c6-7890-abcd-ef1234567890",
-    "status": "verified",
-    "review_comment": "Name and address match property deed"
-  }
-}
-```
-
----
-
-### 7.7 Maker Action: Approve Redemption
-- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/approve`
-- **Description**: **Admin 1 (Maker)** verifies all documentation, locks tokens, and enters/confirms verified Landlord payee bank details.
-- **Preconditions Checked**:
-  1. All required documents must be `verified`.
-  2. Tokens requested must not exceed token allocation.
-  3. Valid IFSC code format (`^[A-Z]{4}0[A-Z0-9]{6}$`).
-  4. Account number must be 9–18 digits.
-- **Security & DB Execution**:
-  - Account number is stored encrypted (`payee_account_number_encrypted`) and masked (`payee_account_number_masked`).
-  - Records `approved_by = caller.admin_id` and `approved_at = NOW()`.
-  - Locks allocation row via `SELECT ... FOR UPDATE`.
-  - Redemption status moves to `approved`.
-  - Transactional audit log inserted via `log_admin_action`.
-- **Request Body**:
-```json
-{
-  "tokens_approved": 30000.00,
-  "payee_name": "Suresh Mehta",
-  "payee_account_number": "123456789012",
-  "payee_ifsc": "HDFC0001234",
-  "remarks": "Documents verified against Land Registry"
-}
-```
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
-    "status": "approved",
-    "tokens_approved": 30000.00,
-    "payee_name": "Suresh Mehta",
-    "payee_account_number_masked": "••••••••9012",
-    "payee_ifsc": "HDFC0001234",
-    "approved_by": "a9b8c7d6-e5f4-3210-fedc-ba9876543210",
-    "approved_at": "2026-11-12T11:00:00Z"
-  }
-}
-```
-
----
-
-### 7.8 Checker Action: Mark Released (Disburse Funds to Landlord)
-- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/mark-released`  
-  *(Alias: `PATCH /api/admin/zero-deposit/redemptions/{id}/release`)*
-- **Header**: `Idempotency-Key: <uuid>` **(REQUIRED)**
-- **Description**: **Admin 2 (Checker)** executes/confirms the external payout transfer to the landlord and records the UTR.
-- **Enforcement Rules**:
-  - **Maker-Checker Rule**: If `zd_ai_config.maker_checker_enabled` is `true`, the releasing admin (`released_by`) **CANNOT** be the same admin who approved (`approved_by`). Violations return:
-    ```json
+  "data": [
     {
-      "success": false,
-      "error": "MAKER_CHECKER",
-      "message": "Maker-checker violation: A different admin must release the payout."
+      "id": "e1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "transaction_type": "disbursement",
+      "amount": 30000.0,
+      "reference_id": "r1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "description": "Payout disbursed for redemption",
+      "created_at": "2026-11-12T12:00:00Z"
     }
-    ```
-  - **Idempotency**: Prevents duplicate bank payout logging.
-    - Same `Idempotency-Key` + identical payload $\rightarrow$ returns original response.
-    - Same `Idempotency-Key` + different payload $\rightarrow$ returns `409 DUPLICATE_REQUEST`.
-  - **Token Ledger Transition**: Executes `zd_tokens::lock_to_used` inside a database transaction, permanently deducting tokens.
-  - Updates redemption status to `released`, application status to `released`.
-  - Posts confirmation message in chat with UTR and broadcasts WebSocket event.
-- **Request Body**:
-```json
-{
-  "released_amount": 30000.00,
-  "payout_mode": "NEFT",
-  "utr": "UTR202611129876543210",
-  "notes": "Disbursed via HDFC Corporate NetBanking Batch #441"
-}
-```
-- **Response `200 OK`**:
-```json
-{
-  "success": true,
-  "data": {
-    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
-    "status": "released",
-    "released_amount": 30000.00,
-    "payout_mode": "NEFT",
-    "utr": "UTR202611129876543210",
-    "released_by": "b8c7d6e5-f4a3-2109-8765-43210abcdef0",
-    "released_at": "2026-11-12T11:30:00Z"
-  }
+  ]
 }
 ```
 
 ---
 
-### 7.9 Admin Action: Reject Redemption
-- **Path**: `PATCH /api/admin/zero-deposit/redemptions/{id}/reject`
-- **Description**: Admin rejects the redemption request (e.g. landlord unwilling to accept Credit Tokens, forged rental agreement).
-- **Behavior**:
-  - Unlocks all locked tokens back to available in the ledger (`zd_tokens::unlock_to_available`).
-  - Sets redemption status to `rejected`.
-  - Sets zero deposit application status back to `tokens_issued` so the tenant can create a new redemption for a different property if eligible.
-  - Injects rejection system message into chat and notifies tenant over WebSocket.
+### 7.17 Defaults & Recovery Management
+
+With no NBFC partner, the admin backoffice directly manages tenant delinquency, forfeiture, and recovery:
+
+#### A. List Defaulted Zero Deposits
+- **Path**: `GET /api/admin/zero-deposit/defaults?limit=50&offset=0`
+- **Description**: Lists applications marked with `is_defaulted = true`.
+
+#### B. Suspend Default
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/default/suspend`
+- **Description**: Marks the application as defaulted (`is_defaulted = true`) and moves status to `blocked`. Audit logged in the same transaction.
 - **Request Body**:
 ```json
 {
-  "reason": "Property ownership document could not be validated with state registry."
+  "remarks": "Tenant missed 2 consecutive rent payments to landlord."
 }
 ```
-- **Response `200 OK`**:
+
+#### C. Forfeit Default
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/default/forfeit`
+- **Description**: Marks default as forfeited (e.g. landlord claimed security deposit, no recovery possible).
+- **Request Body**:
 ```json
 {
-  "success": true,
-  "data": {
-    "redemption_id": "c1a2b3c4-d5e6-7890-abcd-ef1234567890",
-    "status": "rejected",
-    "reason": "Property ownership document could not be validated with state registry."
-  }
+  "remarks": "Landlord invoked deposit guarantee; tenant absconded."
+}
+```
+
+#### D. Record Recovery
+- **Path**: `PATCH /api/admin/zero-deposit/{id}/default/recover`
+- **Description**: Records full or partial recovery from tenant, writes a `repayment` ledger entry, and clears `is_defaulted` if recovered.
+- **Request Body**:
+```json
+{
+  "recovered_amount": 15000.00,
+  "remarks": "Direct bank transfer received via recovery agent."
 }
 ```
 
 ---
 
-### 7.10 Security & Immutability Rules
+### 7.18 Security & Immutability Rules
 
 1. **Redemption Chat Immutability**:
    - Redemption chats and their messages can **NEVER** be deleted or edited.

@@ -1515,6 +1515,8 @@ pub async fn add_document_request_admin(
     });
     broadcast_redemption_message(state, chat_id, Some(tenant_id), &msg_val).await;
 
+    crate::services::zd_notifications::notify_document_requested(&state.db, tenant_id, &req.label).await;
+
     Ok(json!({ "success": true, "document_id": doc_id, "status": "requested" }))
 }
 
@@ -1616,6 +1618,16 @@ pub async fn review_document_admin(
         "created_at": Utc::now()
     });
     broadcast_redemption_message(state, chat_id, Some(tenant_id), &msg_val).await;
+
+    if payload.status == "rejected" {
+        crate::services::zd_notifications::notify_document_rejected(
+            &state.db,
+            tenant_id,
+            &label,
+            payload.comment.as_deref().unwrap_or("Document requirements not met"),
+        )
+        .await;
+    }
 
     Ok(json!({ "success": true, "status": payload.status }))
 }
@@ -1784,6 +1796,14 @@ pub async fn approve_redemption_admin(
         "created_at": Utc::now()
     });
     broadcast_redemption_message(state, chat_id, Some(tenant_id), &msg_val).await;
+
+    crate::services::zd_notifications::notify_redemption_approved(
+        &state.db,
+        tenant_id,
+        &payee.name,
+        payload.tokens_approved,
+    )
+    .await;
 
     Ok(json!({
         "success": true,
@@ -1973,6 +1993,14 @@ pub async fn mark_released_admin(
         "created_at": Utc::now()
     });
     broadcast_redemption_message(state, chat_id, Some(tenant_id), &msg_val).await;
+
+    crate::services::zd_notifications::notify_funds_released(
+        &state.db,
+        tenant_id,
+        payload.released_amount,
+        &payload.utr,
+    )
+    .await;
 
     Ok(json!({
         "success": true,
