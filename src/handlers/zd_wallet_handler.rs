@@ -60,7 +60,7 @@ pub async fn get_token_wallet(
     };
 
     let rows = sqlx::query(
-        r#"SELECT 
+        r#"SELECT
             id as allocation_id,
             zero_deposit_id,
             property_id,
@@ -173,7 +173,7 @@ pub async fn get_token_transactions(
 
     let records = sqlx::query_scalar::<_, Value>(
         r#"SELECT row_to_json(t) FROM (
-            SELECT 
+            SELECT
                 t.id,
                 t.allocation_id,
                 t.transaction_type as type,
@@ -212,4 +212,3 @@ pub async fn get_token_transactions(
             .into_response(),
     }
 }
-

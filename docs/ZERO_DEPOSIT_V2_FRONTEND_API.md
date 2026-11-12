@@ -1,9 +1,9 @@
 # Livana Zero Deposit (Credit Tokens) v2 — Frontend API & Integration Guide
 
-> **Audience**: Frontend Engineers (Tenant Mobile App, Web App, and Admin Backoffice)
-> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)
-> **Tenant Base Path**: `/api/v1/zero-deposit` (Scoped to caller `user_id` via JWT)
-> **Admin Base Path**: `/api/admin/zero-deposit` (Guarded by `admin_auth_guard` + transactional audit logging)
+> **Audience**: Frontend Engineers (Tenant Mobile App, Web App, and Admin Backoffice)  
+> **Backend Version**: LivanaEco Axum Backend v2 (`release/zero-deposit-v2`)  
+> **Tenant Base Path**: `/api/v1/zero-deposit` (Scoped to caller `user_id` via JWT)  
+> **Admin Base Path**: `/api/admin/zero-deposit` (Guarded by `admin_auth_guard` + transactional audit logging)  
 > **WebSocket Gateway**: `/api/v1/ws` (Chat & real-time notification push)
 
 ---
@@ -66,7 +66,7 @@ stateDiagram-v2
     [*] --> applied : POST /apply
     applied --> ai_review : Consent = true (POST /consent)
     applied --> blocked : Consent = false or Admin Block
-
+    
     state ai_review {
         [*] --> AI_Bureau_Pull
         AI_Bureau_Pull --> AutoApproved : Tier A/B & Rules Pass
@@ -77,21 +77,21 @@ stateDiagram-v2
 
     ai_review --> action_required : Rule signals missing action
     action_required --> ai_review : Tenant resolves pending action
-
+    
     ai_review --> ai_manual_review : Underwriter review needed
     ai_manual_review --> tokens_issued : Admin approves override
     ai_manual_review --> rejected : Admin rejects
-
+    
     ai_review --> tokens_issued : Rules auto_approve
     ai_review --> rejected : Rules auto_reject / 7-day timeout
-
+    
     tokens_issued --> redemption_in_progress : Tenant initiates redemption chat
     tokens_issued --> expired : 30 days pass without redemption
-
+    
     redemption_in_progress --> released : Payout completed with Bank UTR
     redemption_in_progress --> tokens_issued : Redemption cancelled/rejected (tokens left, <= day 30)
     redemption_in_progress --> expired : Redemption closes after Day 30
-
+    
     released --> [*]
     rejected --> [*]
     expired --> [*]
@@ -366,6 +366,289 @@ Content-Type: application/json
 ### 4.8 Submit Redemption for Review
 - **Path**: `POST /api/v1/zero-deposit/redemptions/{redemption_id}/submit`
 - **Description**: Locks the requested tokens in the ledger and shifts redemption status to `under_review`.
+
+---
+
+### 4.9 Employer Verification Endpoints
+
+When an application requires employer verification (`pending_actions` contains `"work_email_otp"` or `"verify_work_email"`):
+
+#### 1. Send OTP to Official Corporate Email
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/employer-verification/send-otp`
+- **Description**: Sends a 6-digit OTP to corporate email. Free/personal email domains (e.g. `@gmail.com`, `@yahoo.com`, `@outlook.com`) return HTTP `422 PERSONAL_EMAIL_NOT_ALLOWED`.
+- **OTP Expiry**: Exactly 10 minutes.
+- **Request Body**:
+```json
+{
+  "official_email": "rahul.verma@tcs.com"
+}
+```
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "message": "OTP sent to official email successfully",
+  "data": { "validity_minutes": 10 }
+}
+```
+
+#### 2. Verify Corporate Email OTP
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/employer-verification/verify`
+- **Description**: Validates OTP. Maximum 5 attempts allowed. After 5 attempts, verification is marked `failed` triggering auto-reject `EMPLOYER_VERIFICATION_FAILED` on the next evaluation.
+- **On Success**: Automatically moves application back to `ai_review` and triggers re-assessment!
+- **Request Body**:
+```json
+{
+  "otp": "482910"
+}
+```
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "message": "Employer email verified successfully. Application moved to AI review."
+}
+```
+
+#### 3. Admin HR Verification (When tenant has no official email)
+- **Path**: `PATCH /api/admin/zero-deposit/{zero_deposit_id}/employer-verification`
+- **Guarded By**: `admin_auth_guard` (Maker action logged in audit trail).
+- **Request Body**:
+```json
+{
+  "status": "verified", // "verified" | "failed"
+  "method": "hr_call",  // "hr_call" | "hr_email"
+  "employer_category": "registered_company", // "registered_company" | "mnc" | "government_psu" | "startup" | "other"
+  "remarks": "Spoke with HR manager Sunita; confirmed active permanent employment."
+}
+```
+
+---
+
+### 4.10 Co-Applicant Workflow
+
+Required for students, freshers, new-to-credit, scores 650–699, or low income. A co-applicant must have CIBIL 700+, complete KYC and consent, and e-sign the agreement.
+
+#### 1. Invite Co-Applicant (Tenant Action)
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/co-applicant`
+- **Constraint**: Only one active co-applicant invitation permitted per application.
+- **Expiry**: 7 days (`due_by`). If 7 days lapse without acceptance, application auto-rejects.
+- **Request Body**:
+```json
+{
+  "name": "Kavita Sharma",
+  "relation": "parent",
+  "mobile": "+919876543210",
+  "email": "kavita.sharma@gmail.com",
+  "employment_type": "salaried",
+  "declared_monthly_income": 60000.00
+}
+```
+- **Response (`201 Created`)**:
+```json
+{
+  "success": true,
+  "message": "Co-applicant invited successfully",
+  "data": { "co_applicant_id": "019d08e2-xxxx-yyyy-zzzz", "window_days": 7 }
+}
+```
+
+#### 2. Remove/Cancel Co-Applicant Invite
+- **Path**: `DELETE /api/v1/zero-deposit/{zero_deposit_id}/co-applicant/{co_applicant_id}`
+- **Constraint**: Permitted **only before** co-applicant accepts (`status === "invited"`).
+
+#### 3. View Invites Addressed to Co-Applicant
+- **Path**: `GET /api/v1/zero-deposit/co-applicant-invites/me`
+- **Description**: Returns all pending invitations matching caller's registered phone or email.
+
+#### 4. Accept Co-Applicant Invite
+- **Path**: `POST /api/v1/zero-deposit/co-applicant-invites/{co_applicant_id}/accept`
+- **Description**: Submits consent and pulls bureau. If CIBIL $< 700$, invite is `rejected`. If $\ge 700$, invite is `accepted`, application moves back to `ai_review`, and rules engine re-evaluates automatically!
+- **Request Body**:
+```json
+{
+  "kyc_id": "019d08e2-kyc1-kyc2-kyc3",
+  "consent_given": true,
+  "bank_statement_url": "https://s3.amazonaws.com/livana/coapp_stmt.pdf",
+  "salary_slip_urls": ["https://s3.amazonaws.com/livana/coapp_slip1.pdf"]
+}
+```
+
+#### 5. Admin View Co-Applicants
+- **Path**: `GET /api/admin/zero-deposit/{zero_deposit_id}/co-applicants`
+- **Description**: Returns all co-applicants for the application with KYC, CIBIL, and e-sign status.
+
+---
+
+### 4.11 Landlord Reference Workflow
+
+Required for Tier C applicants.
+
+#### 1. Submit Landlord Reference (Tenant Action)
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/landlord-reference`
+- **Request Body**:
+```json
+{
+  "landlord_name": "Ramesh Gupta",
+  "landlord_mobile": "+919811223344",
+  "previous_address": "Flat 302, Palm Heights, Indiranagar, Bengaluru",
+  "tenancy_from": "2023-04-01",
+  "tenancy_to": "2024-03-31",
+  "monthly_rent": 12000.00,
+  "rent_receipt_urls": ["https://s3.amazonaws.com/livana/receipt_mar2024.pdf"]
+}
+```
+
+#### 2. Admin Verify Landlord Reference
+- **Path**: `PATCH /api/admin/zero-deposit/{zero_deposit_id}/landlord-reference/{reference_id}`
+- **Statuses**:
+  - `verified`: Clears pending action and transitions application back to `ai_review`.
+  - `negative`: Transitions application to `ai_manual_review` with reason `LANDLORD_REFERENCE_NEGATIVE`.
+  - `unreachable`: Flags as unreachable.
+- **Request Body**:
+```json
+{
+  "status": "verified",
+  "remarks": "Landlord confirmed 12 months on-time rent payment with no property damages."
+}
+```
+
+---
+
+### 4.12 Payments & Autopay Setup
+
+#### 1. Initiate Fee Charge (Server-Side Computed)
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/fee/charge`
+- **Amount Rule**: $\text{Fee} = \text{monthly\_rent} + ₹2,000$; $\text{First Rent} = \text{monthly\_rent}$; $\text{Total} = \text{Fee} + \text{First Rent}$.
+- **Important**: This endpoint **never mutates application status** (it stops setting `fee_pending`).
+- **Request Body**:
+```json
+{
+  "upi_vpa": "rahul@okaxis"
+}
+```
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "message": "Fee and first rent charge initiated successfully",
+  "data": {
+    "fee_transaction_id": "019d08e2-fee1-fee2-fee3",
+    "fee_amount": 12000.00,       // ₹10,000 rent + ₹2,000 flat fee
+    "first_rent_amount": 10000.00,// ₹10,000 first month's rent
+    "total_amount": 22000.00,     // Total collected via UPI
+    "status": "pending",
+    "upi_vpa": "rahul@okaxis",
+    "created_at": "2026-11-12T14:00:00Z"
+  }
+}
+```
+
+#### 2. Setup Autopay Mandate (Bank Account Masked)
+- **Path**: `POST /api/v1/zero-deposit/{zero_deposit_id}/autopay/setup`
+- **Masking Guarantee**: Bank account numbers in responses are **always masked to last 4 digits** (`****1234`).
+- **Request Body**:
+```json
+{
+  "mandate_type": "nach", // "nach" | "upi_autopay"
+  "bank_account_number": "123456789012",
+  "ifsc": "HDFC0001234"
+}
+```
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "message": "Autopay mandate setup initiated",
+  "data": {
+    "autopay_mandate": {
+      "id": "019d08e2-mand-ate1-ate2",
+      "zero_deposit_id": "c1f76d49-43c2-4013-8cfb-69bc3c27181c",
+      "mandate_type": "nach",
+      "bank_account_number": "****9012", // Strictly masked
+      "ifsc": "HDFC0001234",
+      "status": "pending"
+    }
+  }
+}
+```
+
+#### 3. Repayment Schedule & Delinquency Ledger
+- **Paths**:
+  - `GET /api/v1/zero-deposit/{zero_deposit_id}/repayment-schedule`
+  - `GET /api/v1/zero-deposit/{zero_deposit_id}/ledger`
+- **Ownership**: Strictly scoped to caller (`403 NOT_OWNER` if accessed by another user).
+
+---
+
+### 4.13 Token Wallet Endpoints
+
+#### 1. Get Token Wallet
+- **Path**: `GET /api/v1/zero-deposit/tokens/wallet`
+- **Description**: Returns all token allocations and active unexpired available balance for the logged-in tenant.
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "allocations": [
+      {
+        "allocation_id": "019d08e2-aaaa-bbbb-cccc-111122223333",
+        "zero_deposit_id": "c1f76d49-43c2-4013-8cfb-69bc3c27181c",
+        "property_id": "019d1234-abcd-7000-8000-000000000001",
+        "issued": 30000.00,
+        "available": 30000.00,
+        "locked": 0.00,
+        "redeemed": 0.00,
+        "status": "active",
+        "expires_at": "2026-12-11T12:00:00Z"
+      }
+    ],
+    "total_available": 30000.00
+  }
+}
+```
+
+#### 2. Get Token Transactions
+- **Path**: `GET /api/v1/zero-deposit/tokens/transactions?allocation_id={id}&limit=50&offset=0`
+- **Description**: Returns append-only transaction history sorted newest first. Scoped to caller (`403 NOT_OWNER` if `allocation_id` belongs to another tenant).
+- **Response (`200 OK`)**:
+```json
+{
+  "success": true,
+  "data": {
+    "transactions": [
+      {
+        "id": "019d08e2-tx11-tx22-tx33",
+        "allocation_id": "019d08e2-aaaa-bbbb-cccc-111122223333",
+        "type": "issue",
+        "amount": 30000.00,
+        "balance_after": 30000.00,
+        "reference_id": "019d08e2-ref1-ref2-ref3",
+        "created_at": "2026-11-11T12:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 4.14 Webhooks Integration
+
+#### 1. Repayment Webhook
+- **Path**: `POST /api/v1/zero-deposit/webhook/repayment-status`
+- **Header**: `x-webhook-signature` (HMAC SHA-256)
+- **Features**: Idempotent. Late payments reset `on_time_months` to 0 and downgrade tenant tier. On-time payments increment `on_time_months` and auto-upgrade after 6 consecutive months.
+
+#### 2. Fee Webhook
+- **Path**: `POST /api/v1/zero-deposit/webhook/fee-status`
+- **Header**: `x-webhook-signature` (HMAC SHA-256)
+- **Features**: Idempotent. Confirms fee and first rent together into `ledger_entries`. Does not touch application status.
+
+#### 3. E-Sign Webhook
+- **Path**: `POST /api/v1/zero-deposit/webhook/esign-status`
+- **Features**: Updates tenant or co-applicant `esigned_at` timestamp and posts an automated status message in the redemption chat.
 
 ---
 

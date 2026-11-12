@@ -504,4 +504,3 @@ pub async fn admin_verify_landlord_reference(
             .into_response(),
     }
 }
-

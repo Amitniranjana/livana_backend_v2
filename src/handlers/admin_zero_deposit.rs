@@ -1,20 +1,25 @@
 use axum::{
-    extract::{Path, Query, State, Extension},
-    http::StatusCode,
+    extract::{Extension, Path, Query, State},
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use serde_json::{json, Value};
-use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
     app_state::AppState,
     dtos::admin_zero_deposit::{
-        RedemptionApproveReq, RedemptionReleaseReq, RedemptionRejectReq,
         ZeroDepositApproveReq, ZeroDepositDefaultActionReq, ZeroDepositQuery,
         ZeroDepositRecoverReq, ZeroDepositRejectReq,
     },
-    handlers::admin_auth::AdminClaims,
+    handlers::{
+        admin_auth::AdminClaims,
+        zd_redemption_handler::map_redemption_error,
+    },
+    services::zd_redemption_service::{
+        self, AdminApproveReq, AdminDocRequestReq, AdminDocReviewReq, AdminRejectReq, AdminReleaseReq,
+        SendMessageReq,
+    },
     utils::admin_logger::log_admin_action,
 };
 
@@ -450,57 +455,16 @@ pub async fn get_admin_redemptions(
     State(state): State<AppState>,
     Query(filter): Query<ZeroDepositQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let status_filter = filter.status.as_deref();
     let limit = filter.limit.unwrap_or(50).min(200);
     let offset = filter.offset.unwrap_or(0);
 
-    let records = if let Some(status) = status_filter {
-        sqlx::query_scalar::<_, serde_json::Value>(
-            r#"SELECT row_to_json(t) FROM (
-                SELECT r.*,
-                       u.first_name as user_first_name, u.last_name as user_last_name, u.email as user_email, u.phone_no as user_phone,
-                       z.monthly_rent as application_monthly_rent, z.deposit_amount as application_deposit_amount,
-                       (
-                           SELECT coalesce(json_agg(row_to_json(d)), '[]'::json)
-                           FROM zd_redemption_documents d
-                           WHERE d.redemption_id = r.id
-                       ) as documents
-                FROM zd_redemptions r
-                JOIN zero_deposits z ON r.zero_deposit_id = z.id
-                LEFT JOIN users u ON coalesce(r.user_id, z.user_id) = u.id
-                WHERE r.status::TEXT = $1
-                ORDER BY r.created_at DESC
-                LIMIT $2 OFFSET $3
-            ) t"#,
-        )
-        .bind(status)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await
-    } else {
-        sqlx::query_scalar::<_, serde_json::Value>(
-            r#"SELECT row_to_json(t) FROM (
-                SELECT r.*,
-                       u.first_name as user_first_name, u.last_name as user_last_name, u.email as user_email, u.phone_no as user_phone,
-                       z.monthly_rent as application_monthly_rent, z.deposit_amount as application_deposit_amount,
-                       (
-                           SELECT coalesce(json_agg(row_to_json(d)), '[]'::json)
-                           FROM zd_redemption_documents d
-                           WHERE d.redemption_id = r.id
-                       ) as documents
-                FROM zd_redemptions r
-                JOIN zero_deposits z ON r.zero_deposit_id = z.id
-                LEFT JOIN users u ON coalesce(r.user_id, z.user_id) = u.id
-                ORDER BY r.created_at DESC
-                LIMIT $1 OFFSET $2
-            ) t"#,
-        )
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&state.db)
-        .await
-    }
+    let redemptions = zd_redemption_service::get_admin_redemptions_inbox(
+        &state.db,
+        filter.status.as_deref(),
+        limit,
+        offset,
+    )
+    .await
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -510,7 +474,7 @@ pub async fn get_admin_redemptions(
 
     Ok(Json(json!({
         "success": true,
-        "data": records
+        "data": redemptions
     })))
 }
 
@@ -518,152 +482,150 @@ pub async fn get_admin_redemption_detail(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let record = sqlx::query_scalar::<_, serde_json::Value>(
-        r#"SELECT row_to_json(t) FROM (
-            SELECT r.*,
-                   u.first_name as user_first_name, u.last_name as user_last_name, u.email as user_email, u.phone_no as user_phone,
-                   z.monthly_rent as application_monthly_rent, z.deposit_amount as application_deposit_amount,
-                   (
-                       SELECT coalesce(json_agg(row_to_json(d)), '[]'::json)
-                       FROM zd_redemption_documents d
-                       WHERE d.redemption_id = r.id
-                   ) as documents,
-                   (
-                       SELECT row_to_json(a)
-                       FROM zd_token_allocations a
-                       WHERE a.id = r.allocation_id
-                   ) as token_allocation
-            FROM zd_redemptions r
-            JOIN zero_deposits z ON r.zero_deposit_id = z.id
-            LEFT JOIN users u ON coalesce(r.user_id, z.user_id) = u.id
-            WHERE r.id = $1
-        ) t"#,
-    )
-    .bind(id)
-    .fetch_optional(&state.db)
-    .await
-    .map_err(|e| {
-        (
+    match zd_redemption_service::get_admin_redemption_detail(&state, id).await {
+        Ok(detail) => Ok(Json(json!({ "success": true, "data": detail }))),
+        Err(e) => Err(map_redemption_error(e)),
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct AdminMessagesQuery {
+    pub before: Option<chrono::DateTime<chrono::Utc>>,
+    pub limit: Option<i64>,
+}
+
+pub async fn admin_get_redemption_messages(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<AdminMessagesQuery>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let limit = query.limit.unwrap_or(50).min(100);
+    match zd_redemption_service::get_redemption_messages(&state.db, id, query.before, limit).await {
+        Ok(messages) => Ok(Json(json!({ "success": true, "data": { "messages": messages } }))),
+        Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    if let Some(r) = record {
-        Ok(Json(json!({
-            "success": true,
-            "data": r
-        })))
-    } else {
-        Err((
-            StatusCode::NOT_FOUND,
-            Json(json!({
-                "success": false,
-                "error": "NOT_FOUND",
-                "message": "Redemption not found"
-            })),
-        ))
+        )),
     }
+}
+
+pub async fn admin_send_redemption_message(
+    State(state): State<AppState>,
+    Extension(admin_claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<SendMessageReq>,
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
+    let admin_name: String = sqlx::query_scalar(
+        "SELECT coalesce(first_name || ' ' || last_name, email) FROM users WHERE id = $1"
+    )
+    .bind(admin_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "Admin".into());
+
+    let res = zd_redemption_service::send_redemption_message_admin(
+        &state,
+        admin_id,
+        &admin_name,
+        id,
+        &payload.text,
+    )
+    .await
+    .map_err(map_redemption_error)?;
+
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "SEND_REDEMPTION_MESSAGE",
+        "ZD_REDEMPTION",
+        Some(id),
+        Some(json!({ "text_length": payload.text.len() })),
+    )
+    .await;
+
+    Ok((StatusCode::CREATED, Json(json!({ "success": true, "data": res }))))
+}
+
+pub async fn admin_add_document_request(
+    State(state): State<AppState>,
+    Extension(admin_claims): Extension<AdminClaims>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<AdminDocRequestReq>,
+) -> Result<(StatusCode, Json<Value>), (StatusCode, Json<Value>)> {
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
+
+    let res = zd_redemption_service::add_document_request_admin(
+        &state,
+        admin_id,
+        id,
+        &payload,
+    )
+    .await
+    .map_err(map_redemption_error)?;
+
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "REQUEST_REDEMPTION_DOCUMENT",
+        "ZD_REDEMPTION",
+        Some(id),
+        Some(json!({ "doc_type": payload.doc_type, "required": payload.required })),
+    )
+    .await;
+
+    Ok((StatusCode::CREATED, Json(res)))
+}
+
+pub async fn admin_review_document(
+    State(state): State<AppState>,
+    Extension(admin_claims): Extension<AdminClaims>,
+    Path((id, doc_id)): Path<(Uuid, Uuid)>,
+    Json(payload): Json<AdminDocReviewReq>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
+
+    let res = zd_redemption_service::review_document_admin(
+        &state,
+        admin_id,
+        id,
+        doc_id,
+        &payload,
+    )
+    .await
+    .map_err(map_redemption_error)?;
+
+    let _ = log_admin_action(
+        &state.db,
+        &admin_claims.sub,
+        "REVIEW_REDEMPTION_DOCUMENT",
+        "ZD_REDEMPTION",
+        Some(id),
+        Some(json!({ "document_id": doc_id, "status": payload.status })),
+    )
+    .await;
+
+    Ok(Json(res))
 }
 
 pub async fn approve_redemption(
     State(state): State<AppState>,
     Extension(admin_claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<RedemptionApproveReq>,
+    Json(payload): Json<AdminApproveReq>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let mut tx = state.db.begin().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
 
-    let redemption = sqlx::query(
-        "SELECT status::TEXT as status, zero_deposit_id, allocation_id, tokens_requested::FLOAT8 as tokens_requested
-         FROM zd_redemptions WHERE id = $1 FOR UPDATE",
+    let res = zd_redemption_service::approve_redemption_admin(
+        &state,
+        admin_id,
+        id,
+        &payload,
     )
-    .bind(id)
-    .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let redemption = match redemption {
-        Some(r) => r,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "NOT_FOUND",
-                    "message": "Redemption not found"
-                })),
-            ));
-        }
-    };
-
-    let current_status: String = redemption.get("status");
-    let tokens_requested: f64 = redemption.get("tokens_requested");
-
-    if current_status != "under_review" && current_status != "docs_pending" && current_status != "submitted" && current_status != "admin_review" {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!({
-                "success": false,
-                "error": "INVALID_STATE",
-                "message": format!("Redemption cannot be approved from status '{}'", current_status)
-            })),
-        ));
-    }
-
-    if payload.tokens_approved > tokens_requested {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!({
-                "success": false,
-                "error": "INSUFFICIENT_TOKENS",
-                "message": "Tokens approved cannot exceed tokens requested"
-            })),
-        ));
-    }
-
-    let payee_snapshot = json!({
-        "payee_name": payload.payee_name,
-        "payee_account_number": payload.payee_account_number,
-        "payee_ifsc": payload.payee_ifsc,
-    });
-
-    let admin_uuid = Uuid::parse_str(&admin_claims.sub).ok();
-
-    sqlx::query(
-        r#"UPDATE zd_redemptions
-           SET status = 'approved'::zd_redemption_status,
-               tokens_approved = $1,
-               payee_snapshot = $2,
-               approved_by = $3,
-               approved_at = NOW(),
-               admin_remarks = coalesce($4, admin_remarks),
-               updated_at = NOW()
-           WHERE id = $5"#
-    )
-    .bind(payload.tokens_approved)
-    .bind(payee_snapshot)
-    .bind(admin_uuid)
-    .bind(&payload.remarks)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
+    .map_err(map_redemption_error)?;
 
     let _ = log_admin_action(
         &state.db,
@@ -671,192 +633,48 @@ pub async fn approve_redemption(
         "APPROVE_REDEMPTION",
         "ZD_REDEMPTION",
         Some(id),
-        Some(json!({
-            "tokens_approved": payload.tokens_approved,
-            "remarks": payload.remarks
-        })),
+        Some(json!({ "tokens_approved": payload.tokens_approved })),
     )
     .await;
 
-    tx.commit().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "Redemption approved successfully",
-        "data": {
-            "redemption_id": id,
-            "status": "approved",
-            "tokens_approved": payload.tokens_approved
-        }
-    })))
+    Ok(Json(res))
 }
 
 pub async fn release_redemption(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Extension(admin_claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<RedemptionReleaseReq>,
+    Json(payload): Json<AdminReleaseReq>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let mut tx = state.db.begin().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
 
-    let redemption = sqlx::query(
-        "SELECT status::TEXT as status, zero_deposit_id, allocation_id, approved_by,
-                tokens_requested::FLOAT8 as tokens_requested,
-                coalesce(tokens_approved::FLOAT8, tokens_requested::FLOAT8) as tokens_approved
-         FROM zd_redemptions WHERE id = $1 FOR UPDATE",
-    )
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let redemption = match redemption {
-        Some(r) => r,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "NOT_FOUND",
-                    "message": "Redemption not found"
-                })),
-            ));
-        }
+    let idempotency_key = match headers.get("idempotency-key").and_then(|v| v.to_str().ok()) {
+        Some(k) => match Uuid::parse_str(k) {
+            Ok(u) => Some(u),
+            Err(_) => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({
+                        "success": false,
+                        "error": "INVALID_IDEMPOTENCY_KEY",
+                        "message": "Idempotency-Key must be a valid UUID"
+                    })),
+                ));
+            }
+        },
+        None => None,
     };
 
-    let current_status: String = redemption.get("status");
-    let zero_deposit_id: Uuid = redemption.get("zero_deposit_id");
-    let approved_by: Option<Uuid> = redemption.get("approved_by");
-    let tokens_requested: f64 = redemption.get("tokens_requested");
-    let tokens_approved: f64 = redemption.get("tokens_approved");
-
-    if current_status != "approved" {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!({
-                "success": false,
-                "error": "INVALID_STATE",
-                "message": format!("Redemption must be approved before release (current status is '{}')", current_status)
-            })),
-        ));
-    }
-
-    let admin_uuid = Uuid::parse_str(&admin_claims.sub).ok();
-
-    // Maker-checker enforcement
-    if let (Some(approver), Some(checker)) = (approved_by, admin_uuid) {
-        if approver == checker {
-            return Err((
-                StatusCode::FORBIDDEN,
-                Json(json!({
-                    "success": false,
-                    "error": "MAKER_CHECKER",
-                    "message": "Maker-checker violation: A different admin must release funds"
-                })),
-            ));
-        }
-    }
-
-    let utr_clean = payload.utr.trim();
-    if utr_clean.is_empty() {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(json!({
-                "success": false,
-                "error": "PRECONDITION_FAILED",
-                "message": "Bank UTR cannot be empty"
-            })),
-        ));
-    }
-
-    let utr_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM zd_redemptions WHERE utr = $1 AND id != $2)"
+    let res = zd_redemption_service::mark_released_admin(
+        &state,
+        admin_id,
+        id,
+        idempotency_key,
+        &payload,
     )
-    .bind(utr_clean)
-    .bind(id)
-    .fetch_one(&mut *tx)
     .await
-    .unwrap_or(false);
-
-    if utr_exists {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!({
-                "success": false,
-                "error": "DUPLICATE_REQUEST",
-                "message": format!("Bank UTR '{}' has already been recorded for another redemption", utr_clean)
-            })),
-        ));
-    }
-
-    sqlx::query(
-        r#"UPDATE zd_redemptions
-           SET status = 'released'::zd_redemption_status,
-               released_by = $1,
-               released_at = NOW(),
-               released_amount = $2,
-               payout_mode = $3,
-               utr = $4,
-               completed_at = NOW(),
-               admin_remarks = coalesce($5, admin_remarks),
-               updated_at = NOW()
-           WHERE id = $6 AND status = 'approved'::zd_redemption_status"#
-    )
-    .bind(admin_uuid)
-    .bind(payload.released_amount)
-    .bind(payload.payout_mode.as_deref().unwrap_or("NEFT"))
-    .bind(utr_clean)
-    .bind(&payload.notes)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    sqlx::query(
-        "UPDATE zero_deposits
-         SET status = 'released'::zero_deposit_status, updated_at = NOW()
-         WHERE id = $1"
-    )
-    .bind(zero_deposit_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let _ = sqlx::query(
-        r#"INSERT INTO ledger_entries (id, zero_deposit_id, transaction_type, amount, reference_id, description, created_at)
-           VALUES (gen_random_uuid(), $1, 'disbursement', $2, $3, $4, NOW())"#
-    )
-    .bind(zero_deposit_id)
-    .bind(payload.released_amount)
-    .bind(utr_clean)
-    .bind(format!("Redemption payout to landlord via {}", payload.payout_mode.as_deref().unwrap_or("NEFT")))
-    .execute(&mut *tx)
-    .await;
+    .map_err(map_redemption_error)?;
 
     let _ = log_admin_action(
         &state.db,
@@ -864,122 +682,29 @@ pub async fn release_redemption(
         "RELEASE_REDEMPTION",
         "ZD_REDEMPTION",
         Some(id),
-        Some(json!({
-            "released_amount": payload.released_amount,
-            "utr": utr_clean,
-            "payout_mode": payload.payout_mode,
-            "notes": payload.notes
-        })),
+        Some(json!({ "released_amount": payload.released_amount, "utr": payload.utr })),
     )
     .await;
 
-    tx.commit().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let _ = crate::services::zd_token_service::redeem(
-        &state.db,
-        zero_deposit_id,
-        tokens_requested,
-        tokens_approved,
-        id,
-        admin_uuid,
-        Some("admin"),
-        payload.notes.as_deref(),
-    )
-    .await;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "Redemption funds released and UTR recorded",
-        "data": {
-            "redemption_id": id,
-            "status": "released",
-            "utr": utr_clean,
-            "released_amount": payload.released_amount
-        }
-    })))
+    Ok(Json(res))
 }
 
 pub async fn reject_redemption(
     State(state): State<AppState>,
     Extension(admin_claims): Extension<AdminClaims>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<RedemptionRejectReq>,
+    Json(payload): Json<AdminRejectReq>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let mut tx = state.db.begin().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
+    let admin_id = Uuid::parse_str(&admin_claims.sub).unwrap_or_else(|_| Uuid::new_v4());
 
-    let redemption = sqlx::query(
-        "SELECT status::TEXT as status, zero_deposit_id, tokens_requested::FLOAT8 as tokens_requested
-         FROM zd_redemptions WHERE id = $1 FOR UPDATE",
+    let res = zd_redemption_service::reject_redemption_admin(
+        &state,
+        admin_id,
+        id,
+        &payload,
     )
-    .bind(id)
-    .fetch_optional(&mut *tx)
     .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let redemption = match redemption {
-        Some(r) => r,
-        None => {
-            return Err((
-                StatusCode::NOT_FOUND,
-                Json(json!({
-                    "success": false,
-                    "error": "NOT_FOUND",
-                    "message": "Redemption not found"
-                })),
-            ));
-        }
-    };
-
-    let current_status: String = redemption.get("status");
-    let zero_deposit_id: Uuid = redemption.get("zero_deposit_id");
-    let tokens_requested: f64 = redemption.get("tokens_requested");
-
-    if current_status == "released" || current_status == "rejected" || current_status == "cancelled" {
-        return Err((
-            StatusCode::CONFLICT,
-            Json(json!({
-                "success": false,
-                "error": "INVALID_STATE",
-                "message": format!("Redemption cannot be rejected from status '{}'", current_status)
-            })),
-        ));
-    }
-
-    let admin_uuid = Uuid::parse_str(&admin_claims.sub).ok();
-
-    sqlx::query(
-        r#"UPDATE zd_redemptions
-           SET status = 'rejected'::zd_redemption_status,
-               reject_reason = $1,
-               completed_at = NOW(),
-               updated_at = NOW()
-           WHERE id = $2"#
-    )
-    .bind(&payload.reason)
-    .bind(id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
+    .map_err(map_redemption_error)?;
 
     let _ = log_admin_action(
         &state.db,
@@ -991,30 +716,5 @@ pub async fn reject_redemption(
     )
     .await;
 
-    tx.commit().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "success": false, "error": e.to_string() })),
-        )
-    })?;
-
-    let _ = crate::services::zd_token_service::unlock(
-        &state.db,
-        zero_deposit_id,
-        tokens_requested,
-        id,
-        admin_uuid,
-        Some("admin"),
-        Some(&payload.reason),
-    )
-    .await;
-
-    Ok(Json(json!({
-        "success": true,
-        "message": "Redemption rejected and tokens returned/expired",
-        "data": {
-            "redemption_id": id,
-            "status": "rejected"
-        }
-    })))
+    Ok(Json(res))
 }

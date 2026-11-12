@@ -544,18 +544,23 @@ pub fn zd_internal_routes() -> Router<AppState> {
 
 pub fn admin_zero_deposit_routes(state: AppState) -> Router<AppState> {
     use crate::handlers::admin_zero_deposit::{
-        approve_redemption, approve_zero_deposit, forfeit_default, get_admin_redemption_detail,
-        get_admin_redemptions, get_defaulted_zero_deposits, get_zero_deposit_detail,
-        get_zero_deposit_ledger, get_zero_deposits, recover_default, reject_redemption,
-        reject_zero_deposit, release_redemption, suspend_default,
+        admin_add_document_request, admin_get_redemption_messages, admin_review_document,
+        admin_send_redemption_message, approve_redemption, approve_zero_deposit, forfeit_default,
+        get_admin_redemption_detail, get_admin_redemptions, get_defaulted_zero_deposits,
+        get_zero_deposit_detail, get_zero_deposit_ledger, get_zero_deposits, recover_default,
+        reject_redemption, reject_zero_deposit, release_redemption, suspend_default,
     };
-    use axum::routing::{get, patch};
+    use axum::routing::{get, patch, post};
 
     Router::new()
         // Redemptions endpoints (must precede /{id} so static segment /redemptions matches cleanly)
         .route("/api/admin/zero-deposit/redemptions", get(get_admin_redemptions))
         .route("/api/admin/zero-deposit/redemptions/{id}", get(get_admin_redemption_detail))
+        .route("/api/admin/zero-deposit/redemptions/{id}/messages", get(admin_get_redemption_messages).post(admin_send_redemption_message))
+        .route("/api/admin/zero-deposit/redemptions/{id}/document-requests", post(admin_add_document_request))
+        .route("/api/admin/zero-deposit/redemptions/{id}/documents/{document_id}", patch(admin_review_document))
         .route("/api/admin/zero-deposit/redemptions/{id}/approve", patch(approve_redemption))
+        .route("/api/admin/zero-deposit/redemptions/{id}/mark-released", patch(release_redemption))
         .route("/api/admin/zero-deposit/redemptions/{id}/release", patch(release_redemption))
         .route("/api/admin/zero-deposit/redemptions/{id}/reject", patch(reject_redemption))
         // Zero Deposit endpoints

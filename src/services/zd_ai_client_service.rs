@@ -15,6 +15,8 @@ use sqlx::{PgPool, Row};
 use std::time::Duration;
 use uuid::Uuid;
 
+use crate::app_state::AppState;
+
 // ---------------------------------------------------------------------------
 // Bureau Types & Trait (Issue 111)
 // ---------------------------------------------------------------------------
@@ -384,4 +386,137 @@ async fn load_ai_service_config(_pool: &PgPool) -> (String, String, u64, String)
     let timeout_secs = 30u64;
 
     (endpoint, token, timeout_secs, callback_base)
+}
+
+// ---------------------------------------------------------------------------
+// Issue 114: Outbound AI Document Check
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiDocumentCheckOutboundRequest {
+    pub check_id: Uuid,
+    pub redemption_id: Uuid,
+    pub zero_deposit_id: Uuid,
+    pub callback_url: String,
+    pub rental_agreement_url: Option<String>,
+    pub landlord_bank_proof_url: Option<String>,
+    pub landlord_name: Option<String>,
+    pub declared_monthly_rent: Option<f64>,
+    pub property_address: Option<String>,
+}
+
+pub async fn queue_ai_document_check_job(
+    state: &AppState,
+    redemption_id: Uuid,
+    zero_deposit_id: Uuid,
+) {
+    let check_id = Uuid::new_v4();
+    let state_clone = state.clone();
+
+    tokio::spawn(async move {
+        execute_ai_document_check_outbound(&state_clone, check_id, redemption_id, zero_deposit_id).await;
+    });
+}
+
+pub async fn execute_ai_document_check_outbound(
+    state: &AppState,
+    check_id: Uuid,
+    redemption_id: Uuid,
+    zero_deposit_id: Uuid,
+) {
+    let (endpoint, token, timeout_secs, callback_base) = load_ai_service_config(&state.db).await;
+
+    // 1. Fetch details
+    let red_row = sqlx::query(
+        "SELECT property_address, monthly_rent::FLOAT8 as rent, landlord_name FROM zd_redemptions WHERE id = $1"
+    )
+    .bind(redemption_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let (prop_addr, rent, landlord_name) = match red_row {
+        Some(r) => (
+            r.try_get::<String, _>("property_address").ok(),
+            r.try_get::<f64, _>("rent").ok(),
+            r.try_get::<String, _>("landlord_name").ok(),
+        ),
+        None => (None, None, None),
+    };
+
+    // 2. Fetch doc urls
+    let agreement_s3: Option<String> = sqlx::query_scalar(
+        "SELECT url FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('agreement', 'rental_agreement') AND url IS NOT NULL ORDER BY version DESC LIMIT 1"
+    )
+    .bind(redemption_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let bank_proof_s3: Option<String> = sqlx::query_scalar(
+        "SELECT url FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('bank_proof', 'landlord_bank_proof') AND url IS NOT NULL ORDER BY version DESC LIMIT 1"
+    )
+    .bind(redemption_id)
+    .fetch_optional(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let agreement_url = agreement_s3.as_deref().map(|k| crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service));
+    let bank_proof_url = bank_proof_s3.as_deref().map(|k| crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service));
+
+    let callback_url = format!("{}/internal/zero-deposit/document-checks/{}/result", callback_base.trim_end_matches('/'), check_id);
+
+    let outbound_req = AiDocumentCheckOutboundRequest {
+        check_id,
+        redemption_id,
+        zero_deposit_id,
+        callback_url,
+        rental_agreement_url: agreement_url,
+        landlord_bank_proof_url: bank_proof_url,
+        landlord_name,
+        declared_monthly_rent: rent,
+        property_address: prop_addr,
+    };
+
+    // Record check_id in zd_redemptions
+    let _ = sqlx::query("UPDATE zd_redemptions SET doc_check_id = $1 WHERE id = $2")
+        .bind(check_id.to_string())
+        .bind(redemption_id)
+        .execute(&state.db)
+        .await;
+
+    // Execute HTTP call with retry
+    let client = Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .build()
+        .unwrap_or_default();
+
+    let url = format!("{}/v1/document-checks", endpoint.trim_end_matches('/'));
+
+    for attempt in 0..MAX_RETRIES {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_secs(BACKOFF_BASE_SECS.pow(attempt))).await;
+        }
+
+        match client
+            .post(&url)
+            .bearer_auth(&token)
+            .json(&outbound_req)
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 202 => {
+                break;
+            }
+            Ok(resp) => {
+                log::warn!("AI doc-check responded with status {}", resp.status());
+            }
+            Err(e) => {
+                log::warn!("AI doc-check outbound attempt {} failed: {}", attempt + 1, e);
+            }
+        }
+    }
 }
