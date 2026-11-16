@@ -240,6 +240,30 @@ pub async fn force_delete_chat_admin(
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success":false,"message":format!("DB error: {}", e)}))).into_response(),
     };
 
+    // Security check: Refuse force deletion of redemption chats
+    let chat_info = sqlx::query(
+        "SELECT chat_type::TEXT as chat_type, zd_redemption_id FROM chats WHERE id = $1"
+    )
+    .bind(chat_id)
+    .fetch_optional(&mut *tx)
+    .await;
+
+    if let Ok(Some(row)) = chat_info {
+        let chat_type: String = row.try_get("chat_type").unwrap_or_default();
+        let zd_redemption_id: Option<Uuid> = row.try_get("zd_redemption_id").ok().flatten();
+        if chat_type == "zd_redemption" || zd_redemption_id.is_some() {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false,
+                    "error": "REDEMPTION_CHAT_IMMUTABLE",
+                    "message": "Redemption chats cannot be deleted"
+                })),
+            )
+                .into_response();
+        }
+    }
+
     // Because of ON DELETE CASCADE on chat_participants and messages, we just need to delete the chat.
     match sqlx::query("DELETE FROM chats WHERE id = $1")
         .bind(chat_id)
@@ -278,6 +302,33 @@ pub async fn force_delete_message_admin(
         Ok(t) => t,
         Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"success":false,"message":format!("DB error: {}", e)}))).into_response(),
     };
+
+    // Security check: Refuse force deletion of redemption chat messages
+    let msg_chat_info = sqlx::query(
+        "SELECT c.chat_type::TEXT as chat_type, c.zd_redemption_id
+         FROM messages m
+         JOIN chats c ON m.chat_id = c.id
+         WHERE m.id = $1"
+    )
+    .bind(message_id)
+    .fetch_optional(&mut *tx)
+    .await;
+
+    if let Ok(Some(row)) = msg_chat_info {
+        let chat_type: String = row.try_get("chat_type").unwrap_or_default();
+        let zd_redemption_id: Option<Uuid> = row.try_get("zd_redemption_id").ok().flatten();
+        if chat_type == "zd_redemption" || zd_redemption_id.is_some() {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({
+                    "success": false,
+                    "error": "REDEMPTION_CHAT_IMMUTABLE",
+                    "message": "Redemption chat messages cannot be deleted"
+                })),
+            )
+                .into_response();
+        }
+    }
 
     match sqlx::query("DELETE FROM messages WHERE id = $1")
         .bind(message_id)

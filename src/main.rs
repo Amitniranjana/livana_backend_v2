@@ -40,6 +40,9 @@ async fn main() {
     // Load environment variables from .env file
     dotenv().ok();
 
+    // Hard-gate mock KYC / Bureau providers in production
+    crate::services::zd_verification_service::assert_mock_provider_allowed();
+
     // ——————————————— Load env vars ———————————————
     let database_user = env::var("DATABASE_USER").expect("DATABASE_USER must be set");
     let database_host = env::var("DATABASE_HOST").expect("DATABASE_HOST must be set");
@@ -78,6 +81,9 @@ async fn main() {
         .await
         .expect("Failed to run database migrations");
     log::info!("Database migrations applied successfully.");
+
+    // ————————————— Zero Deposit v2 Background Workers —————————————
+    crate::services::zd_jobs::start_zd_background_workers(pool.clone());
 
     // ———————————— Wire up repository & service ————————————
     let user_repo = UserRepository::new(pool.clone());

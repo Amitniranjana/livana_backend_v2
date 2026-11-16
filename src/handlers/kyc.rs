@@ -974,19 +974,79 @@ pub async fn extract_kyc_document(
 pub async fn verify_face_match(
     State(app_state): State<AppState>,
     headers: HeaderMap,
-    Json(_payload): Json<crate::dtos::kyc::FaceMatchRequest>,
+    Json(payload): Json<crate::dtos::kyc::FaceMatchRequest>,
 ) -> impl axum::response::IntoResponse {
-    let _user_id = require_auth!(headers, app_state);
+    let user_id = require_auth!(headers, app_state);
 
-    // TODO: Implement actual vendor integration for Face Match & Liveness
-    // 1. Fetch images from S3 based on _payload
-    // 2. Call 3rd party Face Match API
-    // 3. Store result in DB (against the associated doc_id/user)
+    let kyc_row = sqlx::query(
+        "SELECT id, profile_picture_url, govt_id_document_url, face_match_score, face_match_status, face_match_reason FROM kyc_submissions WHERE user_id = $1 LIMIT 1"
+    )
+    .bind(user_id)
+    .fetch_optional(&app_state.db)
+    .await;
+
+    let selfie = if !payload.selfie_url.trim().is_empty() {
+        Some(payload.selfie_url.trim().to_string())
+    } else {
+        kyc_row.as_ref().ok().and_then(|opt| opt.as_ref()).and_then(|r| r.try_get::<Option<String>, _>("profile_picture_url").ok().flatten())
+    };
+
+    let id_photo = if let Some(ref u) = payload.id_photo_url {
+        if !u.trim().is_empty() { Some(u.trim().to_string()) } else { None }
+    } else {
+        kyc_row.as_ref().ok().and_then(|opt| opt.as_ref()).and_then(|r| r.try_get::<Option<String>, _>("govt_id_document_url").ok().flatten())
+    };
+
+    // Fail-closed: missing selfie => not_evaluated, score None
+    if selfie.is_none() {
+        let response = crate::dtos::kyc::FaceMatchResponse {
+            match_score: None,
+            match_status: false,
+            status: "not_evaluated".to_string(),
+            reason: Some(crate::services::zd_verification_service::REASON_SELFIE_MISSING.to_string()),
+            message: "Selfie image is missing. Verification not evaluated.".to_string(),
+        };
+        return (StatusCode::OK, Json(json!({ "success": true, "data": response })));
+    }
+
+    // Fail-closed: missing ID photo => not_evaluated, score None
+    if id_photo.is_none() {
+        let response = crate::dtos::kyc::FaceMatchResponse {
+            match_score: None,
+            match_status: false,
+            status: "not_evaluated".to_string(),
+            reason: Some(crate::services::zd_verification_service::REASON_ID_PHOTO_MISSING.to_string()),
+            message: "Government ID photo is missing. Verification not evaluated.".to_string(),
+        };
+        return (StatusCode::OK, Json(json!({ "success": true, "data": response })));
+    }
+
+    // Real score from DB or not evaluated
+    let (score, status_str, match_bool, reason) = if let Ok(Some(ref r)) = kyc_row {
+        let db_score: Option<f64> = r.try_get("face_match_score").ok();
+        let db_status: Option<bool> = r.try_get("face_match_status").ok();
+        let db_reason: Option<String> = r.try_get("face_match_reason").ok();
+
+        if let Some(s) = db_score {
+            let passed = db_status.unwrap_or(s >= 85.0);
+            (Some(s), if passed { "pass" } else { "review" }, passed, db_reason)
+        } else {
+            (None, "not_evaluated", false, Some(crate::services::zd_verification_service::REASON_KYC_INCOMPLETE.to_string()))
+        }
+    } else {
+        (None, "not_evaluated", false, Some(crate::services::zd_verification_service::REASON_KYC_INCOMPLETE.to_string()))
+    };
 
     let response = crate::dtos::kyc::FaceMatchResponse {
-        match_score: 98.5,
-        match_status: true,
-        message: "Face matched successfully (Mock)".to_string(),
+        match_score: score,
+        match_status: match_bool,
+        status: status_str.to_string(),
+        reason,
+        message: if score.is_some() {
+            format!("Face match evaluated with status '{}'", status_str)
+        } else {
+            "Face match has not been computed yet".to_string()
+        },
     };
 
     (StatusCode::OK, Json(json!({ "success": true, "data": response })))

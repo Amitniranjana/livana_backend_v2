@@ -361,6 +361,13 @@ pub async fn assessment_result_callback(
 
 #[derive(Debug, Deserialize)]
 pub struct DocumentCheckResultCallback {
+    pub check_id: Option<String>,
+    pub redemption_id: Option<Uuid>,
+    #[serde(default)]
+    pub agreement: Option<Value>,
+    #[serde(default)]
+    pub bank_proof: Option<Value>,
+    #[serde(default)]
     pub flags: Vec<String>,
     pub agreement_verified: Option<bool>,
     pub bank_proof_verified: Option<bool>,
@@ -386,12 +393,21 @@ pub async fn document_check_result_callback(
     })?;
 
     // 3. Find redemption
-    let redemption = sqlx::query(
-        "SELECT id, zero_deposit_id, status::TEXT as status FROM zd_redemptions WHERE id::TEXT = $1",
-    )
-    .bind(&check_id)
-    .fetch_optional(&state.db)
-    .await
+    let redemption = if let Some(rid) = payload.redemption_id {
+        sqlx::query(
+            "SELECT id, user_id, chat_id, zero_deposit_id, status::TEXT as status FROM zd_redemptions WHERE id = $1",
+        )
+        .bind(rid)
+        .fetch_optional(&state.db)
+        .await
+    } else {
+        sqlx::query(
+            "SELECT id, user_id, chat_id, zero_deposit_id, status::TEXT as status FROM zd_redemptions WHERE doc_check_id = $1 OR id::TEXT = $1",
+        )
+        .bind(&check_id)
+        .fetch_optional(&state.db)
+        .await
+    }
     .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -404,17 +420,96 @@ pub async fn document_check_result_callback(
         None => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(json!({ "success": false, "message": "Redemption check not found" })),
+                Json(json!({ "success": false, "message": "Redemption not found for document check" })),
             ));
         }
     };
 
     let redemption_id: Uuid = redemption.get("id");
+    let user_id: Uuid = redemption.get("user_id");
+    let chat_id: Uuid = redemption.get("chat_id");
     let current_status: String = redemption.get("status");
 
-    if current_status == "approved" || current_status == "released" || current_status == "rejected" {
+    if current_status == "approved" || current_status == "released" || current_status == "rejected" || current_status == "cancelled" {
         return Ok(Json(json!({ "success": true, "message": "Redemption already finalized" })));
     }
+
+    // 4. Update redemption with doc check results
+    let check_result = json!({
+        "check_id": check_id,
+        "agreement": payload.agreement,
+        "bank_proof": payload.bank_proof,
+        "flags": payload.flags,
+        "extracted_details": payload.extracted_details,
+        "agreement_verified": payload.agreement_verified,
+        "bank_proof_verified": payload.bank_proof_verified,
+        "admin_notes": payload.admin_notes
+    });
+
+    sqlx::query(
+        r#"UPDATE zd_redemptions
+           SET ai_doc_check_result = $1,
+               doc_check_flags = $2,
+               doc_check_id = $3,
+               updated_at = NOW()
+           WHERE id = $4"#
+    )
+    .bind(&check_result)
+    .bind(json!(payload.flags))
+    .bind(&check_id)
+    .bind(redemption_id)
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "success": false, "message": e.to_string() })),
+        )
+    })?;
+
+    // 5. Post system message to redemption chat
+    let rent_match = payload.agreement.as_ref()
+        .and_then(|a| a.get("monthly_rent"))
+        .and_then(|r| r.as_f64());
+    let rent_summary = if let Some(r) = rent_match {
+        format!(", rent matches ₹{:.0}", r)
+    } else {
+        "".to_string()
+    };
+    let flags_summary = if payload.flags.is_empty() {
+        "No flags detected.".to_string()
+    } else {
+        format!("{} flag(s): {}", payload.flags.len(), payload.flags.join(", "))
+    };
+    let summary_content = format!(
+        "AI doc check: Agreement analyzed{}{}. Flags: {}",
+        rent_summary,
+        if payload.flags.is_empty() { "" } else { " with warnings" },
+        flags_summary
+    );
+
+    let msg_id = Uuid::new_v4();
+    let _ = sqlx::query(
+        r#"INSERT INTO messages (id, chat_id, sender_type, message_type, content, metadata, created_at)
+           VALUES ($1, $2, 'system', 'doc_check', $3, $4, NOW())"#
+    )
+    .bind(msg_id)
+    .bind(chat_id)
+    .bind(&summary_content)
+    .bind(json!({ "doc_check_flags": payload.flags, "check_id": check_id }))
+    .execute(&state.db)
+    .await;
+
+    let msg_val = json!({
+        "id": msg_id,
+        "chat_id": chat_id,
+        "sender_type": "system",
+        "message_type": "doc_check",
+        "content": summary_content,
+        "metadata": { "doc_check_flags": payload.flags },
+        "created_at": Utc::now()
+    });
+    crate::services::zd_redemption_service::broadcast_redemption_message(&state, chat_id, Some(user_id), &msg_val).await;
 
     Ok(Json(json!({
         "success": true,

@@ -6,8 +6,9 @@ use axum::{
 use crate::{
     app_state::AppState,
     handlers::admin_kyc::{
-        approve_kyc_submission, extract_kyc_submission, face_match_kyc_submission,
-        get_kyc_submission_detail, get_kyc_submissions, reject_kyc_submission,
+        admin_override_kyc_images, admin_reveal_govt_id, approve_kyc_submission,
+        extract_kyc_submission, face_match_kyc_submission, get_kyc_submission_detail,
+        get_kyc_submissions, reject_kyc_submission,
     },
     utils::admin_auth_guard::admin_auth_guard,
 };
@@ -21,5 +22,7 @@ pub fn admin_kyc_routes(state: AppState) -> Router<AppState> {
         .route("/api/admin/kyc/{kyc_id}/extract", post(extract_kyc_submission))
         .route("/api/admin/kyc/{kyc_id}/face-match", post(face_match_kyc_submission))
         .route("/api/admin/kyc/{kyc_id}/face_match", post(face_match_kyc_submission))
+        .route("/api/admin/kyc/{kyc_id}/override-images", post(admin_override_kyc_images))
+        .route("/api/admin/kyc/{kyc_id}/reveal-id", post(admin_reveal_govt_id))
         .route_layer(middleware::from_fn_with_state(state, admin_auth_guard))
 }
