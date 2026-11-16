@@ -1225,6 +1225,10 @@ All API errors return a standard JSON structure:
 | `422` | `TENANCY_TOO_SHORT` | Tenancy duration is below the 11-month minimum. | Enforce minimum of 11 months on duration selector. |
 | `422` | `PERSONAL_EMAIL_NOT_ALLOWED` | Provided official email uses a public domain (e.g. `@gmail.com`). | Require corporate domain email (e.g. `@company.com`). |
 | `422` | `PRECONDITION_FAILED` | Business rule validation failed. | Display returned error message to user. |
+| `422` | `KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED` | Attempted admin approval or manual token issuance with incomplete/un-evaluated KYC. | Display acknowledgement modal with checkboxes for each non-pass check (`acknowledge_incomplete_kyc: true`). |
+| `422` | `EMPTY_REASON` | Mandatory audit reason is missing or fewer than 5 characters. | Require admin to enter a meaningful reason (min 5 chars). |
+| `422` | `INVALID_IMAGE_URL` | Image URL failed SSRF validation (must be HTTPS and on trusted S3/R2 cloud storage). | Ensure image is uploaded to authorized Livana S3/R2 storage. |
+| `422` | `IMAGE_NOT_ACCESSIBLE` | Provided image URL returned 404 or cannot be fetched by server. | Check bucket permissions or re-upload image. |
 
 ---
 
@@ -1457,5 +1461,230 @@ export interface AdminRedemptionDetail {
   documents: RedemptionChecklistItem[];
   preconditions: AdminPreconditions;
 }
+
+// ---------------------------------------------------------------------------
+// KYC Fail-Closed Tri-State & Verification Types
+// ---------------------------------------------------------------------------
+
+export type VerificationStatusTriState = "pass" | "fail" | "review" | "not_evaluated";
+
+export interface VerificationCheckResult {
+  check: string;
+  result: VerificationStatusTriState;
+  reason?: string | null;
+  score?: number | null;
+  detail: string;
+  provenance?: {
+    source: "provider" | "mock" | "admin_override_inputs";
+    score?: number;
+    threshold?: number;
+    inputs_sha256?: string;
+    computed_at: string;
+  } | null;
+}
+
+export interface AdminKycDetailResponse {
+  id: string;
+  user_id: string;
+  full_name: string;
+  date_of_birth?: string | null;
+  id_type: "aadhaar" | "pan" | "passport" | "voter_id";
+  govt_id_number: string; // Masked: "XXXX XXXX 9012" or "ABC••••4F"
+  selfie_url?: string | null;
+  id_document_url?: string | null;
+  status: "pending" | "verified" | "rejected";
+  face_match_score?: number | null; // Strictly null if not evaluated
+  face_match_status?: VerificationStatusTriState | null;
+  face_match_reason?: string | null;
+  liveness_score?: number | null;
+  liveness_status?: VerificationStatusTriState | null;
+  verification_results?: Record<string, VerificationCheckResult> | null;
+  image_override_urls?: {
+    selfie_url?: string;
+    id_photo_url?: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RevealGovtIdRequest {
+  reason: string; // Min 5 chars required
+}
+
+export interface RevealGovtIdResponse {
+  kyc_id: string;
+  id_type: string;
+  govt_id_number: string; // Full unmasked plaintext ID
+  revealed_at: string;
+  revealed_by: string;
+}
+
+export interface OverrideKycImagesRequest {
+  selfie_url?: string;
+  id_photo_url?: string;
+  reason: string;
+}
+
+export interface OverrideKycImagesResponse {
+  kyc_id: string;
+  message: string;
+  image_override_urls: {
+    selfie_url?: string;
+    id_photo_url?: string;
+  };
+  re_evaluation_required: boolean;
+}
+
+export interface ZeroDepositApproveRequest {
+  approved_deposit_amount: number;
+  remarks: string;
+  acknowledge_incomplete_kyc?: boolean; // Set true when approving with non-pass KYC
+}
+
+export interface AssessmentOverrideRequest {
+  decision: "auto_approve" | "manual_review" | "auto_reject";
+  tier?: "A" | "B" | "C";
+  deposit_amount?: number;
+  reason: string;
+  acknowledge_incomplete_kyc?: boolean;
+}
+
+export interface ManualIssueRequest {
+  amount: number;
+  reason: string;
+  acknowledge_incomplete_kyc?: boolean;
+}
 ```
+
+---
+
+## 10. Fail-Closed KYC Verification Engine & UI Integration Guide
+
+### 10.1 Core Architectural Principles
+1. **Strictly Fail-Closed**: Verification verdicts default to `not_evaluated`. A `pass` / `clean` verdict is ONLY generated when valid, fetchable, decodable inputs exist in *the current evaluation run*.
+2. **Score Nullability**: When an evaluation cannot run (e.g. missing selfie or broken ID photo), `score` is strictly `null` (never a default fallback like 98.5% or 99%).
+3. **Threshold vs Rejection**: A real face match score below the minimum confidence threshold (85.0%) produces status `review` with reason `FACE_MISMATCH` and routes to underwriter manual review. It **never auto-rejects on face match score alone**.
+4. **Identity Mismatches**: Confirmed demographic mismatches (name, date of birth, PAN, or Aadhaar) route directly to `auto_reject` with reason `KYC_MISMATCH`.
+5. **PII Masked Everywhere**: All government IDs and bank accounts are masked on serialization:
+   - **Aadhaar**: `XXXX XXXX 9012`
+   - **PAN**: `ABC••••4F`
+   - **Bank Account**: `••••••••1234`
+
+---
+
+### 10.2 Machine-Readable Reason Codes Dictionary
+
+Inspect `check.reason` to display accurate badge text, tooltips, and action alerts:
+
+| Reason Code | Category | Meaning | Frontend Action Required |
+| :--- | :--- | :--- | :--- |
+| `SELFIE_MISSING` | Face Match | Applicant has not uploaded a selfie | Display neutral gray "No selfie on file" banner |
+| `ID_PHOTO_MISSING` | Face Match | ID card photo is missing from submission | Display neutral gray "No ID photo on file" banner |
+| `SELFIE_UNREADABLE` | Inaccessible | Selfie image URL returned 404, timed out, or corrupt | Prompt user/admin to re-upload clear image |
+| `ID_PHOTO_UNREADABLE` | Inaccessible | ID photo URL returned 404, timed out, or corrupt | Prompt user/admin to re-upload clear image |
+| `NO_FACE_DETECTED` | Liveness | Face detection model found 0 human faces | Alert applicant: "No face detected in photo" |
+| `MULTIPLE_FACES` | Liveness | Multiple faces detected in the submitted image | Alert applicant: "Single occupant required" |
+| `LIVENESS_NOT_RUN` | Liveness | Liveness check was skipped or not executed | Flag for manual verification or re-take |
+| `LIVENESS_FAILED` | Liveness | Liveness check failed spoof detection | Route to manual review |
+| `DECLARED_VALUE_MISSING` | Extraction | Declared value (e.g. DOB) omitted by applicant | Render neutral gray "Can't compare" indicator |
+| `EXTRACTION_MISSING` | Extraction | OCR failed to extract the field from ID card | Render neutral gray "Can't compare" indicator |
+| `KYC_MISMATCH` | Identity | Hard mismatch between declared and extracted identity | Display red "Identity Mismatch" badge |
+| `FACE_MISMATCH` | Biometrics | Face score is below threshold (< 85.0%) | Display amber "Review Required" badge with score |
+| `NO_DOCUMENTS_ANALYZED` | Tamper | Tamper engine received zero documents | Render neutral gray "Not evaluated" card |
+| `DOC_TAMPER_SUSPECTED` | Tamper | Digital manipulation artifacts detected | Display amber "Tamper Suspected" warning banner |
+| `PROVIDER_ERROR` | Upstream | KYC vendor API returned an unexpected error | Allow admin to re-run assessment |
+| `TIMEOUT` | Upstream | KYC vendor API timed out (> 15 seconds) | Allow admin to re-run assessment |
+| `KYC_INCOMPLETE` | Underwriting | Submission missing mandatory verified checks | Block approval unless acknowledged |
+
+---
+
+### 10.3 Card Component UI Contracts
+
+#### A. "Face Match & Liveness" Card
+- **Neutral / Not Evaluated State** (`result === "not_evaluated"`):
+  - Badge: Neutral Gray `Not Evaluated`
+  - Score label: `"—"` or `"Not evaluated"`
+  - Progress bar: Render as a dashed neutral gray bar with zero fill. **Never render green**.
+  - Detail banner: Display the specific failure reason (e.g. `"No selfie on file for this applicant"`).
+- **Review State** (`result === "review"`):
+  - Badge: Amber `Underwriter Review Required`
+  - Score label: Display exact percentage, e.g. `"72.4% (Threshold: 85.0%)"`
+  - Progress bar: Amber filled bar up to the score percentage.
+- **Pass State** (`result === "pass"`):
+  - Badge: Green `Verified Match`
+  - Score label: Display exact percentage, e.g. `"96.2%"`
+  - Progress bar: Emerald green filled bar.
+
+#### B. "Document Extraction & Tamper Check" Card
+- **Clean / Pass Status**:
+  - The card header is labeled `"Clean - no signs of tampering detected"` **ONLY** if all analyzed documents exist, were fetched, decoded, and have zero tamper flags.
+- **Missing / Can't Compare DOB**:
+  - If declared date of birth is empty or extraction failed, the row must display neutral gray `"Can't compare"` (never roll up into an overall pass).
+- **Tamper Suspected**:
+  - Displays amber warning banner listing the affected document types and suspicious metadata artifacts.
+
+---
+
+### 10.4 Admin Govt ID Reveal Flow (`POST /reveal-id`)
+
+To comply with UIDAI / RBI guidelines, full government IDs are masked by default:
+- **Aadhaar**: `XXXX XXXX 9012`
+- **PAN**: `ABC••••4F`
+
+To inspect the unmasked ID in the backoffice:
+1. Render an Eye icon next to the masked ID.
+2. Clicking the Eye opens the **Reason Modal**:
+   - Header: `"Reveal Government ID"`
+   - Textarea: `"Audit Reason (minimum 5 characters)"`
+   - Warning: `"This action is permanently logged with your Admin ID and timestamp."`
+3. Call `POST /api/admin/kyc/{kyc_id}/reveal-id`:
+   ```json
+   { "reason": "Verifying legal notice name match against rental agreement" }
+   ```
+4. On success (`200 OK`), display the unmasked ID with a **Copy to Clipboard** button.
+5. Auto-mask again after **60 seconds** or upon navigating away.
+
+---
+
+### 10.5 Admin Image Override Control (`POST /override-images`)
+
+When an applicant provides clearer ID or selfie photos through support channels:
+1. Call `POST /api/admin/kyc/{kyc_id}/override-images` with HTTPS URLs from trusted S3/R2 storage:
+   ```json
+   {
+     "selfie_url": "https://s3.ap-south-1.amazonaws.com/livana-kyc/override/selfie.jpg",
+     "id_photo_url": "https://s3.ap-south-1.amazonaws.com/livana-kyc/override/pan.jpg",
+     "reason": "Clearer photo submitted via customer support ticket #9821"
+   }
+   ```
+2. **Auto-Approval Lockout**:
+   - Setting image overrides resets any previous face match scores.
+   - Applications with override inputs are flagged with `source: "admin_override_inputs"`.
+   - The rules engine **strictly prevents automatic approval (`auto_approve`)** for override inputs; the application is permanently held in `manual_review` until an underwriter personally signs off.
+
+---
+
+### 10.6 Incomplete KYC Underwriting Acknowledgment Gate
+
+If an underwriter attempts to approve an application (`PATCH /approve`), override an assessment (`POST /assessment/override`), or manually issue tokens (`POST /tokens/issue`) while any KYC check has `result != "pass"`:
+
+The backend returns **HTTP 422**:
+```json
+{
+  "error": "KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED",
+  "message": "KYC verification is incomplete or failed (checks: face_match: not_evaluated, tamper_check: not_evaluated). You must explicitly acknowledge incomplete KYC to proceed.",
+  "incomplete_checks": [
+    "face_match: not_evaluated",
+    "tamper_check: not_evaluated"
+  ]
+}
+```
+
+**Frontend Handling**:
+1. Catch error code `KYC_INCOMPLETE_ACKNOWLEDGEMENT_REQUIRED`.
+2. Open confirmation modal listing each incomplete check.
+3. Require the underwriter to check:
+   - `[X] I acknowledge that KYC verifications are incomplete and accept underwriting responsibility.`
+4. Re-submit request with `acknowledge_incomplete_kyc: true`.
+
 
