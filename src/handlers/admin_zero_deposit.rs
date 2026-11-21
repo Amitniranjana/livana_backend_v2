@@ -54,7 +54,7 @@ pub async fn get_zero_deposits(
                    z.monthly_rent::FLOAT8 as monthly_rent,
                    z.deposit_amount::FLOAT8 as deposit_amount,
                    z.fee_amount::FLOAT8 as fee_amount,
-                   z.first_rent_amount::FLOAT8 as first_rent_amount,
+                   COALESCE(z.monthly_rent, 0)::FLOAT8 as first_rent_amount,
                    z.monthly_income::FLOAT8 as monthly_income,
                    z.status::TEXT as status,
                    z.consent_given,
