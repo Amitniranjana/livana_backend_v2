@@ -709,14 +709,19 @@ async fn test_redemption_chat_lifecycle_db(pool: &PgPool) {
     // Create redemption chat
     let chat_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO chats (id, user_id, name, chat_type, status, created_at, updated_at)
-         VALUES ($1, $2, 'Livana Zero Deposit', 'zd_redemption', 'active', NOW(), NOW())"
+        "INSERT INTO chats (id, name, chat_type, created_at)
+         VALUES ($1, 'Livana Zero Deposit', 'zd_redemption', NOW())"
     )
     .bind(chat_id)
-    .bind(user_id)
     .execute(pool)
     .await
     .expect("Insert chat failed");
+
+    let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2)")
+        .bind(chat_id)
+        .bind(user_id)
+        .execute(pool)
+        .await;
 
     let redemption_id = Uuid::new_v4();
     let idemp_key = Uuid::new_v4();
@@ -990,16 +995,20 @@ async fn test_full_lifecycle_e2e(pool: &PgPool) {
     let red_id = Uuid::new_v4();
 
     sqlx::query(
-        "INSERT INTO chats (id, property_id, sender_id, receiver_id, chat_type, zd_redemption_id, created_at, updated_at)
-         VALUES ($1, NULL, $2, $3, 'zd_redemption', $4, NOW(), NOW())"
+        "INSERT INTO chats (id, name, chat_type, zd_redemption_id, created_at)
+         VALUES ($1, 'Livana Zero Deposit', 'zd_redemption', $2, NOW())"
     )
     .bind(chat_id)
-    .bind(user_id)
-    .bind(admin_maker)
     .bind(red_id)
     .execute(pool)
     .await
     .unwrap();
+
+    let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2)")
+        .bind(chat_id)
+        .bind(user_id)
+        .execute(pool)
+        .await;
 
     sqlx::query(
         r#"INSERT INTO zd_redemptions (
@@ -1229,15 +1238,20 @@ async fn test_day_30_expiry_job_e2e(pool: &PgPool) {
     let red_id = Uuid::new_v4();
 
     sqlx::query(
-        "INSERT INTO chats (id, property_id, sender_id, receiver_id, chat_type, zd_redemption_id, created_at, updated_at)
-         VALUES ($1, NULL, $2, $2, 'zd_redemption', $3, NOW(), NOW())"
+        "INSERT INTO chats (id, name, chat_type, zd_redemption_id, created_at)
+         VALUES ($1, 'Livana Zero Deposit', 'zd_redemption', $2, NOW())"
     )
     .bind(chat_id)
-    .bind(user_id)
     .bind(red_id)
     .execute(pool)
     .await
     .unwrap();
+
+    let _ = sqlx::query("INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2)")
+        .bind(chat_id)
+        .bind(user_id)
+        .execute(pool)
+        .await;
 
     sqlx::query(
         r#"INSERT INTO zd_redemptions (
