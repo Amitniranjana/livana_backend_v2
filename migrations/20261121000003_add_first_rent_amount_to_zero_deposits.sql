@@ -5,4 +5,3 @@
 
 ALTER TABLE zero_deposits
     ADD COLUMN IF NOT EXISTS first_rent_amount NUMERIC(15,2);
-
