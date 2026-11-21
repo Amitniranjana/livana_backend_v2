@@ -176,10 +176,15 @@ pub async fn get_token_transactions(
             SELECT
                 t.id,
                 t.allocation_id,
-                t.transaction_type as type,
+                t.operation::TEXT as type,
+                t.operation::TEXT as operation,
                 t.amount::FLOAT8 as amount,
-                t.balance_after::FLOAT8 as balance_after,
+                COALESCE(t.available_after, 0)::FLOAT8 as balance_after,
+                COALESCE(t.available_after, 0)::FLOAT8 as available_after,
+                COALESCE(t.locked_after, 0)::FLOAT8 as locked_after,
+                t.reference_type,
                 t.reference_id,
+                t.notes,
                 t.created_at
             FROM zd_token_transactions t
             JOIN zd_token_allocations a ON t.allocation_id = a.id
