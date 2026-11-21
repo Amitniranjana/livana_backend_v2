@@ -1253,9 +1253,10 @@ pub async fn get_token_transactions(
     let rows = sqlx::query_scalar::<_, Value>(
         r#"SELECT row_to_json(t) FROM (
             SELECT id, allocation_id, zero_deposit_id, operation,
+                   operation::TEXT as type,
                    amount::FLOAT8 as amount,
-                   balance_before::FLOAT8 as balance_before,
-                   balance_after::FLOAT8 as balance_after,
+                   COALESCE(balance_before, 0)::FLOAT8 as balance_before,
+                   COALESCE(available_after, balance_after, 0)::FLOAT8 as balance_after,
                    available_after::FLOAT8 as available_after,
                    locked_after::FLOAT8 as locked_after,
                    reference_type, reference_id, actor_type, actor_id, notes, created_at
