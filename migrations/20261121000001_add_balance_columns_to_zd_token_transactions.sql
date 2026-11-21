@@ -6,4 +6,3 @@
 ALTER TABLE zd_token_transactions
     ADD COLUMN IF NOT EXISTS balance_before NUMERIC(12,2),
     ADD COLUMN IF NOT EXISTS balance_after  NUMERIC(12,2);
-
