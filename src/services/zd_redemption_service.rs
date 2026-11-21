@@ -391,8 +391,8 @@ pub async fn open_redemption_chat(
     let redemption_id = Uuid::new_v4();
 
     sqlx::query(
-        "INSERT INTO chats (id, name, chat_type, zd_redemption_id, created_at, updated_at)
-         VALUES ($1, 'Livana Zero Deposit', 'zd_redemption'::chat_type, $2, NOW(), NOW())"
+        "INSERT INTO chats (id, name, chat_type, zd_redemption_id, created_at)
+         VALUES ($1, 'Livana Zero Deposit', 'zd_redemption'::chat_type, $2, NOW())"
     )
     .bind(chat_id)
     .bind(redemption_id)
