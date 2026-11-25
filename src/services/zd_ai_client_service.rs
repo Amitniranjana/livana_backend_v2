@@ -464,9 +464,9 @@ pub async fn execute_ai_document_check_outbound(
         None => (None, None, None),
     };
 
-    // 2. Fetch doc urls
+    // 2. Fetch doc locations (prefer s3_key, fall back to url) and generate real presigned URLs
     let agreement_s3: Option<String> = sqlx::query_scalar(
-        "SELECT url FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('agreement', 'rental_agreement') AND url IS NOT NULL ORDER BY version DESC LIMIT 1"
+        "SELECT COALESCE(NULLIF(s3_key, ''), url) FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('agreement', 'rental_agreement') AND COALESCE(NULLIF(s3_key, ''), url) IS NOT NULL ORDER BY version DESC LIMIT 1"
     )
     .bind(redemption_id)
     .fetch_optional(&state.db)
@@ -475,7 +475,7 @@ pub async fn execute_ai_document_check_outbound(
     .flatten();
 
     let bank_proof_s3: Option<String> = sqlx::query_scalar(
-        "SELECT url FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('bank_proof', 'landlord_bank_proof') AND url IS NOT NULL ORDER BY version DESC LIMIT 1"
+        "SELECT COALESCE(NULLIF(s3_key, ''), url) FROM zd_redemption_documents WHERE redemption_id = $1 AND doc_type IN ('bank_proof', 'landlord_bank_proof') AND COALESCE(NULLIF(s3_key, ''), url) IS NOT NULL ORDER BY version DESC LIMIT 1"
     )
     .bind(redemption_id)
     .fetch_optional(&state.db)
@@ -483,8 +483,14 @@ pub async fn execute_ai_document_check_outbound(
     .ok()
     .flatten();
 
-    let agreement_url = agreement_s3.as_deref().map(|k| crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service));
-    let bank_proof_url = bank_proof_s3.as_deref().map(|k| crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service));
+    let agreement_url = match agreement_s3.as_deref() {
+        Some(k) => crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service).await,
+        None => None,
+    };
+    let bank_proof_url = match bank_proof_s3.as_deref() {
+        Some(k) => crate::services::zd_redemption_service::generate_signed_url(k, &state.storage_service).await,
+        None => None,
+    };
 
     let callback_url = format!("{}/internal/zero-deposit/document-checks/{}/result", callback_base.trim_end_matches('/'), check_id);
 
