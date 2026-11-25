@@ -184,6 +184,7 @@ async fn main() {
         .merge(admin_users_routes(app_state.clone()))
         .merge(admin_properties_routes(app_state.clone()))
         .merge(admin_kyc_routes(app_state.clone()))
+        .merge(crate::routes::admin_files::admin_files_routes(app_state.clone()))
         .merge(crate::routes::admin_chat_routes())
         .merge(crate::routes::admin_reports_routes(app_state.clone()))
         .merge(crate::routes::admin_logs_routes(app_state.clone()))

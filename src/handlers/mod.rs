@@ -35,6 +35,7 @@ pub mod vibes;
 pub mod ws_handler;
 pub mod news;
 pub mod admin_auth;
+pub mod admin_files;
 pub mod admin_chat;
 pub mod admin_stats;
 pub mod admin_analytics;

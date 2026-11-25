@@ -428,6 +428,9 @@ pub use admin_users::admin_users_routes;
 pub mod admin_kyc;
 pub use admin_kyc::admin_kyc_routes;
 
+pub mod admin_files;
+pub use admin_files::admin_files_routes;
+
 pub mod admin_properties;
 pub use admin_properties::admin_properties_routes;
 

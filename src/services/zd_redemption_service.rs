@@ -112,12 +112,33 @@ pub fn encrypt_account_number(acc: &str, secret: &str) -> String {
     format!("ENC:{}", hex::encode(encrypted_bytes))
 }
 
-pub fn generate_signed_url(s3_key: &str, _storage: &S3Storage) -> String {
-    let base_s3 = std::env::var("S3_ENDPOINT")
-        .or_else(|_| std::env::var("AWS_ENDPOINT_URL"))
-        .unwrap_or_else(|_| "https://s3.amazonaws.com/livana-docs-private".to_string());
-    let expires_at = Utc::now().timestamp() + SIGNED_URL_VALIDITY_SECS as i64;
-    format!("{}/{}?X-Amz-Expires={}&X-Amz-Signed=true", base_s3.trim_end_matches('/'), s3_key, expires_at)
+/// Builds the canonical plain S3 URL for storing in `zd_redemption_documents.url`
+/// (matches the format stored in `kyc_submissions`; presigned URLs are generated on read).
+pub fn build_stored_s3_url(s3_key: &str, storage: &S3Storage) -> String {
+    let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "ap-south-1".to_string());
+    format!(
+        "https://{}.s3.{}.amazonaws.com/{}",
+        storage.bucket(),
+        region,
+        s3_key.trim_start_matches('/')
+    )
+}
+
+/// Generates a real SigV4 presigned `GetObject` URL valid for `SIGNED_URL_VALIDITY_SECS` (15 min).
+pub async fn generate_signed_url(s3_key_or_url: &str, storage: &S3Storage) -> Option<String> {
+    match storage
+        .presign_stored_url(
+            s3_key_or_url,
+            std::time::Duration::from_secs(SIGNED_URL_VALIDITY_SECS),
+        )
+        .await
+    {
+        Ok(url) => Some(url),
+        Err(e) => {
+            log::error!("Failed to generate S3 presigned URL for '{}': {}", s3_key_or_url, e);
+            None
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -795,7 +816,7 @@ pub async fn upload_redemption_document(
     };
 
     let s3_key = format!("zero-deposit/redemptions/{}/{}_v{}_{}.{}", redemption_id, doc_type, version, Uuid::new_v4(), ext);
-    let s3_url = generate_signed_url(&s3_key, &state.storage_service);
+    let s3_url = build_stored_s3_url(&s3_key, &state.storage_service);
 
     let _ = state.storage_service.upload_file(&s3_key, file_bytes.clone(), content_type).await;
 
@@ -1283,7 +1304,7 @@ pub async fn get_admin_redemption_detail(
 
     // Fetch documents with 15-minute signed URLs
     let doc_rows = sqlx::query(
-        "SELECT id, doc_type, label, required, status, version, s3_key, file_name, mime_type, review_comment, created_at, uploaded_at
+        "SELECT id, doc_type, label, required, status, version, s3_key, url, file_name, mime_type, review_comment, created_at, uploaded_at
          FROM zd_redemption_documents
          WHERE redemption_id = $1
          ORDER BY created_at ASC"
@@ -1302,8 +1323,21 @@ pub async fn get_admin_redemption_detail(
             all_required_verified = false;
         }
 
-        let s3_key: Option<String> = d.try_get("s3_key").ok();
-        let signed_url = s3_key.as_deref().map(|k| generate_signed_url(k, &state.storage_service));
+        let s3_loc: Option<String> = d
+            .try_get::<Option<String>, _>("s3_key")
+            .ok()
+            .flatten()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| {
+                d.try_get::<Option<String>, _>("url")
+                    .ok()
+                    .flatten()
+                    .filter(|s| !s.trim().is_empty())
+            });
+        let signed_url = match s3_loc.as_deref() {
+            Some(k) => generate_signed_url(k, &state.storage_service).await,
+            None => None,
+        };
 
         documents.push(json!({
             "id": d.get::<Uuid, _>("id"),
