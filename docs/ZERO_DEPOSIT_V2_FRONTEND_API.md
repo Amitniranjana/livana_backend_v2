@@ -1187,11 +1187,66 @@ With no NBFC partner, the admin backoffice directly manages tenant delinquency, 
      }
      ```
 2. **S3 Signed URL Lifetime**:
-   - All document preview URLs returned in admin endpoints expire after **15 minutes (900 seconds)**.
-   - Admin UI should dynamically re-fetch the redemption details or refresh signed links upon expiration.
+   - All document preview `signed_url` fields returned in admin redemption detail endpoints (`GET /api/admin/zero-deposit/redemptions/{id}`) and outbound AI document checks use real **AWS SigV4 presigned `GetObject` URLs** valid for **15 minutes (900 seconds)**.
+   - Admin UI should dynamically re-fetch the redemption details or use `/api/admin/files/view` to obtain a fresh presigned redirect upon expiration.
 3. **Payee Masking**:
    - Tenant-facing endpoints strictly mask landlord bank account numbers (`••••••••1234`).
    - Admin endpoints display unmasked account numbers only to authorized admins for payout verification.
+
+---
+
+### 7.19 Admin Private S3 File Viewer (`GET /api/admin/files/view`)
+
+Because the KYC and Zero Deposit S3 buckets are private, raw S3 URLs stored on `kyc_submissions` or `zero_deposits` return `403 AccessDenied` when loaded directly in the browser. Use this endpoint as the `src` or `href` (or through the admin panel's `/api` proxy) to securely view any stored private document or image.
+
+- **Path**: `GET /api/admin/files/view?url=<url_encoded_s3_url_or_key>`
+- **Auth**: Protected by `admin_auth_guard` (requires valid `admin_session` cookie or `Authorization: Bearer <admin_jwt>`). Returns `401` JSON if unauthenticated.
+- **Query Parameters**:
+  | Parameter | Required | Description |
+  | :--- | :--- | :--- |
+  | `url` | Yes | URL-encoded stored S3 URL or bare object key. Must be non-empty and point to an S3 location. |
+
+- **Accepted `url` Formats**:
+  1. **Virtual-hosted S3 URLs**: `https://<bucket>.s3.<region>.amazonaws.com/<key>`, `https://<bucket>.s3.amazonaws.com/<key>`, `https://<bucket>.s3-<region>.amazonaws.com/<key>`
+  2. **Path-style S3 URLs**: `https://s3.<region>.amazonaws.com/<bucket>/<key>`, `https://s3.amazonaws.com/<bucket>/<key>`
+  3. **Legacy fake-signed URLs**: `https://s3.amazonaws.com/livana-docs-private/<key>?X-Amz-Expires=...&X-Amz-Signed=true` (strips old query parameters and maps legacy `livana-docs-private` to the configured KYC bucket)
+  4. **Existing presigned URLs**: strips old `X-Amz-*` parameters and issues a fresh signature
+  5. **`s3://` URIs**: `s3://<bucket>/<key>`
+  6. **Bare object keys**: `kyc/profile/<user_id>/<file>.jpg`, `zero-deposit/redemptions/<id>/<file>.pdf` (resolved against the configured private KYC bucket)
+
+- **Success Response (`307 Temporary Redirect`)**:
+  - **`Location` Header**: Fresh AWS SigV4 presigned `GetObject` URL valid for **10 minutes (600 seconds)**.
+  - **`Cache-Control` Header**: `private, no-store` (prevents browsers/proxies from caching expired redirects).
+
+- **Error Responses**:
+  - `400 Bad Request` (`INVALID_URL`): Missing/empty `url`, non-S3 external host, path traversal (`..`), or malformed S3 path:
+    ```json
+    {
+      "success": false,
+      "error": "INVALID_URL",
+      "message": "Invalid S3 URL or key: ..."
+    }
+    ```
+  - `401 Unauthorized`: Missing or invalid admin session/token.
+  - `500 Internal Server Error` (`PRESIGN_ERROR`): Failed to sign the S3 `GetObject` request.
+
+- **Frontend Usage Example (Admin Panel)**:
+  ```tsx
+  const adminFileUrl = (storedUrlOrKey?: string | null) =>
+    storedUrlOrKey
+      ? `/api/admin/files/view?url=${encodeURIComponent(storedUrlOrKey)}`
+      : undefined;
+
+  // KYC Selfie / ID Image
+  <img src={adminFileUrl(kyc.profile_picture_url)} alt="Applicant Selfie" />
+
+  // Document Preview / Download
+  <a href={adminFileUrl(docUrl)} target="_blank" rel="noopener noreferrer">
+    View Document
+  </a>
+  ```
+
+> **Note**: External non-S3 URLs (e.g., third-party avatars) are intentionally rejected with `400 INVALID_URL` to prevent open-redirect abuse. Always check if the value is an S3 URL/key before routing through `/api/admin/files/view`, or fall back cleanly on error.
 
 ---
 
@@ -1209,6 +1264,7 @@ All API errors return a standard JSON structure:
 | HTTP | Error Code | Description | Frontend Action Required |
 | :--- | :--- | :--- | :--- |
 | `400` | `INVALID_IDEMPOTENCY_KEY` | Provided `Idempotency-Key` is missing or not a valid UUID. | Generate a fresh UUID v4 header on retry. |
+| `400` | `INVALID_URL` | Missing, empty, malformed, path-traversal, or non-S3 URL passed to `/api/admin/files/view`. | Verify stored URL/key is a valid S3 URL or bare key before rendering link. |
 | `401` | `BAD_HMAC` | Internal callback verification failed. | Check internal webhook signature and timestamp. |
 | `403` | `NOT_OWNER` | User attempted to read/modify an application belonging to another user. | Redirect or display unauthorized access banner. |
 | `403` | `MAKER_CHECKER` | The same admin attempted to both approve and release a payout. | Display: *"Maker-checker violation: A different admin must release funds."* |
@@ -1229,6 +1285,7 @@ All API errors return a standard JSON structure:
 | `422` | `EMPTY_REASON` | Mandatory audit reason is missing or fewer than 5 characters. | Require admin to enter a meaningful reason (min 5 chars). |
 | `422` | `INVALID_IMAGE_URL` | Image URL failed SSRF validation (must be HTTPS and on trusted S3/R2 cloud storage). | Ensure image is uploaded to authorized Livana S3/R2 storage. |
 | `422` | `IMAGE_NOT_ACCESSIBLE` | Provided image URL returned 404 or cannot be fetched by server. | Check bucket permissions or re-upload image. |
+| `500` | `PRESIGN_ERROR` | Failed to generate an AWS SigV4 presigned S3 URL in `/api/admin/files/view`. | Retry or verify server AWS credentials and `s3:GetObject` permissions. |
 
 ---
 
